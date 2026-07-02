@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ulsesa-voting
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: pnpm install && pnpm build
+    startCommand: pnpm start
+    envVars:
+      - key: TURSO_DATABASE_URL
+        value: libsql://ulsesa-dawrld.aws-us-west-2.turso.io
+      - key: TURSO_AUTH_TOKEN
+        value: eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODI5Mzc5ODAsImlkIjoiMDE5ZjFmNjItMWEwMS03MmM4LWIxMDUtZDAwMDQ3OTQxZTRhIiwia2lkIjoia0VLUkZ2Y0pUUG5LRWc4T2g4b0RhV04zem9sSUpoaGo0NC1zTjdMWUp0QSIsInJpZCI6ImZiNzBjYjI3LWYyMmMtNDRlYi04NDk0LWRmOTE3ODZkMzc4MCJ9.ftk0mf_KCkduhkYJb5jt2mPfIr0B9fDCeub5LQUJmxtoQ0Xo5U7Hv4aBfEn3Bb_oL4jsFc-QyFRUsLUKYye_Cw
+      - key: JWT_SECRET
+        value: ulse-sa-election-2026-super-secret-key-do-not-share
+      - key: VOTE_SECRET
+        value: ulsesa-vote-secret-key-2026
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        value: ulsesa-admin-2026
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
