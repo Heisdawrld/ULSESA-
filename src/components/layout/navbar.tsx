@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { Menu, Home, BookOpen, Vote, Users, LifeBuoy, LogOut, Shield, LayoutDashboard, Info, ChevronRight, Sparkles } from 'lucide-react'
+import { Menu, Home, BookOpen, Vote, Users, LifeBuoy, LogOut, LayoutDashboard, Info, ChevronRight, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 
 const desktopNav = [
@@ -46,7 +46,7 @@ const mobileNav = [
 
 export function Navbar() {
   const { view, navigate } = useNav()
-  const { student, admin, logoutStudent, logoutAdmin } = useAuth()
+  const { student, logoutStudent } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
@@ -131,34 +131,6 @@ export function Navbar() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : admin ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
-                  <Avatar className="h-9 w-9 border-2 border-cyan-accent/40">
-                    <AvatarFallback className="bg-cyan-accent/10 text-cyan-accent-foreground text-xs font-semibold">
-                      <Shield className="h-4 w-4" />
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{admin.name}</span>
-                    <span className="text-xs text-muted-foreground capitalize">{admin.role}</span>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('admin')}>
-                  <LayoutDashboard className="mr-2 h-4 w-4" /> Admin Dashboard
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => { logoutAdmin(); navigate('home') }} className="text-destructive">
-                  <LogOut className="mr-2 h-4 w-4" /> Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           ) : (
             <Button
               onClick={() => navigate('auth')}
@@ -205,7 +177,7 @@ export function Navbar() {
                     <ChevronRight className="h-4 w-4 opacity-50" />
                   </button>
                 ))}
-                {!student && !admin && (
+                {!student && (
                   <Button
                     onClick={() => { navigate('auth'); setMobileOpen(false) }}
                     className="mt-2 bg-primary hover:bg-primary/90 rounded-full"

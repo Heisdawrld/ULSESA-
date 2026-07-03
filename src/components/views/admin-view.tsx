@@ -466,7 +466,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                   id="admin-username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
+                  placeholder="Enter username"
                   autoComplete="username"
                   required
                 />
@@ -498,10 +498,9 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
                 )}
               </Button>
             </form>
-            <div className="mt-5 rounded-xl border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Demo credentials</p>
-              <p className="mt-1 font-mono">admin / ulsesa-admin-2026</p>
-            </div>
+            <p className="mt-5 text-center text-xs text-muted-foreground">
+              Authorised personnel only · All access is logged
+            </p>
           </CardContent>
         </Card>
       </motion.div>
