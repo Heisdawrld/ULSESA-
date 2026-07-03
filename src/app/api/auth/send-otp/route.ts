@@ -3,9 +3,38 @@ import { db } from '@/lib/db'
 import { generateOTP } from '@/lib/auth/server-auth'
 import { storeOTP } from '@/lib/otp-store'
 import { sendOTPEmail, isEmailConfigured } from '@/lib/email'
+import { rateLimit, getClientIP } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   try {
+    // ─── Rate limiting ────────────────────────────────────────────
+    // Two layers:
+    //  1. Per IP: max 10 OTP requests / 10 min (prevents a single
+    //     attacker from spamming the endpoint).
+    //  2. Per matric: max 3 OTP requests / 10 min (prevents a student
+    //     from burning through the email quota by repeatedly clicking
+    //     "resend").
+    //
+    // Both must pass. If either fails, return 429.
+    const ip = getClientIP(request)
+    const ipLimit = rateLimit({
+      key: `otp:ip:${ip}`,
+      maxRequests: 10,
+      windowMs: 10 * 60 * 1000,
+    })
+    if (!ipLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Too many verification code requests from your network. Please try again in a few minutes.',
+          retryAfter: Math.ceil((ipLimit.resetAt - Date.now()) / 1000),
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(Math.ceil((ipLimit.resetAt - Date.now()) / 1000)) },
+        }
+      )
+    }
+
     const body = await request.json().catch(() => ({}))
     const matricNumber = (body?.matricNumber ?? '').toString().trim()
 
@@ -13,6 +42,24 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Matric number is required' },
         { status: 400 }
+      )
+    }
+
+    const matricLimit = rateLimit({
+      key: `otp:matric:${matricNumber.toLowerCase()}`,
+      maxRequests: 3,
+      windowMs: 10 * 60 * 1000,
+    })
+    if (!matricLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Too many verification codes for this matric number. Please wait 10 minutes before requesting another, or check your email including spam folder.',
+          retryAfter: Math.ceil((matricLimit.resetAt - Date.now()) / 1000),
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(Math.ceil((matricLimit.resetAt - Date.now()) / 1000)) },
+        }
       )
     }
 

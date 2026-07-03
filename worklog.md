@@ -603,3 +603,64 @@ Stage Summary:
 - Login: approved + submitted students can login; rejected blocked; pending (no password) blocked
 - Demo mode: when SMTP not configured, OTP shown in amber banner for development. In production, OTP only delivered via email.
 - Ready for real deployment once SMTP credentials + student email list are added
+
+---
+Task ID: 2
+Agent: main-orchestrator
+Task: Email scaling strategy for 2000 students, theme transition animation, rate limiting, verification flow risk analysis
+
+Work Log:
+- Synced local main branch to origin/main (was stale at old commit). Now at b5efb6a which has all prior fixes: lazy PrismaClient init, SMTP timeouts, libsql adapter fix.
+- Reviewed current email.ts — confirmed SMTP timeouts (10s/10s/15s) are deployed. nodemailer will fail fast and fall back to demo mode instead of hanging.
+- Reviewed send-otp/route.ts — found NO rate limiting. Added two-layer rate limiter:
+  - Per IP: 10 OTP requests / 10 min (prevents attacker spam)
+  - Per matric: 3 OTP requests / 10 min (prevents student burning email quota)
+  - Returns HTTP 429 with Retry-After header when exceeded
+- Created src/lib/rate-limit.ts — simple in-memory token bucket rate limiter with auto-pruning of expired buckets every 5 min. Single-server sufficient for ULSESA scale (~2000 students on one Render instance).
+- Built premium dark/light theme transition using View Transitions API:
+  - Rewrote src/components/shared/theme-toggle.tsx to use document.startViewTransition()
+  - Captures click coordinates (clientX/clientY), sets them as CSS vars (--theme-x, --theme-y, --theme-r) on :root
+  - Computes endRadius = Math.hypot(furthest corner) so the circle fully covers viewport
+  - Added CSS keyframes in globals.css: ::view-transition-new(root) animates clip-path: circle(0%) → circle(endRadius) over 650ms with cubic-bezier(0.16, 1, 0.3, 1)
+  - Old theme sits underneath (z-index: 0), new theme reveals on top (z-index: 1)
+  - Falls back to instant switch on browsers without View Transitions API (Firefox, older Safari)
+  - Respects prefers-reduced-motion — skips animation entirely for accessibility
+- Removed `disableTransitionOnChange` from ThemeProvider in layout.tsx (was blocking the transition)
+- Verified theme toggle works end-to-end via agent-browser:
+  - Confirmed View Transitions API supported (typeof === "function")
+  - Clicked toggle: dark → light → dark, no console errors
+  - Screenshots captured before/after confirming visual change
+- Ran `bun run lint` — clean, no errors.
+
+Stage Summary:
+- Theme transition: DONE. Premium circular reveal from click point, 650ms, accessible fallback.
+- Rate limiting: DONE. Two-layer (IP + matric) protects send-otp endpoint from abuse and email quota exhaustion.
+- Email scaling: STRATEGY DECIDED, awaiting user choice. Options presented:
+  1. Gmail (free, 500/day) — INSUFFICIENT for 2000 students in 2-3 days
+  2. Resend Pro ($20/month, no daily cap, 50k/month) — RECOMMENDED
+  3. Termii SMS OTP (~₦6000 for 2000 SMS, more reliable in Nigeria)
+  4. Brevo (free 300/day, paid €25/mo removes cap)
+  User needs to pick one before we can finalize the email setup.
+- Verification flow risks IDENTIFIED (7 risks), awaiting user discussion:
+  1. Wrong email on file → student blocked from claiming
+  2. OTP goes to spam → student thinks system broken
+  3. Email provider rate limits under burst load
+  4. Multiple people claiming same account (shared email)
+  5. OTP brute force (ALREADY MITIGATED — MAX_ATTEMPTS=5 in otp-store.ts)
+  6. Election day load burst
+  7. Lost password between claim and election (no reset flow yet)
+
+Unresolved — NEEDS USER INPUT:
+- Which email provider? (Resend vs Termii vs other)
+- Should we add a class-rep manual verification fallback for students whose email bounces?
+- Should we add a password reset flow (OTP-based) before election day?
+- Should we close account claiming X hours before election opens to reduce load?
+
+Files modified this session:
+- src/components/shared/theme-toggle.tsx (rewritten with View Transitions API)
+- src/app/layout.tsx (removed disableTransitionOnChange)
+- src/app/globals.css (added ::view-transition keyframes)
+- src/lib/rate-limit.ts (NEW — token bucket rate limiter)
+- src/app/api/auth/send-otp/route.ts (added two-layer rate limiting)
+
+Not yet committed to git — will commit once user confirms direction on email provider.

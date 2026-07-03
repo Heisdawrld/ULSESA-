@@ -296,3 +296,72 @@
   background: color-mix(in oklch, var(--primary) 25%, transparent);
   color: var(--foreground);
 }
+
+/* ============================================================
+   THEME TOGGLE — Circular Reveal Transition
+   ============================================================
+   When the user clicks the theme toggle, we use the View
+   Transitions API to animate the new theme "wiping in" as an
+   expanding circle radiating from the exact pixel they clicked.
+
+   The click coordinates are set as CSS custom properties
+   (--theme-x, --theme-y, --theme-r) on :root by theme-toggle.tsx.
+
+   Browsers without View Transitions API support fall back to an
+   instant theme switch (handled in theme-toggle.tsx).
+   ============================================================ */
+
+:root {
+  --theme-x: 50%;
+  --theme-y: 50%;
+  --theme-r: 100%;
+}
+
+/* The View Transitions API creates two pseudo-elements that we
+   can style: ::view-transition-old (the outgoing snapshot) and
+   ::view-transition-new (the incoming snapshot). Both are stacked
+   z-aligned; the new one sits on top.
+
+   We animate the NEW theme in as an expanding circle, so the OLD
+   theme stays visible underneath until the circle fully covers it. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* Disable the default cross-fade — we want our custom clip-path
+     animation to handle the reveal. */
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+  /* Start as a zero-radius circle at the click point, expand to
+     full coverage over 650ms with a smooth ease-out curve. */
+  clip-path: circle(0% at var(--theme-x) var(--theme-y));
+  animation: theme-reveal 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+::view-transition-old(root) {
+  /* Old theme sits underneath — no animation, just stays put. */
+  animation: none;
+  z-index: 0;
+}
+
+::view-transition-new(root) {
+  z-index: 1;
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0% at var(--theme-x) var(--theme-y));
+  }
+  to {
+    clip-path: circle(var(--theme-r) at var(--theme-x) var(--theme-y));
+  }
+}
+
+/* Respect reduced-motion preferences — skip the animation entirely. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) {
+    animation: none;
+    clip-path: none;
+  }
+}
