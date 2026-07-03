@@ -1074,3 +1074,28 @@ Stage Summary:
   - Render deployment not yet live at the blueprint URL (ulsesa-portal.onrender.com returns no-server 404). User must deploy the render.yaml blueprint, then the keep-alive cron will activate automatically. If the real deployed URL differs, retarget cron 249512's curl command.
   - The recurring webDevReview cron (249502, every 15 min) continues to run QA + feature work.
   - Standing: Gmail SMTP creds in Render env; real student/candidate lists from user.
+
+---
+Task ID: ADMIN-ACCESS-CLEANUP
+Agent: main-orchestrator
+Task: Remove shield icon (admin login entry) from navbar & remove demo credentials from admin login page
+
+Work Log:
+- Investigated live site (https://ulsesa.onrender.com/) — confirmed it's healthy (HTTP 200, all APIs 200)
+- Fixed live DB election date via admin PUT endpoint — was Monday July 6 10:15 WAT, now correctly Tuesday July 7 08:00 WAT (the earlier seed fix only applied to local dev SQLite, not production Turso)
+- Found shield icon in navbar.tsx — it was the admin avatar dropdown (only visible when admin session persisted in localStorage). Clicking it navigated to 'admin' view, surfacing admin login on the student-facing election site
+- Removed the entire `admin ?` branch from navbar right-side section — navbar now only shows: student avatar (if logged in) OR "Sign In" button
+- Cleaned up unused `admin`, `logoutAdmin`, `Shield` icon import from navbar.tsx
+- Updated mobile sheet condition from `!student && !admin` to just `!student` for the "Sign In / Claim Account" button
+- Removed demo credentials box ("admin / ulsesa-admin-2026") from AdminLogin component in admin-view.tsx
+- Replaced with discreet "Authorised personnel only · All access is logged" text
+- Changed username placeholder from "admin" to "Enter username" (was hinting at the username)
+- Confirmed standalone /admin route (src/app/admin/page.tsx) is the sole admin entry point — renders AdminView with its own slim portal header, no main-site navbar/footer
+- Verified via agent-browser: navbar shows no shield icon (only theme toggle + hamburger); /admin URL loads admin portal correctly
+- Lint clean, committed (7fa5903), pushed to origin/main
+
+Stage Summary:
+- Files modified: src/components/layout/navbar.tsx (removed admin avatar branch + cleanup), src/components/views/admin-view.tsx (removed demo creds box + placeholder)
+- Admin access: exclusively via https://ulsesa.onrender.com/admin (standalone portal with own header/sidebar)
+- Student-facing site: no admin login surface anywhere — clean election portal
+- Live site election date corrected: Tuesday July 7, 2026 at 08:00 WAT
