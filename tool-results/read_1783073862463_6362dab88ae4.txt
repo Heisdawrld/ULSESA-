@@ -1,0 +1,2002 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState, useMemo, useCallback } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import Image from 'next/image'
+     6→import { toast } from 'sonner'
+     7→import {
+     8→  LayoutDashboard,
+     9→  Users,
+    10→  ShieldCheck,
+    11→  Vote,
+    12→  ScrollText,
+    13→  Settings,
+    14→  LogOut,
+    15→  Menu,
+    16→  Activity,
+    17→  BadgeCheck,
+    18→  Search,
+    19→  Filter,
+    20→  Eye,
+    21→  CheckCircle2,
+    22→  XCircle,
+    23→  PlayCircle,
+    24→  StopCircle,
+    25→  Megaphone,
+    26→  RefreshCw,
+    27→  ExternalLink,
+    28→  FileText,
+    29→  Loader2,
+    30→} from 'lucide-react'
+    31→
+    32→import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
+    33→import { api } from '@/lib/api-client'
+    34→import {
+    35→  Card,
+    36→  CardContent,
+    37→  CardHeader,
+    38→  CardTitle,
+    39→  CardDescription,
+    40→  CardFooter,
+    41→} from '@/components/ui/card'
+    42→import { Button } from '@/components/ui/button'
+    43→import { Badge } from '@/components/ui/badge'
+    44→import { Input } from '@/components/ui/input'
+    45→import { Label } from '@/components/ui/label'
+    46→import { Skeleton } from '@/components/ui/skeleton'
+    47→import { Progress } from '@/components/ui/progress'
+    48→import { Separator } from '@/components/ui/separator'
+    49→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    50→import { Textarea } from '@/components/ui/textarea'
+    51→import {
+    52→  Sheet,
+    53→  SheetContent,
+    54→  SheetHeader,
+    55→  SheetTitle,
+    56→  SheetTrigger,
+    57→} from '@/components/ui/sheet'
+    58→import {
+    59→  Dialog,
+    60→  DialogContent,
+    61→  DialogHeader,
+    62→  DialogTitle,
+    63→  DialogDescription,
+    64→  DialogFooter,
+    65→  DialogClose,
+    66→} from '@/components/ui/dialog'
+    67→import {
+    68→  AlertDialog,
+    69→  AlertDialogAction,
+    70→  AlertDialogCancel,
+    71→  AlertDialogContent,
+    72→  AlertDialogDescription,
+    73→  AlertDialogFooter,
+    74→  AlertDialogHeader,
+    75→  AlertDialogTitle,
+    76→  AlertDialogTrigger,
+    77→} from '@/components/ui/alert-dialog'
+    78→import {
+    79→  Select,
+    80→  SelectContent,
+    81→  SelectItem,
+    82→  SelectTrigger,
+    83→  SelectValue,
+    84→} from '@/components/ui/select'
+    85→import {
+    86→  Table,
+    87→  TableBody,
+    88→  TableCell,
+    89→  TableHead,
+    90→  TableHeader,
+    91→  TableRow,
+    92→} from '@/components/ui/table'
+    93→import { ScrollArea } from '@/components/ui/scroll-area'
+    94→import { cn } from '@/lib/utils'
+    95→
+    96→// ===================== Types =====================
+    97→type Section =
+    98→  | 'dashboard'
+    99→  | 'students'
+   100→  | 'verification'
+   101→  | 'election'
+   102→  | 'audit'
+   103→  | 'settings'
+   104→
+   105→interface AdminStats {
+   106→  totalStudents: number
+   107→  verifiedStudents: number
+   108→  eligibleVoters: number
+   109→  votesCast: number
+   110→  turnout: number
+   111→  systemHealth: string
+   112→  electionStatus: string
+   113→  electionTitle?: string | null
+   114→}
+   115→
+   116→interface StudentRow {
+   117→  id: string
+   118→  matricNumber: string
+   119→  fullName: string
+   120→  level: string
+   121→  programme: string
+   122→  email: string | null
+   123→  phone: string | null
+   124→  isVerified: boolean
+   125→  verificationStatus: string
+   126→  hasVoted?: boolean
+   127→  idDocumentUrl?: string | null
+   128→  createdAt: string
+   129→  updatedAt?: string
+   130→}
+   131→
+   132→interface VerificationRequest extends StudentRow {
+   133→  verificationLogs?: Array<{
+   134→    id: string
+   135→    action: string
+   136→    notes: string | null
+   137→    timestamp: string
+   138→    admin: { id: string; name: string; username: string }
+   139→  }>
+   140→}
+   141→
+   142→interface AuditLog {
+   143→  id: string
+   144→  action: string
+   145→  target: string | null
+   146→  details: string | null
+   147→  timestamp: string
+   148→  admin: { id: string; name: string; username: string } | null
+   149→}
+   150→
+   151→interface ElectionPosition {
+   152→  id: string
+   153→  title: string
+   154→  order: number
+   155→  voteCount?: number
+   156→  _count?: { votes: number }
+   157→  candidates: Array<{
+   158→    id: string
+   159→    name: string
+   160→    voteCount: number
+   161→  }>
+   162→}
+   163→
+   164→interface Election {
+   165→  id: string
+   166→  title: string
+   167→  status: string
+   168→  startDate: string
+   169→  endDate: string | null
+   170→  positions?: ElectionPosition[]
+   171→}
+   172→
+   173→// ===================== Helpers =====================
+   174→function formatRelativeTime(dateStr: string) {
+   175→  const date = new Date(dateStr)
+   176→  const diff = Date.now() - date.getTime()
+   177→  const seconds = Math.floor(diff / 1000)
+   178→  const minutes = Math.floor(seconds / 60)
+   179→  const hours = Math.floor(minutes / 60)
+   180→  const days = Math.floor(hours / 24)
+   181→  if (days > 0) return `${days}d ago`
+   182→  if (hours > 0) return `${hours}h ago`
+   183→  if (minutes > 0) return `${minutes}m ago`
+   184→  return 'just now'
+   185→}
+   186→
+   187→function formatDateTime(dateStr: string) {
+   188→  return new Date(dateStr).toLocaleString(undefined, {
+   189→    month: 'short',
+   190→    day: 'numeric',
+   191→    year: 'numeric',
+   192→    hour: '2-digit',
+   193→    minute: '2-digit',
+   194→  })
+   195→}
+   196→
+   197→function getInitials(name: string) {
+   198→  return name
+   199→    .split(' ')
+   200→    .map((n) => n[0])
+   201→    .filter(Boolean)
+   202→    .slice(0, 2)
+   203→    .join('')
+   204→    .toUpperCase()
+   205→}
+   206→
+   207→function statusBadge(status: string) {
+   208→  switch (status) {
+   209→    case 'approved':
+   210→      return (
+   211→        <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+   212→          Approved
+   213→        </Badge>
+   214→      )
+   215→    case 'pending':
+   216→      return (
+   217→        <Badge variant="secondary" className="text-muted-foreground">
+   218→          Pending
+   219→        </Badge>
+   220→      )
+   221→    case 'submitted':
+   222→      return (
+   223→        <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent">
+   224→          Submitted
+   225→        </Badge>
+   226→      )
+   227→    case 'rejected':
+   228→      return (
+   229→        <Badge className="border-transparent bg-red-500/15 text-red-600 dark:text-red-400">
+   230→          Rejected
+   231→        </Badge>
+   232→      )
+   233→    default:
+   234→      return (
+   235→        <Badge variant="outline" className="capitalize">
+   236→          {status}
+   237→        </Badge>
+   238→      )
+   239→  }
+   240→}
+   241→
+   242→function electionStatusBadge(status: string) {
+   243→  switch (status) {
+   244→    case 'active':
+   245→      return (
+   246→        <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 gap-1">
+   247→          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+   248→          Active
+   249→        </Badge>
+   250→      )
+   251→    case 'upcoming':
+   252→      return (
+   253→        <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent">Upcoming</Badge>
+   254→      )
+   255→    case 'ended':
+   256→      return (
+   257→        <Badge variant="secondary" className="text-muted-foreground">
+   258→          Ended
+   259→        </Badge>
+   260→      )
+   261→    default:
+   262→      return (
+   263→        <Badge variant="outline" className="capitalize">
+   264→          {status}
+   265→        </Badge>
+   266→      )
+   267→  }
+   268→}
+   269→
+   270→function auditActionBadge(action: string) {
+   271→  const map: Record<string, string> = {
+   272→    approve_student:
+   273→      'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-transparent',
+   274→    reject_student:
+   275→      'bg-red-500/15 text-red-600 dark:text-red-400 border-transparent',
+   276→    start_election:
+   277→      'bg-primary/15 text-primary border-transparent',
+   278→    end_election:
+   279→      'bg-cyan-accent/20 text-cyan-accent border-transparent',
+   280→    create_announcement:
+   281→      'bg-violet-500/15 text-violet-600 dark:text-violet-400 border-transparent',
+   282→  }
+   283→  return (
+   284→    <Badge className={cn('capitalize', map[action] || '')}>
+   285→      {action.replace(/_/g, ' ')}
+   286→    </Badge>
+   287→  )
+   288→}
+   289→
+   290→// ===================== Admin Login =====================
+   291→function AdminLogin({ onLogin }: { onLogin: () => void }) {
+   292→  const { setAdmin } = useAuth()
+   293→  const [username, setUsername] = useState('')
+   294→  const [password, setPassword] = useState('')
+   295→  const [loading, setLoading] = useState(false)
+   296→
+   297→  async function handleSubmit(e: React.FormEvent) {
+   298→    e.preventDefault()
+   299→    setLoading(true)
+   300→    try {
+   301→      const res = await api.post<{ admin: AdminUser; token: string }>(
+   302→        '/auth/admin-login',
+   303→        { username, password }
+   304→      )
+   305→      setAdmin(res.admin, res.token)
+   306→      toast.success(`Welcome back, ${res.admin.name}`)
+   307→      onLogin()
+   308→    } catch (err) {
+   309→      toast.error(err instanceof Error ? err.message : 'Login failed')
+   310→    } finally {
+   311→      setLoading(false)
+   312→    }
+   313→  }
+   314→
+   315→  return (
+   316→    <div className="relative min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
+   317→      <div className="absolute inset-0 -z-10 bg-grid opacity-40" />
+   318→      <motion.div
+   319→        initial={{ opacity: 0, y: 16 }}
+   320→        animate={{ opacity: 1, y: 0 }}
+   321→        transition={{ duration: 0.4 }}
+   322→        className="w-full max-w-md"
+   323→      >
+   324→        <Card className="overflow-hidden border-border/60 shadow-xl">
+   325→          <CardHeader className="space-y-3 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
+   326→            <div className="flex items-center gap-3">
+   327→              <div className="grid size-12 place-items-center rounded-2xl bg-white/15 backdrop-blur overflow-hidden ring-1 ring-white/20">
+   328→                <Image
+   329→                  src="/ulsesa-logo.jpg"
+   330→                  alt="ULSESA logo"
+   331→                  width={36}
+   332→                  height={36}
+   333→                  className="rounded-lg"
+   334→                />
+   335→              </div>
+   336→              <div>
+   337→                <CardTitle className="font-display text-2xl">
+   338→                  ULSESA Admin
+   339→                </CardTitle>
+   340→                <CardDescription className="text-primary-foreground/80">
+   341→                  Shaping Tomorrow&apos;s Scientific Innovators
+   342→                </CardDescription>
+   343→              </div>
+   344→            </div>
+   345→          </CardHeader>
+   346→          <CardContent className="pt-6">
+   347→            <form onSubmit={handleSubmit} className="space-y-4">
+   348→              <div className="space-y-2">
+   349→                <Label htmlFor="admin-username">Username</Label>
+   350→                <Input
+   351→                  id="admin-username"
+   352→                  value={username}
+   353→                  onChange={(e) => setUsername(e.target.value)}
+   354→                  placeholder="admin"
+   355→                  autoComplete="username"
+   356→                  required
+   357→                />
+   358→              </div>
+   359→              <div className="space-y-2">
+   360→                <Label htmlFor="admin-password">Password</Label>
+   361→                <Input
+   362→                  id="admin-password"
+   363→                  type="password"
+   364→                  value={password}
+   365→                  onChange={(e) => setPassword(e.target.value)}
+   366→                  placeholder="••••••••••"
+   367→                  autoComplete="current-password"
+   368→                  required
+   369→                />
+   370→              </div>
+   371→              <Button
+   372→                type="submit"
+   373→                className="w-full"
+   374→                size="lg"
+   375→                disabled={loading}
+   376→              >
+   377→                {loading ? (
+   378→                  <>
+   379→                    <Loader2 className="size-4 animate-spin" /> Signing in…
+   380→                  </>
+   381→                ) : (
+   382→                  'Sign In'
+   383→                )}
+   384→              </Button>
+   385→            </form>
+   386→            <div className="mt-5 rounded-xl border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+   387→              <p className="font-medium text-foreground">Demo credentials</p>
+   388→              <p className="mt-1 font-mono">admin / ulsesa-admin-2026</p>
+   389→            </div>
+   390→          </CardContent>
+   391→        </Card>
+   392→      </motion.div>
+   393→    </div>
+   394→  )
+   395→}
+   396→
+   397→// ===================== Sidebar =====================
+   398→const NAV_ITEMS: { id: Section; label: string; icon: typeof Users }[] = [
+   399→  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+   400→  { id: 'students', label: 'Students', icon: Users },
+   401→  { id: 'verification', label: 'Verification', icon: ShieldCheck },
+   402→  { id: 'election', label: 'Election', icon: Vote },
+   403→  { id: 'audit', label: 'Audit Logs', icon: ScrollText },
+   404→  { id: 'settings', label: 'Settings', icon: Settings },
+   405→]
+   406→
+   407→function SidebarContent({
+   408→  admin,
+   409→  active,
+   410→  onSelect,
+   411→  onLogout,
+   412→}: {
+   413→  admin: AdminUser
+   414→  active: Section
+   415→  onSelect: (s: Section) => void
+   416→  onLogout: () => void
+   417→}) {
+   418→  return (
+   419→    <div className="flex h-full flex-col gap-2 p-4">
+   420→      <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/80 p-4 text-primary-foreground">
+   421→        <div className="flex items-center gap-3">
+   422→          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/15 overflow-hidden ring-1 ring-white/20">
+   423→            <Image
+   424→              src="/ulsesa-logo.jpg"
+   425→              alt="ULSESA"
+   426→              width={32}
+   427→              height={32}
+   428→              className="rounded-lg"
+   429→            />
+   430→          </div>
+   431→          <div className="min-w-0 flex-1">
+   432→            <p className="truncate font-display text-sm font-semibold tracking-wide">
+   433→              ULSESA Admin
+   434→            </p>
+   435→            <p className="truncate text-[10px] text-primary-foreground/70">
+   436→              Shaping Tomorrow&apos;s Scientific Innovators
+   437→            </p>
+   438→          </div>
+   439→          <Badge className="border-transparent bg-white/20 text-primary-foreground text-[10px]">
+   440→            {admin.role}
+   441→          </Badge>
+   442→        </div>
+   443→        <Separator className="my-3 bg-white/15" />
+   444→        <div className="flex items-center gap-3">
+   445→          <Avatar className="size-8 border-2 border-white/30">
+   446→            <AvatarFallback className="bg-white/20 text-primary-foreground text-xs">
+   447→              {getInitials(admin.name)}
+   448→            </AvatarFallback>
+   449→          </Avatar>
+   450→          <p className="truncate text-sm font-medium">{admin.name}</p>
+   451→        </div>
+   452→      </div>
+   453→
+   454→      <nav className="mt-2 flex flex-1 flex-col gap-1">
+   455→        {NAV_ITEMS.map((item) => {
+   456→          const Icon = item.icon
+   457→          const isActive = active === item.id
+   458→          return (
+   459→            <button
+   460→              key={item.id}
+   461→              onClick={() => onSelect(item.id)}
+   462→              className={cn(
+   463→                'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all',
+   464→                isActive
+   465→                  ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/30'
+   466→                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+   467→              )}
+   468→            >
+   469→              <Icon
+   470→                className={cn(
+   471→                  'size-4 transition-transform',
+   472→                  isActive
+   473→                    ? 'text-primary-foreground'
+   474→                    : 'group-hover:scale-110'
+   475→                )}
+   476→              />
+   477→              {item.label}
+   478→            </button>
+   479→          )
+   480→        })}
+   481→      </nav>
+   482→
+   483→      <Separator />
+   484→      <button
+   485→        onClick={onLogout}
+   486→        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+   487→      >
+   488→        <LogOut className="size-4" /> Logout
+   489→      </button>
+   490→    </div>
+   491→  )
+   492→}
+   493→
+   494→// ===================== Dashboard Section =====================
+   495→function StatCard({
+   496→  icon: Icon,
+   497→  label,
+   498→  value,
+   499→  subtitle,
+   500→  accent,
+   501→  loading,
+   502→}: {
+   503→  icon: typeof Users
+   504→  label: string
+   505→  value: string | number
+   506→  subtitle: string
+   507→  accent: 'primary' | 'emerald' | 'cyan-accent'
+   508→  loading?: boolean
+   509→}) {
+   510→  const accents = {
+   511→    primary: 'from-primary/15 to-primary/5 text-primary',
+   512→    emerald: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400',
+   513→    'cyan-accent': 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent',
+   514→  }
+   515→  return (
+   516→    <Card className="overflow-hidden">
+   517→      <CardContent className="p-5">
+   518→        <div className="flex items-start justify-between gap-3">
+   519→          <div className="min-w-0">
+   520→            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   521→              {label}
+   522→            </p>
+   523→            {loading ? (
+   524→              <Skeleton className="mt-2 h-8 w-20" />
+   525→            ) : (
+   526→              <p className="mt-1 font-display text-3xl font-bold">{value}</p>
+   527→            )}
+   528→            <p className="mt-1 truncate text-xs text-muted-foreground">
+   529→              {subtitle}
+   530→            </p>
+   531→          </div>
+   532→          <div
+   533→            className={cn(
+   534→              'grid size-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br',
+   535→              accents[accent]
+   536→            )}
+   537→          >
+   538→            <Icon className="size-5" />
+   539→          </div>
+   540→        </div>
+   541→      </CardContent>
+   542→    </Card>
+   543→  )
+   544→}
+   545→
+   546→function DashboardSection() {
+   547→  const [stats, setStats] = useState<AdminStats | null>(null)
+   548→  const [loading, setLoading] = useState(true)
+   549→  const [requests, setRequests] = useState<VerificationRequest[]>([])
+   550→  const [requestsLoading, setRequestsLoading] = useState(true)
+   551→  const [election, setElection] = useState<Election | null>(null)
+   552→  const [acting, setActing] = useState(false)
+   553→  const [pendingId, setPendingId] = useState<string | null>(null)
+   554→
+   555→  const fetchAll = useCallback(async () => {
+   556→    setLoading(true)
+   557→    setRequestsLoading(true)
+   558→    try {
+   559→      const [s, r, e] = await Promise.all([
+   560→        api.get<{ stats: AdminStats }>('/admin/stats'),
+   561→        api.get<{ requests: VerificationRequest[] }>(
+   562→          '/admin/verification-requests'
+   563→        ),
+   564→        api.get<{ election: Election | null }>('/admin/election'),
+   565→      ])
+   566→      setStats(s.stats)
+   567→      setRequests(r.requests.slice(0, 5))
+   568→      setElection(e.election)
+   569→    } catch (err) {
+   570→      toast.error(err instanceof Error ? err.message : 'Failed to load stats')
+   571→    } finally {
+   572→      setLoading(false)
+   573→      setRequestsLoading(false)
+   574→    }
+   575→  }, [])
+   576→
+   577→  useEffect(() => {
+   578→    void fetchAll()
+   579→  }, [fetchAll])
+   580→
+   581→  async function toggleElection(action: 'start' | 'end') {
+   582→    setActing(true)
+   583→    try {
+   584→      const res = await api.post<{ election: Election }>('/admin/election', {
+   585→        action,
+   586→      })
+   587→      setElection(res.election)
+   588→      toast.success(
+   589→        action === 'start' ? 'Election started' : 'Election ended'
+   590→      )
+   591→      void fetchAll()
+   592→    } catch (err) {
+   593→      toast.error(err instanceof Error ? err.message : 'Action failed')
+   594→    } finally {
+   595→      setActing(false)
+   596→    }
+   597→  }
+   598→
+   599→  async function quickVerify(
+   600→    student: VerificationRequest,
+   601→    action: 'approve' | 'reject'
+   602→  ) {
+   603→    setPendingId(student.id)
+   604→    try {
+   605→      await api.post(`/admin/students/${student.id}/verify`, { action })
+   606→      toast.success(
+   607→        `${student.fullName} ${action === 'approve' ? 'approved' : 'rejected'}`
+   608→      )
+   609→      setRequests((prev) => prev.filter((r) => r.id !== student.id))
+   610→      void fetchAll()
+   611→    } catch (err) {
+   612→      toast.error(err instanceof Error ? err.message : 'Action failed')
+   613→    } finally {
+   614→      setPendingId(null)
+   615→    }
+   616→  }
+   617→
+   618→  const turnoutPct = stats
+   619→    ? Math.min(100, Math.round(stats.turnout))
+   620→    : 0
+   621→  const verifiedRatio = stats && stats.totalStudents > 0
+   622→    ? Math.round((stats.verifiedStudents / stats.totalStudents) * 100)
+   623→    : 0
+   624→
+   625→  return (
+   626→    <div className="space-y-6">
+   627→      <div>
+   628→        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+   629→          ULSESA Admin Dashboard
+   630→        </h1>
+   631→        <p className="text-sm text-muted-foreground">
+   632→          Real-time overview of the ULSESA platform
+   633→        </p>
+   634→      </div>
+   635→
+   636→      {/* Stat cards */}
+   637→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+   638→        <StatCard
+   639→          icon={Users}
+   640→          label="Total Students"
+   641→          value={stats?.totalStudents ?? 0}
+   642→          subtitle="Registered accounts"
+   643→          accent="primary"
+   644→          loading={loading}
+   645→        />
+   646→        <StatCard
+   647→          icon={BadgeCheck}
+   648→          label="Verified"
+   649→          value={stats?.verifiedStudents ?? 0}
+   650→          subtitle="Eligible voters"
+   651→          accent="emerald"
+   652→          loading={loading}
+   653→        />
+   654→        <StatCard
+   655→          icon={Vote}
+   656→          label="Votes Cast"
+   657→          value={stats?.votesCast ?? 0}
+   658→          subtitle={`Turnout: ${stats?.turnout.toFixed(1) ?? 0}%`}
+   659→          accent="cyan-accent"
+   660→          loading={loading}
+   661→        />
+   662→        <StatCard
+   663→          icon={Activity}
+   664→          label="System Health"
+   665→          value={stats?.systemHealth ?? '99.9%'}
+   666→          subtitle="All services operational"
+   667→          accent="emerald"
+   668→          loading={loading}
+   669→        />
+   670→      </div>
+   671→
+   672→      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+   673→        {/* Election status */}
+   674→        <Card className="lg:col-span-1">
+   675→          <CardHeader>
+   676→            <CardTitle className="font-display text-lg">
+   677→              Election Status
+   678→            </CardTitle>
+   679→            <CardDescription>
+   680→              {stats?.electionTitle || 'No election configured'}
+   681→            </CardDescription>
+   682→          </CardHeader>
+   683→          <CardContent className="space-y-4">
+   684→            <div className="flex items-center justify-between">
+   685→              <span className="text-sm text-muted-foreground">
+   686→                Current state
+   687→              </span>
+   688→              {election
+   689→                ? electionStatusBadge(election.status)
+   690→                : (
+   691→                  <Badge variant="secondary" className="text-muted-foreground">
+   692→                    None
+   693→                  </Badge>
+   694→                )}
+   695→            </div>
+   696→            <Separator />
+   697→            <div className="space-y-1.5">
+   698→              <div className="flex items-center justify-between text-sm">
+   699→                <span className="text-muted-foreground">Verified ratio</span>
+   700→                <span className="font-medium">{verifiedRatio}%</span>
+   701→              </div>
+   702→              <Progress value={verifiedRatio} className="h-2" />
+   703→            </div>
+   704→            <div className="space-y-1.5">
+   705→              <div className="flex items-center justify-between text-sm">
+   706→                <span className="text-muted-foreground">Voter turnout</span>
+   707→                <span className="font-medium">{turnoutPct}%</span>
+   708→              </div>
+   709→              <Progress value={turnoutPct} className="h-2" />
+   710→            </div>
+   711→            <div className="flex flex-col gap-2 pt-2">
+   712→              {election?.status === 'upcoming' && (
+   713→                <AlertDialog>
+   714→                  <AlertDialogTrigger asChild>
+   715→                    <Button disabled={acting} className="w-full">
+   716→                      <PlayCircle className="size-4" /> Start Election
+   717→                    </Button>
+   718→                  </AlertDialogTrigger>
+   719→                  <AlertDialogContent>
+   720→                    <AlertDialogHeader>
+   721→                      <AlertDialogTitle>Start election?</AlertDialogTitle>
+   722→                      <AlertDialogDescription>
+   723→                        This will open voting for all verified students. The
+   724→                        action will be recorded in the audit log.
+   725→                      </AlertDialogDescription>
+   726→                    </AlertDialogHeader>
+   727→                    <AlertDialogFooter>
+   728→                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+   729→                      <AlertDialogAction
+   730→                        onClick={() => void toggleElection('start')}
+   731→                      >
+   732→                        Confirm Start
+   733→                      </AlertDialogAction>
+   734→                    </AlertDialogFooter>
+   735→                  </AlertDialogContent>
+   736→                </AlertDialog>
+   737→              )}
+   738→              {election?.status === 'active' && (
+   739→                <AlertDialog>
+   740→                  <AlertDialogTrigger asChild>
+   741→                    <Button
+   742→                      variant="destructive"
+   743→                      disabled={acting}
+   744→                      className="w-full"
+   745→                    >
+   746→                      <StopCircle className="size-4" /> End Election
+   747→                    </Button>
+   748→                  </AlertDialogTrigger>
+   749→                  <AlertDialogContent>
+   750→                    <AlertDialogHeader>
+   751→                      <AlertDialogTitle>End election?</AlertDialogTitle>
+   752→                      <AlertDialogDescription>
+   753→                        This will immediately close voting. Results will be
+   754→                        final. This action cannot be undone.
+   755→                      </AlertDialogDescription>
+   756→                    </AlertDialogHeader>
+   757→                    <AlertDialogFooter>
+   758→                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+   759→                      <AlertDialogAction
+   760→                        className="bg-destructive text-white hover:bg-destructive/90"
+   761→                        onClick={() => void toggleElection('end')}
+   762→                      >
+   763→                        Confirm End
+   764→                      </AlertDialogAction>
+   765→                    </AlertDialogFooter>
+   766→                  </AlertDialogContent>
+   767→                </AlertDialog>
+   768→              )}
+   769→              {(!election || election.status === 'ended') && (
+   770→                <div className="rounded-xl bg-muted/40 p-3 text-center text-xs text-muted-foreground">
+   771→                  {election
+   772→                    ? 'This election has ended.'
+   773→                    : 'No election configured.'}
+   774→                </div>
+   775→              )}
+   776→            </div>
+   777→          </CardContent>
+   778→        </Card>
+   779→
+   780→        {/* Recent verification requests */}
+   781→        <Card className="lg:col-span-2">
+   782→          <CardHeader className="flex-row items-center justify-between space-y-0">
+   783→            <div>
+   784→              <CardTitle className="font-display text-lg">
+   785→                Pending Verification
+   786→              </CardTitle>
+   787→              <CardDescription>
+   788→                Most recent submissions awaiting review
+   789→              </CardDescription>
+   790→            </div>
+   791→            <Badge variant="secondary" className="text-muted-foreground">
+   792→              {requests.length} pending
+   793→            </Badge>
+   794→          </CardHeader>
+   795→          <CardContent>
+   796→            {requestsLoading ? (
+   797→              <div className="space-y-3">
+   798→                {Array.from({ length: 3 }).map((_, i) => (
+   799→                  <div
+   800→                    key={i}
+   801→                    className="flex items-center gap-3 rounded-xl border border-border/60 p-3"
+   802→                  >
+   803→                    <Skeleton className="size-10 rounded-full" />
+   804→                    <div className="flex-1 space-y-2">
+   805→                      <Skeleton className="h-4 w-32" />
+   806→                      <Skeleton className="h-3 w-24" />
+   807→                    </div>
+   808→                    <Skeleton className="h-8 w-20" />
+   809→                  </div>
+   810→                ))}
+   811→              </div>
+   812→            ) : requests.length === 0 ? (
+   813→              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+   814→                <div className="grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+   815→                  <CheckCircle2 className="size-6" />
+   816→                </div>
+   817→                <p className="font-medium">All caught up!</p>
+   818→                <p className="text-sm text-muted-foreground">
+   819→                  No pending verification requests.
+   820→                </p>
+   821→              </div>
+   822→            ) : (
+   823→              <div className="space-y-2">
+   824→                {requests.map((r) => (
+   825→                  <div
+   826→                    key={r.id}
+   827→                    className="flex flex-col gap-3 rounded-xl border border-border/60 p-3 sm:flex-row sm:items-center"
+   828→                  >
+   829→                    <Avatar className="size-10 shrink-0">
+   830→                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+   831→                        {getInitials(r.fullName)}
+   832→                      </AvatarFallback>
+   833→                    </Avatar>
+   834→                    <div className="min-w-0 flex-1">
+   835→                      <p className="truncate text-sm font-medium">
+   836→                        {r.fullName}
+   837→                      </p>
+   838→                      <p className="truncate text-xs text-muted-foreground">
+   839→                        {r.matricNumber} · {r.level} · {r.programme}
+   840→                      </p>
+   841→                    </div>
+   842→                    <div className="flex shrink-0 gap-2">
+   843→                      <Button
+   844→                        size="sm"
+   845→                        variant="outline"
+   846→                        className="border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600"
+   847→                        disabled={pendingId === r.id}
+   848→                        onClick={() => void quickVerify(r, 'approve')}
+   849→                      >
+   850→                        <CheckCircle2 className="size-4" /> Approve
+   851→                      </Button>
+   852→                      <Button
+   853→                        size="sm"
+   854→                        variant="outline"
+   855→                        className="border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+   856→                        disabled={pendingId === r.id}
+   857→                        onClick={() => void quickVerify(r, 'reject')}
+   858→                      >
+   859→                        <XCircle className="size-4" /> Reject
+   860→                      </Button>
+   861→                    </div>
+   862→                  </div>
+   863→                ))}
+   864→              </div>
+   865→            )}
+   866→          </CardContent>
+   867→        </Card>
+   868→      </div>
+   869→    </div>
+   870→  )
+   871→}
+   872→
+   873→// ===================== Students Section =====================
+   874→function StudentsSection() {
+   875→  const [students, setStudents] = useState<StudentRow[]>([])
+   876→  const [loading, setLoading] = useState(true)
+   877→  const [search, setSearch] = useState('')
+   878→  const [statusFilter, setStatusFilter] = useState<string>('all')
+   879→  const [selected, setSelected] = useState<StudentRow | null>(null)
+   880→  const [acting, setActing] = useState(false)
+   881→  const [notes, setNotes] = useState('')
+   882→
+   883→  const fetchStudents = useCallback(async () => {
+   884→    setLoading(true)
+   885→    try {
+   886→      const params = new URLSearchParams()
+   887→      if (statusFilter !== 'all') params.set('status', statusFilter)
+   888→      if (search.trim()) params.set('search', search.trim())
+   889→      const q = params.toString()
+   890→      const res = await api.get<{ students: StudentRow[] }>(
+   891→        `/admin/students${q ? `?${q}` : ''}`
+   892→      )
+   893→      setStudents(res.students)
+   894→    } catch (err) {
+   895→      toast.error(
+   896→        err instanceof Error ? err.message : 'Failed to load students'
+   897→      )
+   898→    } finally {
+   899→      setLoading(false)
+   900→    }
+   901→  }, [statusFilter, search])
+   902→
+   903→  useEffect(() => {
+   904→    void fetchStudents()
+   905→  }, [fetchStudents])
+   906→
+   907→  async function verify(student: StudentRow, action: 'approve' | 'reject') {
+   908→    setActing(true)
+   909→    try {
+   910→      await api.post(`/admin/students/${student.id}/verify`, {
+   911→        action,
+   912→        notes: notes.trim() || undefined,
+   913→      })
+   914→      toast.success(
+   915→        `${student.fullName} ${action === 'approve' ? 'approved' : 'rejected'}`
+   916→      )
+   917→      setSelected(null)
+   918→      setNotes('')
+   919→      void fetchStudents()
+   920→    } catch (err) {
+   921→      toast.error(err instanceof Error ? err.message : 'Action failed')
+   922→    } finally {
+   923→      setActing(false)
+   924→    }
+   925→  }
+   926→
+   927→  return (
+   928→    <div className="space-y-6">
+   929→      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+   930→        <div>
+   931→          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+   932→            Students
+   933→          </h1>
+   934→          <p className="text-sm text-muted-foreground">
+   935→            Manage and verify student accounts
+   936→          </p>
+   937→        </div>
+   938→        <Button variant="outline" size="sm" onClick={() => void fetchStudents()}>
+   939→          <RefreshCw className="size-4" /> Refresh
+   940→        </Button>
+   941→      </div>
+   942→
+   943→      <Card>
+   944→        <CardHeader className="gap-3">
+   945→          <div className="flex flex-col gap-3 sm:flex-row">
+   946→            <div className="relative flex-1">
+   947→              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   948→              <Input
+   949→                placeholder="Search by name, matric, email, programme…"
+   950→                value={search}
+   951→                onChange={(e) => setSearch(e.target.value)}
+   952→                className="pl-9"
+   953→                onKeyDown={(e) => {
+   954→                  if (e.key === 'Enter') void fetchStudents()
+   955→                }}
+   956→              />
+   957→            </div>
+   958→            <Select value={statusFilter} onValueChange={setStatusFilter}>
+   959→              <SelectTrigger className="w-full sm:w-48">
+   960→                <Filter className="size-4 text-muted-foreground" />
+   961→                <SelectValue />
+   962→              </SelectTrigger>
+   963→              <SelectContent>
+   964→                <SelectItem value="all">All statuses</SelectItem>
+   965→                <SelectItem value="pending">Pending</SelectItem>
+   966→                <SelectItem value="submitted">Submitted</SelectItem>
+   967→                <SelectItem value="approved">Approved</SelectItem>
+   968→                <SelectItem value="rejected">Rejected</SelectItem>
+   969→              </SelectContent>
+   970→            </Select>
+   971→          </div>
+   972→        </CardHeader>
+   973→        <CardContent className="p-0">
+   974→          {loading ? (
+   975→            <div className="space-y-2 p-4">
+   976→              {Array.from({ length: 6 }).map((_, i) => (
+   977→                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+   978→              ))}
+   979→            </div>
+   980→          ) : students.length === 0 ? (
+   981→            <div className="flex flex-col items-center gap-2 py-12 text-center">
+   982→              <div className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+   983→                <Users className="size-6" />
+   984→              </div>
+   985→              <p className="font-medium">No students found</p>
+   986→              <p className="text-sm text-muted-foreground">
+   987→                Try adjusting your filters or search query.
+   988→              </p>
+   989→            </div>
+   990→          ) : (
+   991→            <div className="overflow-x-auto">
+   992→              <Table>
+   993→                <TableHeader>
+   994→                  <TableRow>
+   995→                    <TableHead>Name</TableHead>
+   996→                    <TableHead>Matric</TableHead>
+   997→                    <TableHead>Level</TableHead>
+   998→                    <TableHead className="hidden md:table-cell">
+   999→                      Programme
+  1000→                    </TableHead>
+  1001→                    <TableHead>Status</TableHead>
+  1002→                    <TableHead className="text-right">Actions</TableHead>
+  1003→                  </TableRow>
+  1004→                </TableHeader>
+  1005→                <TableBody>
+  1006→                  {students.map((s) => (
+  1007→                    <TableRow key={s.id} className="cursor-pointer">
+  1008→                      <TableCell
+  1009→                        className="font-medium"
+  1010→                        onClick={() => setSelected(s)}
+  1011→                      >
+  1012→                        <div className="flex items-center gap-2">
+  1013→                          <Avatar className="size-8">
+  1014→                            <AvatarFallback className="bg-primary/10 text-primary text-[10px]">
+  1015→                              {getInitials(s.fullName)}
+  1016→                            </AvatarFallback>
+  1017→                          </Avatar>
+  1018→                          <span>{s.fullName}</span>
+  1019→                        </div>
+  1020→                      </TableCell>
+  1021→                      <TableCell
+  1022→                        className="font-mono text-xs"
+  1023→                        onClick={() => setSelected(s)}
+  1024→                      >
+  1025→                        {s.matricNumber}
+  1026→                      </TableCell>
+  1027→                      <TableCell onClick={() => setSelected(s)}>
+  1028→                        {s.level}
+  1029→                      </TableCell>
+  1030→                      <TableCell
+  1031→                        className="hidden max-w-48 truncate text-muted-foreground md:table-cell"
+  1032→                        onClick={() => setSelected(s)}
+  1033→                      >
+  1034→                        {s.programme}
+  1035→                      </TableCell>
+  1036→                      <TableCell onClick={() => setSelected(s)}>
+  1037→                        {statusBadge(s.verificationStatus)}
+  1038→                      </TableCell>
+  1039→                      <TableCell className="text-right">
+  1040→                        <Button
+  1041→                          size="sm"
+  1042→                          variant="ghost"
+  1043→                          onClick={() => setSelected(s)}
+  1044→                        >
+  1045→                          <Eye className="size-4" /> View
+  1046→                        </Button>
+  1047→                      </TableCell>
+  1048→                    </TableRow>
+  1049→                  ))}
+  1050→                </TableBody>
+  1051→              </Table>
+  1052→            </div>
+  1053→          )}
+  1054→        </CardContent>
+  1055→      </Card>
+  1056→
+  1057→      {/* Student detail dialog */}
+  1058→      <Dialog
+  1059→        open={!!selected}
+  1060→        onOpenChange={(o) => {
+  1061→          if (!o) {
+  1062→            setSelected(null)
+  1063→            setNotes('')
+  1064→          }
+  1065→        }}
+  1066→      >
+  1067→        <DialogContent className="sm:max-w-lg">
+  1068→          {selected && (
+  1069→            <>
+  1070→              <DialogHeader>
+  1071→                <DialogTitle className="font-display">
+  1072→                  Student Details
+  1073→                </DialogTitle>
+  1074→                <DialogDescription>
+  1075→                  Review and verify this student account
+  1076→                </DialogDescription>
+  1077→              </DialogHeader>
+  1078→              <div className="space-y-4">
+  1079→                <div className="flex items-center gap-3">
+  1080→                  <Avatar className="size-14">
+  1081→                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+  1082→                      {getInitials(selected.fullName)}
+  1083→                    </AvatarFallback>
+  1084→                  </Avatar>
+  1085→                  <div>
+  1086→                    <p className="font-display text-lg font-semibold">
+  1087→                      {selected.fullName}
+  1088→                    </p>
+  1089→                    <p className="font-mono text-xs text-muted-foreground">
+  1090→                      {selected.matricNumber}
+  1091→                    </p>
+  1092→                  </div>
+  1093→                  <div className="ml-auto">
+  1094→                    {statusBadge(selected.verificationStatus)}
+  1095→                  </div>
+  1096→                </div>
+  1097→                <div className="grid grid-cols-2 gap-3 text-sm">
+  1098→                  <div className="rounded-lg bg-muted/40 p-3">
+  1099→                    <p className="text-xs text-muted-foreground">Level</p>
+  1100→                    <p className="font-medium">{selected.level}</p>
+  1101→                  </div>
+  1102→                  <div className="rounded-lg bg-muted/40 p-3">
+  1103→                    <p className="text-xs text-muted-foreground">Programme</p>
+  1104→                    <p className="font-medium">{selected.programme}</p>
+  1105→                  </div>
+  1106→                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+  1107→                    <p className="text-xs text-muted-foreground">Email</p>
+  1108→                    <p className="font-medium truncate">
+  1109→                      {selected.email || '—'}
+  1110→                    </p>
+  1111→                  </div>
+  1112→                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+  1113→                    <p className="text-xs text-muted-foreground">Phone</p>
+  1114→                    <p className="font-medium">{selected.phone || '—'}</p>
+  1115→                  </div>
+  1116→                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+  1117→                    <p className="text-xs text-muted-foreground">Joined</p>
+  1118→                    <p className="font-medium">
+  1119→                      {formatDateTime(selected.createdAt)}
+  1120→                    </p>
+  1121→                  </div>
+  1122→                  {selected.idDocumentUrl && (
+  1123→                    <a
+  1124→                      href={selected.idDocumentUrl}
+  1125→                      target="_blank"
+  1126→                      rel="noopener noreferrer"
+  1127→                      className="col-span-2 flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
+  1128→                    >
+  1129→                      <span className="flex items-center gap-2">
+  1130→                        <FileText className="size-4 text-primary" />
+  1131→                        View ID document
+  1132→                      </span>
+  1133→                      <ExternalLink className="size-4 text-muted-foreground" />
+  1134→                    </a>
+  1135→                  )}
+  1136→                </div>
+  1137→
+  1138→                {(selected.verificationStatus === 'submitted' ||
+  1139→                  selected.verificationStatus === 'pending') && (
+  1140→                  <div className="space-y-2">
+  1141→                    <Label htmlFor="verify-notes">
+  1142→                      Notes <span className="text-muted-foreground">(optional)</span>
+  1143→                    </Label>
+  1144→                    <Textarea
+  1145→                      id="verify-notes"
+  1146→                      value={notes}
+  1147→                      onChange={(e) => setNotes(e.target.value)}
+  1148→                      placeholder="Add internal notes for this decision…"
+  1149→                      rows={2}
+  1150→                    />
+  1151→                  </div>
+  1152→                )}
+  1153→              </div>
+  1154→              <DialogFooter className="gap-2">
+  1155→                <DialogClose asChild>
+  1156→                  <Button variant="outline">Close</Button>
+  1157→                </DialogClose>
+  1158→                {(selected.verificationStatus === 'submitted' ||
+  1159→                  selected.verificationStatus === 'pending') && (
+  1160→                  <>
+  1161→                    <AlertDialog>
+  1162→                      <AlertDialogTrigger asChild>
+  1163→                        <Button
+  1164→                          variant="outline"
+  1165→                          className="border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+  1166→                          disabled={acting}
+  1167→                        >
+  1168→                          <XCircle className="size-4" /> Reject
+  1169→                        </Button>
+  1170→                      </AlertDialogTrigger>
+  1171→                      <AlertDialogContent>
+  1172→                        <AlertDialogHeader>
+  1173→                          <AlertDialogTitle>
+  1174→                            Reject this student?
+  1175→                          </AlertDialogTitle>
+  1176→                          <AlertDialogDescription>
+  1177→                            {selected.fullName} ({selected.matricNumber}) will
+  1178→                            not be able to vote. They can resubmit later.
+  1179→                          </AlertDialogDescription>
+  1180→                        </AlertDialogHeader>
+  1181→                        <AlertDialogFooter>
+  1182→                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1183→                          <AlertDialogAction
+  1184→                            className="bg-destructive text-white hover:bg-destructive/90"
+  1185→                            onClick={() => void verify(selected, 'reject')}
+  1186→                          >
+  1187→                            Confirm Reject
+  1188→                          </AlertDialogAction>
+  1189→                        </AlertDialogFooter>
+  1190→                      </AlertDialogContent>
+  1191→                    </AlertDialog>
+  1192→                    <Button
+  1193→                      disabled={acting}
+  1194→                      onClick={() => void verify(selected, 'approve')}
+  1195→                    >
+  1196→                      <CheckCircle2 className="size-4" /> Approve
+  1197→                    </Button>
+  1198→                  </>
+  1199→                )}
+  1200→              </DialogFooter>
+  1201→            </>
+  1202→          )}
+  1203→        </DialogContent>
+  1204→      </Dialog>
+  1205→    </div>
+  1206→  )
+  1207→}
+  1208→
+  1209→// ===================== Verification Section =====================
+  1210→function VerificationSection() {
+  1211→  const [requests, setRequests] = useState<VerificationRequest[]>([])
+  1212→  const [loading, setLoading] = useState(true)
+  1213→  const [actingId, setActingId] = useState<string | null>(null)
+  1214→  const [rejectTarget, setRejectTarget] = useState<VerificationRequest | null>(
+  1215→    null
+  1216→  )
+  1217→  const [notes, setNotes] = useState('')
+  1218→
+  1219→  const fetchReqs = useCallback(async () => {
+  1220→    setLoading(true)
+  1221→    try {
+  1222→      const res = await api.get<{ requests: VerificationRequest[] }>(
+  1223→        '/admin/verification-requests'
+  1224→      )
+  1225→      setRequests(res.requests)
+  1226→    } catch (err) {
+  1227→      toast.error(
+  1228→        err instanceof Error ? err.message : 'Failed to load requests'
+  1229→      )
+  1230→    } finally {
+  1231→      setLoading(false)
+  1232→    }
+  1233→  }, [])
+  1234→
+  1235→  useEffect(() => {
+  1236→    void fetchReqs()
+  1237→  }, [fetchReqs])
+  1238→
+  1239→  async function approve(r: VerificationRequest) {
+  1240→    setActingId(r.id)
+  1241→    try {
+  1242→      await api.post(`/admin/students/${r.id}/verify`, {
+  1243→        action: 'approve',
+  1244→        notes: notes.trim() || undefined,
+  1245→      })
+  1246→      toast.success(`${r.fullName} approved`)
+  1247→      setRequests((prev) => prev.filter((x) => x.id !== r.id))
+  1248→      setNotes('')
+  1249→    } catch (err) {
+  1250→      toast.error(err instanceof Error ? err.message : 'Action failed')
+  1251→    } finally {
+  1252→      setActingId(null)
+  1253→    }
+  1254→  }
+  1255→
+  1256→  async function confirmReject() {
+  1257→    if (!rejectTarget) return
+  1258→    setActingId(rejectTarget.id)
+  1259→    try {
+  1260→      await api.post(`/admin/students/${rejectTarget.id}/verify`, {
+  1261→        action: 'reject',
+  1262→        notes: notes.trim() || undefined,
+  1263→      })
+  1264→      toast.success(`${rejectTarget.fullName} rejected`)
+  1265→      setRequests((prev) => prev.filter((x) => x.id !== rejectTarget.id))
+  1266→      setRejectTarget(null)
+  1267→      setNotes('')
+  1268→    } catch (err) {
+  1269→      toast.error(err instanceof Error ? err.message : 'Action failed')
+  1270→    } finally {
+  1271→      setActingId(null)
+  1272→    }
+  1273→  }
+  1274→
+  1275→  return (
+  1276→    <div className="space-y-6">
+  1277→      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+  1278→        <div>
+  1279→          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+  1280→            Verification Queue
+  1281→          </h1>
+  1282→          <p className="text-sm text-muted-foreground">
+  1283→            Review submitted student verification requests
+  1284→          </p>
+  1285→        </div>
+  1286→        <Button variant="outline" size="sm" onClick={() => void fetchReqs()}>
+  1287→          <RefreshCw className="size-4" /> Refresh
+  1288→        </Button>
+  1289→      </div>
+  1290→
+  1291→      {loading ? (
+  1292→        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  1293→          {Array.from({ length: 4 }).map((_, i) => (
+  1294→            <Card key={i}>
+  1295→              <CardContent className="space-y-3 p-5">
+  1296→                <div className="flex items-center gap-3">
+  1297→                  <Skeleton className="size-12 rounded-full" />
+  1298→                  <div className="flex-1 space-y-2">
+  1299→                    <Skeleton className="h-4 w-32" />
+  1300→                    <Skeleton className="h-3 w-24" />
+  1301→                  </div>
+  1302→                </div>
+  1303→                <Skeleton className="h-16 w-full" />
+  1304→                <div className="flex gap-2">
+  1305→                  <Skeleton className="h-9 w-24" />
+  1306→                  <Skeleton className="h-9 w-24" />
+  1307→                </div>
+  1308→              </CardContent>
+  1309→            </Card>
+  1310→          ))}
+  1311→        </div>
+  1312→      ) : requests.length === 0 ? (
+  1313→        <Card>
+  1314→          <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
+  1315→            <div className="grid size-14 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+  1316→              <CheckCircle2 className="size-7" />
+  1317→            </div>
+  1318→            <p className="font-display text-lg font-semibold">
+  1319→              No pending verification requests
+  1320→            </p>
+  1321→            <p className="max-w-sm text-sm text-muted-foreground">
+  1322→              When students submit their verification documents, they will
+  1323→              appear here for review.
+  1324→            </p>
+  1325→          </CardContent>
+  1326→        </Card>
+  1327→      ) : (
+  1328→        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  1329→          {requests.map((r) => (
+  1330→            <Card key={r.id} className="flex flex-col">
+  1331→              <CardHeader className="gap-3">
+  1332→                <div className="flex items-start gap-3">
+  1333→                  <Avatar className="size-12">
+  1334→                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+  1335→                      {getInitials(r.fullName)}
+  1336→                    </AvatarFallback>
+  1337→                  </Avatar>
+  1338→                  <div className="min-w-0 flex-1">
+  1339→                    <CardTitle className="font-display text-base">
+  1340→                      {r.fullName}
+  1341→                    </CardTitle>
+  1342→                    <CardDescription className="font-mono text-xs">
+  1343→                      {r.matricNumber}
+  1344→                    </CardDescription>
+  1345→                  </div>
+  1346→                  {statusBadge(r.verificationStatus)}
+  1347→                </div>
+  1348→              </CardHeader>
+  1349→              <CardContent className="flex-1 space-y-3 text-sm">
+  1350→                <div className="grid grid-cols-2 gap-2">
+  1351→                  <div>
+  1352→                    <p className="text-xs text-muted-foreground">Level</p>
+  1353→                    <p className="font-medium">{r.level}</p>
+  1354→                  </div>
+  1355→                  <div>
+  1356→                    <p className="text-xs text-muted-foreground">Programme</p>
+  1357→                    <p className="font-medium">{r.programme}</p>
+  1358→                  </div>
+  1359→                  <div className="col-span-2">
+  1360→                    <p className="text-xs text-muted-foreground">Email</p>
+  1361→                    <p className="truncate font-medium">
+  1362→                      {r.email || '—'}
+  1363→                    </p>
+  1364→                  </div>
+  1365→                  <div className="col-span-2">
+  1366→                    <p className="text-xs text-muted-foreground">Phone</p>
+  1367→                    <p className="font-medium">{r.phone || '—'}</p>
+  1368→                  </div>
+  1369→                  <div className="col-span-2">
+  1370→                    <p className="text-xs text-muted-foreground">Submitted</p>
+  1371→                    <p className="font-medium">
+  1372→                      {r.updatedAt
+  1373→                        ? formatDateTime(r.updatedAt)
+  1374→                        : formatDateTime(r.createdAt)}
+  1375→                    </p>
+  1376→                  </div>
+  1377→                </div>
+  1378→                {r.idDocumentUrl && (
+  1379→                  <a
+  1380→                    href={r.idDocumentUrl}
+  1381→                    target="_blank"
+  1382→                    rel="noopener noreferrer"
+  1383→                    className="flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
+  1384→                  >
+  1385→                    <span className="flex items-center gap-2">
+  1386→                      <FileText className="size-4 text-primary" />
+  1387→                      View ID document
+  1388→                    </span>
+  1389→                    <ExternalLink className="size-4 text-muted-foreground" />
+  1390→                  </a>
+  1391→                )}
+  1392→              </CardContent>
+  1393→              <CardFooter className="gap-2">
+  1394→                <Button
+  1395→                  variant="outline"
+  1396→                  className="flex-1 border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+  1397→                  disabled={actingId === r.id}
+  1398→                  onClick={() => {
+  1399→                    setRejectTarget(r)
+  1400→                    setNotes('')
+  1401→                  }}
+  1402→                >
+  1403→                  <XCircle className="size-4" /> Reject
+  1404→                </Button>
+  1405→                <Button
+  1406→                  className="flex-1 bg-emerald-600 text-white hover:bg-emerald-600/90"
+  1407→                  disabled={actingId === r.id}
+  1408→                  onClick={() => void approve(r)}
+  1409→                >
+  1410→                  {actingId === r.id ? (
+  1411→                    <Loader2 className="size-4 animate-spin" />
+  1412→                  ) : (
+  1413→                    <CheckCircle2 className="size-4" />
+  1414→                  )}
+  1415→                  Approve
+  1416→                </Button>
+  1417→              </CardFooter>
+  1418→            </Card>
+  1419→          ))}
+  1420→        </div>
+  1421→      )}
+  1422→
+  1423→      {/* Reject dialog with notes */}
+  1424→      <Dialog
+  1425→        open={!!rejectTarget}
+  1426→        onOpenChange={(o) => {
+  1427→          if (!o) {
+  1428→            setRejectTarget(null)
+  1429→            setNotes('')
+  1430→          }
+  1431→        }}
+  1432→      >
+  1433→        <DialogContent className="sm:max-w-md">
+  1434→          {rejectTarget && (
+  1435→            <>
+  1436→              <DialogHeader>
+  1437→                <DialogTitle className="font-display">
+  1438→                  Reject verification?
+  1439→                </DialogTitle>
+  1440→                <DialogDescription>
+  1441→                  {rejectTarget.fullName} ({rejectTarget.matricNumber}) will be
+  1442→                  marked as rejected and won&apos;t be able to vote.
+  1443→                </DialogDescription>
+  1444→              </DialogHeader>
+  1445→              <div className="space-y-2">
+  1446→                <Label htmlFor="reject-notes">
+  1447→                  Reason <span className="text-muted-foreground">(optional)</span>
+  1448→                </Label>
+  1449→                <Textarea
+  1450→                  id="reject-notes"
+  1451→                  value={notes}
+  1452→                  onChange={(e) => setNotes(e.target.value)}
+  1453→                  placeholder="e.g. ID document not legible…"
+  1454→                  rows={3}
+  1455→                />
+  1456→              </div>
+  1457→              <DialogFooter>
+  1458→                <DialogClose asChild>
+  1459→                  <Button variant="outline">Cancel</Button>
+  1460→                </DialogClose>
+  1461→                <Button
+  1462→                  variant="destructive"
+  1463→                  disabled={actingId === rejectTarget.id}
+  1464→                  onClick={() => void confirmReject()}
+  1465→                >
+  1466→                  {actingId === rejectTarget.id ? (
+  1467→                    <Loader2 className="size-4 animate-spin" />
+  1468→                  ) : (
+  1469→                    <XCircle className="size-4" />
+  1470→                  )}
+  1471→                  Confirm Reject
+  1472→                </Button>
+  1473→              </DialogFooter>
+  1474→            </>
+  1475→          )}
+  1476→        </DialogContent>
+  1477→      </Dialog>
+  1478→    </div>
+  1479→  )
+  1480→}
+  1481→
+  1482→// ===================== Election Section =====================
+  1483→function ElectionSection() {
+  1484→  const [election, setElection] = useState<Election | null>(null)
+  1485→  const [loading, setLoading] = useState(true)
+  1486→  const [acting, setActing] = useState(false)
+  1487→
+  1488→  const fetchElection = useCallback(async () => {
+  1489→    setLoading(true)
+  1490→    try {
+  1491→      const res = await api.get<{ election: Election | null }>(
+  1492→        '/admin/election'
+  1493→      )
+  1494→      setElection(res.election)
+  1495→    } catch (err) {
+  1496→      toast.error(
+  1497→        err instanceof Error ? err.message : 'Failed to load election'
+  1498→      )
+  1499→    } finally {
+  1500→      setLoading(false)
+  1501→    }
+  1502→  }, [])
+  1503→
+  1504→  useEffect(() => {
+  1505→    void fetchElection()
+  1506→  }, [fetchElection])
+  1507→
+  1508→  async function toggle(action: 'start' | 'end') {
+  1509→    setActing(true)
+  1510→    try {
+  1511→      const res = await api.post<{ election: Election }>('/admin/election', {
+  1512→        action,
+  1513→      })
+  1514→      setElection((prev) => ({
+  1515→        ...res.election,
+  1516→        positions: prev?.positions ?? res.election.positions,
+  1517→      }))
+  1518→      toast.success(
+  1519→        action === 'start' ? 'Election started' : 'Election ended'
+  1520→      )
+  1521→      void fetchElection()
+  1522→    } catch (err) {
+  1523→      toast.error(err instanceof Error ? err.message : 'Action failed')
+  1524→    } finally {
+  1525→      setActing(false)
+  1526→    }
+  1527→  }
+  1528→
+  1529→  const totalVotes = useMemo(() => {
+  1530→    if (!election?.positions) return 0
+  1531→    return election.positions.reduce(
+  1532→      (sum, p) => sum + (p._count?.votes ?? p.voteCount ?? 0),
+  1533→      0
+  1534→    )
+  1535→  }, [election])
+  1536→
+  1537→  if (loading) {
+  1538→    return (
+  1539→      <div className="space-y-4">
+  1540→        <Skeleton className="h-9 w-48" />
+  1541→        <Skeleton className="h-40 w-full rounded-2xl" />
+  1542→        <Skeleton className="h-64 w-full rounded-2xl" />
+  1543→      </div>
+  1544→    )
+  1545→  }
+  1546→
+  1547→  return (
+  1548→    <div className="space-y-6">
+  1549→      <div>
+  1550→        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+  1551→          Election Control
+  1552→        </h1>
+  1553→        <p className="text-sm text-muted-foreground">
+  1554→          Manage election lifecycle and view live results
+  1555→        </p>
+  1556→      </div>
+  1557→
+  1558→      <Card>
+  1559→        <CardHeader>
+  1560→          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+  1561→            <div>
+  1562→              <CardTitle className="font-display text-xl">
+  1563→                {election?.title || 'No election configured'}
+  1564→              </CardTitle>
+  1565→              <CardDescription>
+  1566→                Manage the active election cycle
+  1567→              </CardDescription>
+  1568→            </div>
+  1569→            {election && electionStatusBadge(election.status)}
+  1570→          </div>
+  1571→        </CardHeader>
+  1572→        <CardContent className="space-y-4">
+  1573→          {election && (
+  1574→            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  1575→              <div className="rounded-xl bg-muted/40 p-3">
+  1576→                <p className="text-xs text-muted-foreground">Start date</p>
+  1577→                <p className="text-sm font-medium">
+  1578→                  {formatDateTime(election.startDate)}
+  1579→                </p>
+  1580→              </div>
+  1581→              <div className="rounded-xl bg-muted/40 p-3">
+  1582→                <p className="text-xs text-muted-foreground">End date</p>
+  1583→                <p className="text-sm font-medium">
+  1584→                  {election.endDate ? formatDateTime(election.endDate) : '—'}
+  1585→                </p>
+  1586→              </div>
+  1587→              <div className="rounded-xl bg-muted/40 p-3">
+  1588→                <p className="text-xs text-muted-foreground">Total votes</p>
+  1589→                <p className="text-sm font-medium">{totalVotes}</p>
+  1590→              </div>
+  1591→            </div>
+  1592→          )}
+  1593→          <Separator />
+  1594→          <div className="flex flex-col gap-2 sm:flex-row">
+  1595→            {election?.status === 'upcoming' && (
+  1596→              <AlertDialog>
+  1597→                <AlertDialogTrigger asChild>
+  1598→                  <Button disabled={acting} className="flex-1">
+  1599→                    <PlayCircle className="size-4" /> Start Election
+  1600→                  </Button>
+  1601→                </AlertDialogTrigger>
+  1602→                <AlertDialogContent>
+  1603→                  <AlertDialogHeader>
+  1604→                    <AlertDialogTitle>Start election?</AlertDialogTitle>
+  1605→                    <AlertDialogDescription>
+  1606→                      Voting will open immediately for all verified students.
+  1607→                    </AlertDialogDescription>
+  1608→                  </AlertDialogHeader>
+  1609→                  <AlertDialogFooter>
+  1610→                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1611→                    <AlertDialogAction onClick={() => void toggle('start')}>
+  1612→                      Confirm Start
+  1613→                    </AlertDialogAction>
+  1614→                  </AlertDialogFooter>
+  1615→                </AlertDialogContent>
+  1616→              </AlertDialog>
+  1617→            )}
+  1618→            {election?.status === 'active' && (
+  1619→              <AlertDialog>
+  1620→                <AlertDialogTrigger asChild>
+  1621→                  <Button
+  1622→                    variant="destructive"
+  1623→                    disabled={acting}
+  1624→                    className="flex-1"
+  1625→                  >
+  1626→                    <StopCircle className="size-4" /> End Election
+  1627→                  </Button>
+  1628→                </AlertDialogTrigger>
+  1629→                <AlertDialogContent>
+  1630→                  <AlertDialogHeader>
+  1631→                    <AlertDialogTitle>End election?</AlertDialogTitle>
+  1632→                    <AlertDialogDescription>
+  1633→                      Voting will close immediately. Results will be final.
+  1634→                    </AlertDialogDescription>
+  1635→                  </AlertDialogHeader>
+  1636→                  <AlertDialogFooter>
+  1637→                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1638→                    <AlertDialogAction
+  1639→                      className="bg-destructive text-white hover:bg-destructive/90"
+  1640→                      onClick={() => void toggle('end')}
+  1641→                    >
+  1642→                      Confirm End
+  1643→                    </AlertDialogAction>
+  1644→                  </AlertDialogFooter>
+  1645→                </AlertDialogContent>
+  1646→              </AlertDialog>
+  1647→            )}
+  1648→            {(!election || election.status === 'ended') && (
+  1649→              <div className="flex-1 rounded-xl bg-muted/40 p-3 text-center text-sm text-muted-foreground">
+  1650→                {election
+  1651→                  ? 'This election has ended. No further actions available.'
+  1652→                  : 'No election configured in the database.'}
+  1653→              </div>
+  1654→            )}
+  1655→          </div>
+  1656→        </CardContent>
+  1657→      </Card>
+  1658→
+  1659→      {/* Live results preview */}
+  1660→      {election?.positions && election.positions.length > 0 && (
+  1661→        <Card>
+  1662→          <CardHeader>
+  1663→            <CardTitle className="font-display text-lg flex items-center gap-2">
+  1664→              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+  1665→              Live Results
+  1666→            </CardTitle>
+  1667→            <CardDescription>
+  1668→              Per-position candidate standings
+  1669→            </CardDescription>
+  1670→          </CardHeader>
+  1671→          <CardContent className="space-y-6">
+  1672→            {election.positions.map((p) => {
+  1673→              const total =
+  1674→                p._count?.votes ??
+  1675→                p.voteCount ??
+  1676→                p.candidates.reduce((s, c) => s + c.voteCount, 0)
+  1677→              return (
+  1678→                <div key={p.id} className="space-y-2">
+  1679→                  <div className="flex items-center justify-between">
+  1680→                    <h4 className="font-display text-sm font-semibold">
+  1681→                      {p.title}
+  1682→                    </h4>
+  1683→                    <Badge variant="secondary" className="text-xs">
+  1684→                      {total} votes
+  1685→                    </Badge>
+  1686→                  </div>
+  1687→                  <div className="space-y-1.5">
+  1688→                    {p.candidates
+  1689→                      .slice()
+  1690→                      .sort((a, b) => b.voteCount - a.voteCount)
+  1691→                      .map((c, idx) => {
+  1692→                        const pct =
+  1693→                          total > 0
+  1694→                            ? Math.round((c.voteCount / total) * 100)
+  1695→                            : 0
+  1696→                        const leading = idx === 0 && c.voteCount > 0
+  1697→                        return (
+  1698→                          <div
+  1699→                            key={c.id}
+  1700→                            className={cn(
+  1701→                              'space-y-1 rounded-lg border p-2',
+  1702→                              leading
+  1703→                                ? 'border-cyan-accent/40 bg-cyan-accent/5'
+  1704→                                : 'border-border/60'
+  1705→                            )}
+  1706→                          >
+  1707→                            <div className="flex items-center justify-between text-sm">
+  1708→                              <span className="flex items-center gap-2">
+  1709→                                {leading && (
+  1710→                                  <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent text-[10px]">
+  1711→                                    Leading
+  1712→                                  </Badge>
+  1713→                                )}
+  1714→                                <span className="font-medium">{c.name}</span>
+  1715→                              </span>
+  1716→                              <span className="text-xs text-muted-foreground">
+  1717→                                {c.voteCount} · {pct}%
+  1718→                              </span>
+  1719→                            </div>
+  1720→                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+  1721→                              <motion.div
+  1722→                                initial={{ width: 0 }}
+  1723→                                animate={{ width: `${pct}%` }}
+  1724→                                transition={{ duration: 0.6, ease: 'easeOut' }}
+  1725→                                className={cn(
+  1726→                                  'h-full rounded-full',
+  1727→                                  leading ? 'bg-cyan-accent' : 'bg-primary'
+  1728→                                )}
+  1729→                              />
+  1730→                            </div>
+  1731→                          </div>
+  1732→                        )
+  1733→                      })}
+  1734→                  </div>
+  1735→                </div>
+  1736→              )
+  1737→            })}
+  1738→          </CardContent>
+  1739→        </Card>
+  1740→      )}
+  1741→    </div>
+  1742→  )
+  1743→}
+  1744→
+  1745→// ===================== Audit Logs Section =====================
+  1746→function AuditLogsSection() {
+  1747→  const [logs, setLogs] = useState<AuditLog[]>([])
+  1748→  const [loading, setLoading] = useState(true)
+  1749→
+  1750→  const fetchLogs = useCallback(async () => {
+  1751→    setLoading(true)
+  1752→    try {
+  1753→      const res = await api.get<{ logs: AuditLog[] }>('/admin/audit-logs')
+  1754→      setLogs(res.logs)
+  1755→    } catch (err) {
+  1756→      toast.error(
+  1757→        err instanceof Error ? err.message : 'Failed to load audit logs'
+  1758→      )
+  1759→    } finally {
+  1760→      setLoading(false)
+  1761→    }
+  1762→  }, [])
+  1763→
+  1764→  useEffect(() => {
+  1765→    void fetchLogs()
+  1766→  }, [fetchLogs])
+  1767→
+  1768→  return (
+  1769→    <div className="space-y-6">
+  1770→      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+  1771→        <div>
+  1772→          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+  1773→            Audit Logs
+  1774→          </h1>
+  1775→          <p className="text-sm text-muted-foreground">
+  1776→            Chronological trail of all admin actions
+  1777→          </p>
+  1778→        </div>
+  1779→        <Button variant="outline" size="sm" onClick={() => void fetchLogs()}>
+  1780→          <RefreshCw className="size-4" /> Refresh
+  1781→        </Button>
+  1782→      </div>
+  1783→
+  1784→      <Card>
+  1785→        <CardHeader>
+  1786→          <CardTitle className="font-display text-lg">
+  1787→            Recent Activity
+  1788→          </CardTitle>
+  1789→          <CardDescription>
+  1790→            Showing last {logs.length} {logs.length === 1 ? 'entry' : 'entries'}
+  1791→          </CardDescription>
+  1792→        </CardHeader>
+  1793→        <CardContent className="p-0">
+  1794→          {loading ? (
+  1795→            <div className="space-y-2 p-4">
+  1796→              {Array.from({ length: 6 }).map((_, i) => (
+  1797→                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+  1798→              ))}
+  1799→            </div>
+  1800→          ) : logs.length === 0 ? (
+  1801→            <div className="flex flex-col items-center gap-2 py-12 text-center">
+  1802→              <div className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+  1803→                <ScrollText className="size-6" />
+  1804→              </div>
+  1805→              <p className="font-medium">No audit logs yet</p>
+  1806→              <p className="text-sm text-muted-foreground">
+  1807→                Admin actions will be recorded here.
+  1808→              </p>
+  1809→            </div>
+  1810→          ) : (
+  1811→            <ScrollArea className="h-[60vh]">
+  1812→              <div className="overflow-x-auto">
+  1813→                <Table>
+  1814→                  <TableHeader className="sticky top-0 bg-card z-10">
+  1815→                    <TableRow>
+  1816→                      <TableHead>When</TableHead>
+  1817→                      <TableHead>Admin</TableHead>
+  1818→                      <TableHead>Action</TableHead>
+  1819→                      <TableHead>Target</TableHead>
+  1820→                      <TableHead className="hidden md:table-cell">
+  1821→                        Details
+  1822→                      </TableHead>
+  1823→                    </TableRow>
+  1824→                  </TableHeader>
+  1825→                  <TableBody>
+  1826→                    {logs.map((log) => (
+  1827→                      <TableRow key={log.id}>
+  1828→                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+  1829→                          {formatDateTime(log.timestamp)}
+  1830→                          <div className="text-[10px] opacity-70">
+  1831→                            {formatRelativeTime(log.timestamp)}
+  1832→                          </div>
+  1833→                        </TableCell>
+  1834→                        <TableCell className="font-medium">
+  1835→                          {log.admin?.name || 'System'}
+  1836→                        </TableCell>
+  1837→                        <TableCell>
+  1838→                          {auditActionBadge(log.action)}
+  1839→                        </TableCell>
+  1840→                        <TableCell className="font-mono text-xs">
+  1841→                          {log.target || '—'}
+  1842→                        </TableCell>
+  1843→                        <TableCell className="max-w-xs truncate text-xs text-muted-foreground md:table-cell">
+  1844→                          {log.details || '—'}
+  1845→                        </TableCell>
+  1846→                      </TableRow>
+  1847→                    ))}
+  1848→                  </TableBody>
+  1849→                </Table>
+  1850→              </div>
+  1851→            </ScrollArea>
+  1852→          )}
+  1853→        </CardContent>
+  1854→      </Card>
+  1855→    </div>
+  1856→  )
+  1857→}
+  1858→
+  1859→// ===================== Settings Section =====================
+  1860→function SettingsSection() {
+  1861→  const [title, setTitle] = useState('')
+  1862→  const [content, setContent] = useState('')
+  1863→  const [category, setCategory] = useState('general')
+  1864→  const [posting, setPosting] = useState(false)
+  1865→
+  1866→  async function postAnnouncement(e: React.FormEvent) {
+  1867→    e.preventDefault()
+  1868→    if (!title.trim() || !content.trim()) {
+  1869→      toast.error('Title and content are required')
+  1870→      return
+  1871→    }
+  1872→    setPosting(true)
+  1873→    try {
+  1874→      await api.post('/admin/announcements', {
+  1875→        title: title.trim(),
+  1876→        content: content.trim(),
+  1877→        category,
+  1878→      })
+  1879→      toast.success('Announcement posted')
+  1880→      setTitle('')
+  1881→      setContent('')
+  1882→      setCategory('general')
+  1883→    } catch (err) {
+  1884→      toast.error(
+  1885→        err instanceof Error ? err.message : 'Failed to post announcement'
+  1886→      )
+  1887→    } finally {
+  1888→      setPosting(false)
+  1889→    }
+  1890→  }
+  1891→
+  1892→  return (
+  1893→    <div className="space-y-6">
+  1894→      <div>
+  1895→        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+  1896→          Settings
+  1897→        </h1>
+  1898→        <p className="text-sm text-muted-foreground">
+  1899→          Platform configuration and announcements
+  1900→        </p>
+  1901→      </div>
+  1902→
+  1903→      <Card>
+  1904→        <CardHeader>
+  1905→          <CardTitle className="font-display text-lg flex items-center gap-2">
+  1906→            <Megaphone className="size-5 text-primary" />
+  1907→            New Announcement
+  1908→          </CardTitle>
+  1909→          <CardDescription>
+  1910→            Broadcast an update to all students
+  1911→          </CardDescription>
+  1912→        </CardHeader>
+  1913→        <CardContent>
+  1914→          <form onSubmit={postAnnouncement} className="space-y-4">
+  1915→            <div className="space-y-2">
+  1916→              <Label htmlFor="ann-title">Title</Label>
+  1917→              <Input
+  1918→                id="ann-title"
+  1919→                value={title}
+  1920→                onChange={(e) => setTitle(e.target.value)}
+  1921→                placeholder="e.g. Exam timetable released"
+  1922→                maxLength={120}
+  1923→                required
+  1924→              />
+  1925→            </div>
+  1926→            <div className="space-y-2">
+  1927→              <Label htmlFor="ann-content">Content</Label>
+  1928→              <Textarea
+  1929→                id="ann-content"
+  1930→                value={content}
+  1931→                onChange={(e) => setContent(e.target.value)}
+  1932→                placeholder="Write the announcement body…"
+  1933→                rows={5}
+  1934→                required
+  1935→              />
+  1936→            </div>
+  1937→            <div className="space-y-2">
+  1938→              <Label htmlFor="ann-category">Category</Label>
+  1939→              <Select value={category} onValueChange={setCategory}>
+  1940→                <SelectTrigger id="ann-category" className="w-full sm:w-56">
+  1941→                  <SelectValue />
+  1942→                </SelectTrigger>
+  1943→                <SelectContent>
+  1944→                  <SelectItem value="general">General</SelectItem>
+  1945→                  <SelectItem value="academic">Academic</SelectItem>
+  1946→                  <SelectItem value="election">Election</SelectItem>
+  1947→                  <SelectItem value="event">Event</SelectItem>
+  1948→                </SelectContent>
+  1949→              </Select>
+  1950→            </div>
+  1951→            <div className="flex justify-end">
+  1952→              <Button type="submit" disabled={posting}>
+  1953→                {posting ? (
+  1954→                  <>
+  1955→                    <Loader2 className="size-4 animate-spin" /> Posting…
+  1956→                  </>
+  1957→                ) : (
+  1958→                  <>
+  1959→                    <Megaphone className="size-4" /> Post Announcement
+  1960→                  </>
+  1961→                )}
+  1962→              </Button>
+  1963→            </div>
+  1964→          </form>
+  1965→        </CardContent>
+  1966→      </Card>
+  1967→
+  1968→      <Card>
+  1969→        <CardHeader>
+  1970→          <CardTitle className="font-display text-lg">About this admin</CardTitle>
+  1971→        </CardHeader>
+  1972→        <CardContent>
+  1973→          <AdminInfoCard />
+  1974→        </CardContent>
+  1975→      </Card>
+  1976→    </div>
+  1977→  )
+  1978→}
+  1979→
+  1980→function AdminInfoCard() {
+  1981→  const { admin } = useAuth()
+  1982→  if (!admin) return null
+  1983→  return (
+  1984→    <div className="flex items-center gap-4">
+  1985→      <Avatar className="size-14">
+  1986→        <AvatarFallback className="bg-primary/10 text-primary font-semibold text-lg">
+  1987→          {getInitials(admin.name)}
+  1988→        </AvatarFallback>
+  1989→      </Avatar>
+  1990→      <div className="space-y-1">
+  1991→        <p className="font-display text-lg font-semibold">{admin.name}</p>
+  1992→        <p className="text-sm text-muted-foreground">
+  1993→          @{admin.username} · {admin.role}
+  1994→        </p>
+  1995→      </div>
+  1996→    </div>
+  1997→  )
+  1998→}
+  1999→
+  2000→// ===================== Main AdminView =====================
+
+[showing lines 1-2000 of 2097; use offset=2001 with limit to continue reading]
