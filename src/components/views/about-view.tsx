@@ -7,7 +7,6 @@ import { useNav } from '@/lib/stores/nav-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { WhatsAppIcon } from '@/components/shared/whatsapp-icon'
 import {
@@ -16,7 +15,6 @@ import {
   SUPPORT_PHONE_DISPLAY,
 } from '@/lib/support'
 import {
-  Sparkles,
   Target,
   Eye,
   Award,
@@ -28,7 +26,6 @@ import {
   FlaskConical,
   Mail,
   MapPin,
-  Clock,
   ArrowRight,
   Quote,
   Building2,
@@ -59,28 +56,12 @@ const VALUES = [
   { icon: GraduationCap, title: 'Growth', desc: 'We invest in continuous learning for students, faculty, and the wider community.', tint: 'from-rose-500/15 to-rose-500/5 text-rose-600 dark:text-rose-400' },
 ]
 
-const STATS = [
-  { icon: Users2, label: 'Students', value: '2,450+', sub: 'Across 5 levels', tint: 'from-primary/15 to-primary/5 text-primary' },
-  { icon: GraduationCap, label: 'Faculty', value: '45+', sub: 'Lecturers & researchers', tint: 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent dark:text-cyan-accent' },
-  { icon: FlaskConical, label: 'Courses', value: '30+', sub: 'Undergraduate & postgrad', tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400' },
-  { icon: Building2, label: 'Departments', value: '5', sub: 'Science Education cohorts', tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400' },
-]
-
 const DEPARTMENTS = [
   { icon: Leaf, title: 'Biology Education', code: 'BED', desc: 'Cell biology, genetics, ecology, and evolution — preparing future biology teachers for secondary schools.', tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400' },
   { icon: Beaker, title: 'Chemistry Education', code: 'CED', desc: 'Organic, physical, and analytical chemistry with pedagogical training for chemistry educators.', tint: 'from-amber-500/15 to-amber-500/5 text-amber-600 dark:text-amber-400' },
   { icon: Calculator, title: 'Mathematics Education', code: 'MED', desc: 'Calculus, algebra, and geometry for future mathematics teachers, with modern teaching methods.', tint: 'from-blue-500/15 to-blue-500/5 text-blue-600 dark:text-blue-400' },
   { icon: Atom, title: 'Physics Education', code: 'PED', desc: 'Classical mechanics, quantum physics, and electromagnetism for tomorrow’s physics teachers.', tint: 'from-primary/15 to-primary/5 text-primary' },
   { icon: Microscope, title: 'Integrated Science Education', code: 'IED', desc: 'A multidisciplinary blend of all sciences with teaching strategies for integrated science curricula.', tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400' },
-]
-
-const TEAM = [
-  { name: 'Dr. Adewale Johnson', title: 'Head of Department', field: 'Science Education', initials: 'AJ', tint: 'bg-primary/10 text-primary' },
-  { name: 'Dr. Adebayo Smith', title: 'ULSESA Staff Adviser', field: 'Physics Education', initials: 'AS', tint: 'bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent' },
-  { name: 'Dr. Funmilayo Okafor', title: 'Associate Professor', field: 'Biology Education', initials: 'FO', tint: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-  { name: 'Dr. Chinedu Eze', title: 'Senior Lecturer', field: 'Chemistry Education', initials: 'CE', tint: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-  { name: 'Dr. Aisha Mohammed', title: 'Lecturer', field: 'Mathematics Education', initials: 'AM', tint: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-  { name: 'Samuel Ike', title: 'ULSESA President', field: 'Physics Education • 500 Level', initials: 'SI', tint: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
 ]
 
 const SOCIALS = [
@@ -356,99 +337,6 @@ export function AboutView() {
         </div>
       </section>
 
-      {/* ===================== STATISTICS ===================== */}
-      <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
-        <Card className="rounded-2xl overflow-hidden">
-          <div className="relative bg-gradient-to-br from-primary via-primary to-primary/80 text-primary-foreground">
-            <div
-              className="absolute inset-0 opacity-20 pointer-events-none"
-              style={{
-                backgroundImage:
-                  'linear-gradient(to right, rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.2) 1px, transparent 1px)',
-                backgroundSize: '40px 40px',
-              }}
-              aria-hidden
-            />
-            <div className="absolute -top-20 -right-10 h-64 w-64 rounded-full bg-cyan-accent/30 blur-3xl pointer-events-none" aria-hidden />
-            <CardContent className="relative">
-              <div className="text-center mb-8">
-                <Badge className="bg-white/15 text-white border-0 backdrop-blur mb-3">
-                  <Sparkles className="h-3 w-3 mr-1 text-cyan-accent" />
-                  By the numbers
-                </Badge>
-                <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">
-                  ULSESA at a glance
-                </h2>
-                <p className="mt-2 text-sm text-primary-foreground/80">
-                  A growing community of learners, educators, and future science teachers.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {STATS.map((s, i) => {
-                  const Icon = s.icon
-                  return (
-                    <motion.div
-                      key={s.label}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      whileInView={{ opacity: 1, scale: 1 }}
-                      viewport={{ once: true }}
-                      transition={{ duration: 0.4, delay: i * 0.08 }}
-                      className="rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-5 text-center"
-                    >
-                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white mb-3">
-                        <Icon className="h-5 w-5" strokeWidth={1.75} />
-                      </div>
-                      <div className="text-3xl md:text-4xl font-bold font-display tabular-nums">{s.value}</div>
-                      <div className="text-xs font-semibold mt-1">{s.label}</div>
-                      <div className="text-[11px] text-primary-foreground/70 mt-0.5">{s.sub}</div>
-                    </motion.div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </div>
-        </Card>
-      </section>
-
-      {/* ===================== TEAM ===================== */}
-      <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
-        <div className="text-center mb-8">
-          <Badge variant="outline" className="rounded-full bg-primary/5 text-primary border-primary/20 mb-3">
-            Leadership & Faculty
-          </Badge>
-          <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">Meet the team</h2>
-          <p className="mt-2 text-sm text-muted-foreground max-w-xl mx-auto">
-            Dedicated educators and student leaders shaping the future of science education at UNILAG.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {TEAM.map((member, i) => (
-            <motion.div
-              key={member.name}
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-40px' }}
-              transition={{ duration: 0.4, delay: i * 0.06 }}
-            >
-              <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300">
-                <CardContent className="flex items-center gap-4">
-                  <Avatar className="h-14 w-14 shrink-0">
-                    <AvatarFallback className={cn('font-semibold', member.tint)}>
-                      {member.initials}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-base leading-snug truncate">{member.name}</h3>
-                    <div className="text-xs font-medium text-primary mt-0.5">{member.title}</div>
-                    <div className="text-xs text-muted-foreground mt-1 truncate">{member.field}</div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
       {/* ===================== SOCIALS + CONTACT ===================== */}
       <section className="container mx-auto px-4 lg:px-6 pb-16 md:pb-24">
         {/* Socials row */}
@@ -559,13 +447,6 @@ export function AboutView() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-4 text-sm">
-              <Clock className="h-4 w-4 text-primary shrink-0" />
-              <div>
-                <span className="font-semibold">Office hours:</span>{' '}
-                <span className="text-muted-foreground">Monday — Friday, 9:00 AM — 4:00 PM (WAT)</span>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </section>

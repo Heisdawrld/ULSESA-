@@ -51,6 +51,14 @@ interface EventItem {
   category: string // upcoming | this_week | past
 }
 
+interface Election {
+  id: string
+  title: string
+  status: string // upcoming | active | ended | cancelled
+  startDate: string
+  endDate: string
+}
+
 // ===================== Helpers =====================
 
 function timeAgo(iso: string): string {
@@ -270,10 +278,55 @@ export function HomeView() {
   const { navigate } = useNav()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [events, setEvents] = useState<EventItem[]>([])
+  const [election, setElection] = useState<Election | null>(null)
   const [loadingAnn, setLoadingAnn] = useState(true)
   const [loadingEv, setLoadingEv] = useState(true)
   const [annError, setAnnError] = useState<string | null>(null)
   const [evError, setEvError] = useState<string | null>(null)
+
+  // Live countdown to election start (ticks every second)
+  const [countdown, setCountdown] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    api
+      .get<{ election: Election | null }>('/elections')
+      .then((res) => {
+        if (!mounted) return
+        setElection(res.election || null)
+      })
+      .catch(() => {
+        // Election is optional on the home page — fail silently
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  // Tick the countdown every second toward election.startDate
+  useEffect(() => {
+    if (!election?.startDate) {
+      setCountdown(null)
+      return
+    }
+    const target = new Date(election.startDate).getTime()
+    function tick() {
+      const diff = target - Date.now()
+      if (diff <= 0) {
+        setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 })
+        return
+      }
+      setCountdown({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+        seconds: Math.floor((diff % 60000) / 1000),
+      })
+    }
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [election?.startDate])
 
   useEffect(() => {
     let mounted = true
@@ -478,6 +531,7 @@ export function HomeView() {
       </section>
 
       {/* ===================== ELECTION COUNTDOWN ===================== */}
+      {election && (
       <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
@@ -503,13 +557,17 @@ export function HomeView() {
               <div>
                 <Badge className="bg-white/15 text-white border-0 mb-4 backdrop-blur">
                   <Vote className="h-3 w-3 mr-1" />
-                  ULSESA General Election 2026
+                  {election.title || 'ULSESA General Election 2026'}
                 </Badge>
                 <h2 className="text-3xl md:text-4xl font-bold font-display tracking-tight">
-                  Election Countdown
+                  {countdown && countdown.days === 0 && countdown.hours === 0 && countdown.minutes === 0 && countdown.seconds === 0
+                    ? 'Voting is Live'
+                    : 'Election Countdown'}
                 </h2>
                 <p className="mt-2 text-primary-foreground/80 text-sm md:text-base">
-                  Voting opens Monday, 8:00 AM. Make your voice count — every verified ULSESA student gets one anonymous ballot per position.
+                  {countdown && countdown.days === 0 && countdown.hours === 0 && countdown.minutes === 0 && countdown.seconds === 0
+                    ? 'Polls are open now. Make your voice count — every verified ULSESA student gets one anonymous ballot per position.'
+                    : `Voting opens ${new Date(election.startDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} at ${new Date(election.startDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}. Make your voice count.`}
                 </p>
                 <div className="mt-6 flex flex-col sm:flex-row gap-3">
                   <Button
@@ -529,33 +587,47 @@ export function HomeView() {
                 </div>
               </div>
 
-              {/* Countdown display */}
+              {/* Countdown display — live ticking */}
               <div className="flex items-center justify-center md:justify-end">
-                <div className="grid grid-cols-2 gap-3 md:gap-4 w-full max-w-sm">
-                  {[
-                    { label: 'Days', value: '03' },
-                    { label: 'Hours', value: '12' },
-                    { label: 'Minutes', value: '45' },
-                    { label: 'Seconds', value: '30' },
-                  ].map((unit) => (
-                    <div
-                      key={unit.label}
-                      className="rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-4 md:p-5 text-center"
-                    >
-                      <div className="text-3xl md:text-4xl font-bold font-display tabular-nums">
-                        {unit.value}
+                {countdown ? (
+                  <div className="grid grid-cols-2 gap-3 md:gap-4 w-full max-w-sm">
+                    {[
+                      { label: 'Days', value: countdown.days },
+                      { label: 'Hours', value: countdown.hours },
+                      { label: 'Minutes', value: countdown.minutes },
+                      { label: 'Seconds', value: countdown.seconds },
+                    ].map((unit) => (
+                      <div
+                        key={unit.label}
+                        className="rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-4 md:p-5 text-center"
+                      >
+                        <div className="text-3xl md:text-4xl font-bold font-display tabular-nums">
+                          {String(unit.value).padStart(2, '0')}
+                        </div>
+                        <div className="text-[11px] uppercase tracking-wider text-primary-foreground/70 mt-1">
+                          {unit.label}
+                        </div>
                       </div>
-                      <div className="text-[11px] uppercase tracking-wider text-primary-foreground/70 mt-1">
-                        {unit.label}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 md:gap-4 w-full max-w-sm">
+                    {['--', '--', '--', '--'].map((v, i) => (
+                      <div key={i} className="rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-4 md:p-5 text-center">
+                        <div className="text-3xl md:text-4xl font-bold font-display tabular-nums">{v}</div>
+                        <div className="text-[11px] uppercase tracking-wider text-primary-foreground/70 mt-1">
+                          {['Days', 'Hours', 'Minutes', 'Seconds'][i]}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </motion.div>
       </section>
+      )}
 
       {/* ===================== COHORTS STRIP ===================== */}
       <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
