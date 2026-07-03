@@ -1053,3 +1053,24 @@ Unresolved / risks:
 - Test data state: election is ACTIVE. Dawrld voted all 6 positions. Adaeze, Chidi, Michael voted for President. Reseed or admin-end-election to reset.
 - Standing items: Gmail SMTP creds in Render env, real student/candidate lists from user, git commit of accumulated work.
 - Recommended next step: git commit. Then consider admin-side features (per-position turnout breakdown, live voter turnout chart, export results as CSV) for the next review cycle.
+
+---
+Task ID: ELECTION-TUESDAY-AND-KEEPALIVE
+Agent: main (Z.ai Code)
+Task: (1) Move election from Monday → Tuesday with corrected 8:00 AM time. (2) Set up a self-ping cron to keep the Render free-tier instance awake.
+
+Work Log:
+- Queried live DB: election was startDate=2026-07-06T10:38Z (Monday), status="active" (stale), announcement said "Monday".
+- Wrote /tmp/fix-election.ts: updated election startDate → 2026-07-07T07:00:00Z (Tuesday 08:00 WAT), endDate → 2026-07-09T07:00:00Z (Thursday 08:00 WAT, 48h window), status → "upcoming". Updated announcement title → "ULSESA Election Begins Tuesday", content → "voting opens this Tuesday at 8:00 AM".
+- Verified via DB re-read: startWeekday="Tuesday", startTime="08:00" (Africa/Lagos), status="upcoming". ✓
+- Fixed prisma/seed.ts: replaced `now + 3 days` (landed on Monday) with next-Tuesday-at-08:00-WAT computation. Changed announcement "Monday" → "Tuesday". Future reseeds now produce a Tuesday election.
+- Lint clean. Committed + pushed: `fix(election): move election day from Monday to Tuesday 8:00 AM WAT` (e74493d).
+- Render keep-alive: probed https://ulsesa-portal.onrender.com/api/health → HTTP 404 with header `x-render-routing: no-server` ⇒ NO web service deployed at that subdomain yet. Created cron job 249512 (fixed_rate 840s / 14 min, tz Africa/Lagos, priority 10) that curls the health endpoint to keep the instance awake once deployed. Until deployment the curl returns 404 (harmless).
+
+Stage Summary:
+- Election now correctly scheduled for Tuesday, 7 July 2026 at 8:00 AM WAT (48-hour voting window closing Thursday 9 July 8:00 AM). Both live DB and seed file fixed.
+- Keep-alive cron (job 249512) created and ready; will start working the moment the Render service goes live at ulsesa-portal.onrender.com.
+- Unresolved / next-phase risks:
+  - Render deployment not yet live at the blueprint URL (ulsesa-portal.onrender.com returns no-server 404). User must deploy the render.yaml blueprint, then the keep-alive cron will activate automatically. If the real deployed URL differs, retarget cron 249512's curl command.
+  - The recurring webDevReview cron (249502, every 15 min) continues to run QA + feature work.
+  - Standing: Gmail SMTP creds in Render env; real student/candidate lists from user.
