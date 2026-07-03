@@ -63,7 +63,13 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    const [, /* subtype */ base64Payload] = match
+    // match[0] = full match, match[1] = subtype, match[2] = base64 payload.
+    // NOTE: a previous version used `const [, /* subtype */ base64Payload] = match`
+    // which is a TWO-element destructure — it actually assigns match[1] (the
+    // subtype string, e.g. "jpeg") to base64Payload, not the payload itself.
+    // That silently decoded 4 bytes of garbage and sharp rejected it. Use
+    // explicit indexing instead.
+    const base64Payload = match[2]
 
     let rawBuffer: Buffer
     try {

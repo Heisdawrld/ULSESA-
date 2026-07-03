@@ -792,3 +792,50 @@ Previous session work (still in place):
 - src/app/api/auth/send-otp/route.ts (two-layer rate limiting)
 
 Not yet committed to git.
+
+---
+Task ID: QA-MANUAL-VERIFY
+Agent: main-orchestrator
+Task: QA-verify the existing manual ID-upload verification flow end-to-end (no new features — the feature was already built in commit 7c21bbe)
+
+Work Log:
+- Reviewed worklog + latest commit (7c21bbe) — confirmed all 5 "missing" pieces were ALREADY built: upload-id route, claim flags, auth-view upload/pending/rejected steps, admin-view IdDocumentPreview, standalone /admin page.
+- Ran `bun run lint` → clean, 0 errors.
+- Backend QA via curl (dev server on :3000, local SQLite):
+  1. Admin login (admin / ulsesa-admin-2026) → 200, cookie set ✅
+  2. List students → 14 students, test student 999999999 (pending, no pw, no id) identified ✅
+  3. Claim 999999999 → returns correct flags: adminVerified:false, pendingManualReview:false, rejected:false, idUploaded:false ✅
+  4. Upload ID (real 90KB JPEG logo as test image) → **400 ERROR "Could not process image"** ❌
+- ROOT CAUSE FOUND — critical bug in `src/app/api/auth/upload-id/route.ts` line 66:
+  Original code: `const [, /* subtype */ base64Payload] = match`
+  This is a TWO-element array destructure. It assigns `match[1]` (the image subtype string, e.g. "jpeg" = 4 chars) to `base64Payload`, NOT `match[2]` (the actual base64 payload). The comment `/* subtype */` made it LOOK like the subtype was being skipped, but array destructuring ignores comments — the second position always maps to `match[1]`.
+  Result: sharp received 4 bytes of garbage (the decoded string "jpeg") → "Input buffer contains unsupported image format".
+  This bug made the ENTIRE manual ID upload feature non-functional. Every upload would have failed.
+- FIX: Changed to explicit indexing `const base64Payload = match[2]` with an explanatory comment. Verified sharp processes the image correctly: 90KB JPEG → 70KB compressed JPEG data URL.
+- Re-tested full backend flow after fix (ALL PASS):
+  - Upload ID → 200, image compressed & stored in idDocumentUrl ✅
+  - Claim → pendingManualReview:true, idUploaded:true ✅
+  - Admin verification-requests → student appears with 70KB image ✅
+  - Admin APPROVE (manual-verify) → status admin_verified ✅
+  - Claim after approve → adminVerified:true (skips OTP) ✅
+  - Set-password WITHOUT OTP → status approved, token issued ✅
+  - Admin REJECT with reason "Photo is blurry..." → status rejected ✅
+  - Claim after reject → rejected:true, rejectionReason populated, idUploaded:true ✅
+  - Re-upload after rejection → resets to submitted, pendingManualReview:true again ✅
+- Browser QA: BLOCKED by sandbox environment. The sandbox OOM-kills the Next.js turbopack dev server whenever a browser loads a page (multiple asset requests spike memory >2GB). Confirmed via dev.log: server serves 1-2 requests then dies. curl-based testing (single request) survives. Pre-compiling routes with curl then loading in browser worked for the homepage (200, full nav rendered) but the server died on subsequent navigation. This is a sandbox infra issue, NOT a code issue — won't affect the Render deployment.
+- Frontend code verification (grep + lint): auth-view.tsx upload/pending/rejected steps present and correct; admin-view.tsx IdDocumentPreview component renders <img> from data URL with click-to-zoom; /admin/page.tsx is valid standalone portal (served 200 with "Admin Portal" content when server was up).
+
+Stage Summary:
+- CRITICAL BUG FIXED: array destructuring in upload-id route was assigning the image subtype string instead of the base64 payload. This was a show-stopper — every manual ID upload would have failed. Now fixed with explicit `match[2]` indexing.
+- Manual verification flow VERIFIED end-to-end via curl: upload → admin review → approve/reject → student set-password / re-upload. All 9 test cases pass.
+- Lint clean. No new features added (per user instruction — "i didnt say you should add more feature").
+- Browser visual QA blocked by sandbox OOM (environment issue, not code).
+
+Files modified this session:
+- src/app/api/auth/upload-id/route.ts (FIXED: array destructuring bug → explicit match[2] indexing; removed temp debug logging)
+
+Unresolved / risks:
+- Dev server instability in sandbox (OOM kills turbopack) — NOT a production risk, only affects local QA.
+- Test data in local DB: student 999999999 is admin_verified (no pw), 250317014 is submitted (has uploaded test image). These are test accounts, safe to reset/reseed.
+- Still not committed to git: this fix + all prior session work (theme transition, rate limiting, manual verify feature). Recommend committing.
+- Production TODO (unchanged from prior sessions): set up Gmail SMTP creds in Render env, get real student list + candidate list from user.
