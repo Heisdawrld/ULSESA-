@@ -1589,7 +1589,7 @@ function StudentsSection() {
               </Label>
               <Input
                 id="new-matric"
-                placeholder="e.g., 230315011"
+                placeholder="e.g., 230315099"
                 value={newMatric}
                 onChange={(e) => setNewMatric(e.target.value)}
                 required

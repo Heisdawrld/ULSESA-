@@ -644,7 +644,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                   id="matric"
                   inputMode="numeric"
                   autoComplete="off"
-                  placeholder="e.g. 230315011"
+                  placeholder="e.g. 230315099"
                   value={matric}
                   onChange={(e) =>
                     setMatric(e.target.value.replace(/[^0-9]/g, ''))
@@ -1521,7 +1521,7 @@ function SignInFlow({ onSwitchToClaim, onAuthSuccess }: SignInFlowProps) {
             id="signin-matric"
             inputMode="numeric"
             autoComplete="username"
-            placeholder="e.g. 230315011"
+            placeholder="e.g. 230315099"
             value={matric}
             onChange={(e) => setMatric(e.target.value.replace(/[^0-9]/g, ''))}
             onKeyDown={(e) => {
