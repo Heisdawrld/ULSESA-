@@ -82,8 +82,17 @@ async function main() {
   console.log(`✅ ${students.length} students created (${students.filter(s => s.isVerified).length} verified with passwords, ${students.filter(s => !s.isVerified).length} unverified needing to claim)`)
 
   // ===== ELECTION =====
+  // Election opens on the next Tuesday at 8:00 AM (Africa/Lagos) and runs for 48 hours.
+  // Tuesday is the canonical ULSESA election day.
   const now = new Date()
-  const startDate = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000) // 3 days from now
+  const TUESDAY = 2 // Date.getUTCDay(): 0=Sun ... 2=Tue
+  const startAt8UTC = new Date(now)
+  startAt8UTC.setUTCHours(7, 0, 0, 0) // 07:00 UTC == 08:00 WAT
+  let daysUntilTuesday = (TUESDAY - startAt8UTC.getUTCDay() + 7) % 7
+  if (daysUntilTuesday === 0 && startAt8UTC.getTime() <= now.getTime()) {
+    daysUntilTuesday = 7 // today is Tuesday but 8 AM already passed → next Tuesday
+  }
+  const startDate = new Date(startAt8UTC.getTime() + daysUntilTuesday * 24 * 60 * 60 * 1000)
   const endDate = new Date(startDate.getTime() + 48 * 60 * 60 * 1000) // 48 hours of voting
 
   const election = await db.election.create({
@@ -188,7 +197,7 @@ async function main() {
 
   // ===== ANNOUNCEMENTS =====
   const announcements = [
-    { title: 'ULSESA Election Begins Monday', content: 'The 2026 ULSESA General Election voting opens this Monday at 8:00 AM. All verified members are eligible to vote. Please ensure your account is verified before election day. This is your association — make your voice count.', category: 'election' },
+    { title: 'ULSESA Election Begins Tuesday', content: 'The 2026 ULSESA General Election voting opens this Tuesday at 8:00 AM. All verified members are eligible to vote. Please ensure your account is verified before election day. This is your association — make your voice count.', category: 'election' },
     { title: 'Teaching Practice Registration Opens', content: 'Teaching Practice registration for 400-level students across all five departments is now open. Complete your registration this week. TP is a core requirement for your degree — don\'t miss out.', category: 'academic' },
     { title: 'Inter-Departmental Quiz Competition', content: 'The annual ULSESA Inter-Departmental Quiz Competition holds next Friday. Biology, Chemistry, Mathematics, Physics, and Integrated Science — which department will take the crown this year?', category: 'event' },
     { title: 'Entrepreneurship Program Applications', content: 'Applications for the ULSESA Entrepreneurship Program are open. Learn how to turn your science education into a business. Limited slots available — apply now.', category: 'academic' },
