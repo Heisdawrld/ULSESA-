@@ -71,3 +71,6 @@ prisma/db/
 .env
 prisma/dev.db
 db/custom.db
+
+# agent-browser / tool temp artifacts
+tool-results/

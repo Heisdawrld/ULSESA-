@@ -18,7 +18,17 @@ export async function GET() {
         positions: {
           orderBy: { order: 'asc' },
           include: {
-            candidates: { orderBy: { voteCount: 'desc' } },
+            candidates: {
+              orderBy: { voteCount: 'desc' },
+              select: {
+                id: true,
+                name: true,
+                level: true,
+                programme: true,
+                voteCount: true,
+                manifesto: true,
+              },
+            },
             _count: { select: { votes: true } },
           },
         },

@@ -32,6 +32,11 @@ import {
   IdCard,
   FileCheck,
   Maximize2,
+  Download,
+  Crown,
+  Clock,
+  TrendingUp,
+  Users2,
 } from 'lucide-react'
 
 import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
@@ -163,6 +168,8 @@ interface ElectionPosition {
   candidates: Array<{
     id: string
     name: string
+    level?: string | null
+    programme?: string | null
     voteCount: number
   }>
 }
@@ -598,6 +605,80 @@ function SidebarContent({
 }
 
 // ===================== Dashboard Section =====================
+function AdminTurnoutDonut({
+  percent,
+  size = 132,
+  stroke = 12,
+  label = 'Turnout',
+}: {
+  percent: number
+  size?: number
+  stroke?: number
+  label?: string
+}) {
+  const clamped = Math.max(0, Math.min(100, percent))
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (clamped / 100) * circumference
+
+  return (
+    <div
+      className="relative grid shrink-0 place-items-center"
+      style={{ width: size, height: size }}
+    >
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        className="-rotate-90"
+        aria-hidden
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={stroke}
+          className="stroke-muted"
+        />
+        <defs>
+          <linearGradient id="admin-turnout-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" className="[stop-color:var(--primary)]" />
+            <stop offset="100%" className="[stop-color:var(--cyan-accent)]" />
+          </linearGradient>
+        </defs>
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="url(#admin-turnout-grad)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1.1, ease: 'easeOut', delay: 0.15 }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <motion.span
+          key={Math.round(clamped)}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.4, duration: 0.4 }}
+          className="font-display text-3xl font-extrabold tracking-tight text-foreground"
+        >
+          {clamped.toFixed(1)}%
+        </motion.span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function StatCard({
   icon: Icon,
   label,
@@ -776,45 +857,76 @@ function DashboardSection() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Election status */}
-        <Card className="lg:col-span-1">
+        {/* Election status — with turnout donut */}
+        <Card className="lg:col-span-1 overflow-hidden">
           <CardHeader>
-            <CardTitle className="font-display text-lg">
-              Election Status
-            </CardTitle>
-            <CardDescription>
-              {stats?.electionTitle || 'No election configured'}
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="font-display text-lg">
+                  Election Status
+                </CardTitle>
+                <CardDescription className="truncate">
+                  {stats?.electionTitle || 'No election configured'}
+                </CardDescription>
+              </div>
+              {election ? (
+                electionStatusBadge(election.status)
+              ) : (
+                <Badge variant="secondary" className="text-muted-foreground">
+                  None
+                </Badge>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                Current state
-              </span>
-              {election
-                ? electionStatusBadge(election.status)
-                : (
-                  <Badge variant="secondary" className="text-muted-foreground">
-                    None
-                  </Badge>
-                )}
-            </div>
+            {/* Turnout donut + key stats */}
+            {stats && (
+              <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-muted/30 p-3">
+                <AdminTurnoutDonut percent={stats.turnout} size={104} stroke={10} />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      Verified ratio
+                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Progress value={verifiedRatio} className="h-1.5 flex-1" />
+                      <span className="text-xs font-semibold">
+                        {verifiedRatio}%
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      Votes cast
+                    </p>
+                    <div className="mt-1 flex items-baseline gap-1.5">
+                      <span className="font-display text-xl font-bold">
+                        {stats.votesCast}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        / {stats.eligibleVoters} eligible
+                      </span>
+                    </div>
+                  </div>
+                  {election?.status === 'active' &&
+                    stats.eligibleVoters > stats.votesCast && (
+                      <p className="flex items-start gap-1.5 rounded-md bg-cyan-accent/10 p-1.5 text-[11px] text-cyan-accent">
+                        <TrendingUp className="mt-0.5 size-3 shrink-0" />
+                        <span>
+                          {stats.eligibleVoters - stats.votesCast} eligible
+                          student
+                          {stats.eligibleVoters - stats.votesCast === 1
+                            ? ''
+                            : 's'}{' '}
+                          still to vote.
+                        </span>
+                      </p>
+                    )}
+                </div>
+              </div>
+            )}
             <Separator />
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Verified ratio</span>
-                <span className="font-medium">{verifiedRatio}%</span>
-              </div>
-              <Progress value={verifiedRatio} className="h-2" />
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Voter turnout</span>
-                <span className="font-medium">{turnoutPct}%</span>
-              </div>
-              <Progress value={turnoutPct} className="h-2" />
-            </div>
-            <div className="flex flex-col gap-2 pt-2">
+            <div className="flex flex-col gap-2 pt-1">
               {election?.status === 'upcoming' && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -2029,27 +2141,46 @@ function VerificationSection() {
 function ElectionSection() {
   const [election, setElection] = useState<Election | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [acting, setActing] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
-  const fetchElection = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await api.get<{ election: Election | null }>(
-        '/admin/election'
-      )
-      setElection(res.election)
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to load election'
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const fetchElection = useCallback(
+    async (silent = false) => {
+      if (silent) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
+      try {
+        const res = await api.get<{ election: Election | null }>(
+          '/admin/election'
+        )
+        setElection(res.election)
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to load election'
+        )
+      } finally {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    },
+    []
+  )
 
   useEffect(() => {
     void fetchElection()
   }, [fetchElection])
+
+  // Auto-refresh live results every 20s while election is active
+  useEffect(() => {
+    if (election?.status !== 'active') return
+    const id = window.setInterval(() => {
+      void fetchElection(true)
+    }, 20000)
+    return () => window.clearInterval(id)
+  }, [election?.status, fetchElection])
 
   async function toggle(action: 'start' | 'end') {
     setActing(true)
@@ -2064,7 +2195,7 @@ function ElectionSection() {
       toast.success(
         action === 'start' ? 'Election started' : 'Election ended'
       )
-      void fetchElection()
+      void fetchElection(true)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Action failed')
     } finally {
@@ -2072,13 +2203,101 @@ function ElectionSection() {
     }
   }
 
-  const totalVotes = useMemo(() => {
-    if (!election?.positions) return 0
-    return election.positions.reduce(
-      (sum, p) => sum + (p._count?.votes ?? p.voteCount ?? 0),
-      0
-    )
+  // BUG FIX: use sum of candidate voteCounts (displayTotal) instead of
+  // p._count.votes (real Vote rows). The seed data pre-populates voteCount
+  // with display values that don't correspond to real Vote rows, so dividing
+  // by _count.votes produces nonsense like 2550%. This mirrors the fix
+  // applied to the public Results view in CRON-WEBDEV-REVIEW-2.
+  const positionStats = useMemo(() => {
+    if (!election?.positions) return []
+    return election.positions.map((p) => {
+      const sorted = p.candidates.slice().sort((a, b) => b.voteCount - a.voteCount)
+      const displayTotal = sorted.reduce((s, c) => s + c.voteCount, 0)
+      const realVotes = p._count?.votes ?? 0
+      const leading = sorted[0]
+      const winner =
+        election.status === 'ended' && leading && leading.voteCount > 0
+          ? leading
+          : null
+      const isTied =
+        sorted.length >= 2 &&
+        sorted[0].voteCount > 0 &&
+        sorted[0].voteCount === sorted[1].voteCount
+      return {
+        position: p,
+        sorted,
+        displayTotal,
+        realVotes,
+        leading,
+        winner,
+        isTied,
+      }
+    })
   }, [election])
+
+  const totalDisplayVotes = positionStats.reduce(
+    (s, p) => s + p.displayTotal,
+    0
+  )
+  const totalRealVotes = positionStats.reduce(
+    (s, p) => s + p.realVotes,
+    0
+  )
+  const totalCandidates = positionStats.reduce(
+    (s, p) => s + p.sorted.length,
+    0
+  )
+
+  function exportCsv() {
+    if (!election?.positions) return
+    setExporting(true)
+    try {
+      const rows: string[] = []
+      rows.push('Position,Order,Candidate,Level,Programme,Votes,Percentage,Status')
+      for (const p of election.positions) {
+        const sorted = p.candidates.slice().sort((a, b) => b.voteCount - a.voteCount)
+        const displayTotal = sorted.reduce((s, c) => s + c.voteCount, 0)
+        sorted.forEach((c, idx) => {
+          const pct = displayTotal > 0 ? ((c.voteCount / displayTotal) * 100).toFixed(1) : '0.0'
+          const status =
+            election.status === 'ended' && idx === 0 && c.voteCount > 0
+              ? 'Winner'
+              : idx === 0 && c.voteCount > 0
+                ? 'Leading'
+                : ''
+          const cell = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`
+          rows.push(
+            [
+              cell(p.title),
+              p.order,
+              cell(c.name),
+              cell(c.level ?? ''),
+              cell(c.programme ?? ''),
+              c.voteCount,
+              pct,
+              status,
+            ].join(',')
+          )
+        })
+      }
+      const csv = rows.join('\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+      a.href = url
+      a.download = `ulsesa-election-results-${stamp}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success('Results exported as CSV')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -2090,15 +2309,37 @@ function ElectionSection() {
     )
   }
 
+  const isActive = election?.status === 'active'
+  const hasEnded = election?.status === 'ended'
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold sm:text-3xl">
-          Election Control
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Manage election lifecycle and view live results
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Election Control
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Manage election lifecycle and view live results
+            {isActive && (
+              <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live · auto-refresh 20s
+              </span>
+            )}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void fetchElection(true)}
+          disabled={refreshing}
+        >
+          <RefreshCw
+            className={cn('size-4', refreshing && 'animate-spin')}
+          />
+          Refresh
+        </Button>
       </div>
 
       <Card>
@@ -2117,24 +2358,53 @@ function ElectionSection() {
         </CardHeader>
         <CardContent className="space-y-4">
           {election && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-xl bg-muted/40 p-3">
-                <p className="text-xs text-muted-foreground">Start date</p>
-                <p className="text-sm font-medium">
-                  {formatDateTime(election.startDate)}
-                </p>
+            <>
+              {/* Premium stats row with icons */}
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Clock className="size-3.5" />
+                    Start date
+                  </div>
+                  <p className="mt-1 text-sm font-semibold">
+                    {formatDateTime(election.startDate)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Clock className="size-3.5" />
+                    End date
+                  </div>
+                  <p className="mt-1 text-sm font-semibold">
+                    {election.endDate ? formatDateTime(election.endDate) : '—'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Vote className="size-3.5 text-primary" />
+                    Recorded votes
+                  </div>
+                  <p className="mt-1 text-sm font-semibold">
+                    {totalRealVotes}{' '}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      / {totalDisplayVotes} display
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-xl border border-cyan-accent/20 bg-cyan-accent/5 p-3">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Users2 className="size-3.5 text-cyan-accent" />
+                    Candidates
+                  </div>
+                  <p className="mt-1 text-sm font-semibold">
+                    {totalCandidates}{' '}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      across {positionStats.length} positions
+                    </span>
+                  </p>
+                </div>
               </div>
-              <div className="rounded-xl bg-muted/40 p-3">
-                <p className="text-xs text-muted-foreground">End date</p>
-                <p className="text-sm font-medium">
-                  {election.endDate ? formatDateTime(election.endDate) : '—'}
-                </p>
-              </div>
-              <div className="rounded-xl bg-muted/40 p-3">
-                <p className="text-xs text-muted-foreground">Total votes</p>
-                <p className="text-sm font-medium">{totalVotes}</p>
-              </div>
-            </div>
+            </>
           )}
           <Separator />
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -2191,7 +2461,22 @@ function ElectionSection() {
                 </AlertDialogContent>
               </AlertDialog>
             )}
-            {(!election || election.status === 'ended') && (
+            {election?.positions && election.positions.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={exportCsv}
+                disabled={exporting}
+                className="flex-1 sm:flex-none"
+              >
+                {exporting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                Export CSV
+              </Button>
+            )}
+            {(!election || election.status === 'ended') && !election?.positions && (
               <div className="flex-1 rounded-xl bg-muted/40 p-3 text-center text-sm text-muted-foreground">
                 {election
                   ? 'This election has ended. No further actions available.'
@@ -2202,85 +2487,222 @@ function ElectionSection() {
         </CardContent>
       </Card>
 
-      {/* Live results preview */}
+      {/* Per-position turnout breakdown */}
+      {positionStats.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-lg flex items-center gap-2">
+              <TrendingUp className="size-5 text-primary" />
+              Per-Position Turnout
+            </CardTitle>
+            <CardDescription>
+              Recorded vote count per position vs. total display votes
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {positionStats.map(
+                ({ position, realVotes, displayTotal, sorted, winner, isTied }) => {
+                  const share =
+                    totalDisplayVotes > 0
+                      ? Math.round((displayTotal / totalDisplayVotes) * 100)
+                      : 0
+                  return (
+                    <div
+                      key={position.id}
+                      className={cn(
+                        'rounded-xl border p-3 transition-colors',
+                        winner
+                          ? 'border-emerald-500/40 bg-emerald-500/5'
+                          : isActive
+                            ? 'border-cyan-accent/30 bg-cyan-accent/5'
+                            : 'border-border/60'
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-semibold">
+                          {position.title}
+                        </p>
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 text-[10px]"
+                        >
+                          {share}% of votes
+                        </Badge>
+                      </div>
+                      <div className="mt-2 flex items-end gap-2">
+                        <span className="font-display text-2xl font-bold leading-none">
+                          {realVotes}
+                        </span>
+                        <span className="pb-0.5 text-xs text-muted-foreground">
+                          recorded {displayTotal !== realVotes && `· ${displayTotal} display`}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${share}%` }}
+                          transition={{ duration: 0.6, ease: 'easeOut' }}
+                          className={cn(
+                            'h-full rounded-full',
+                            winner
+                              ? 'bg-emerald-500'
+                              : isActive
+                                ? 'bg-cyan-accent'
+                                : 'bg-primary'
+                          )}
+                        />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>
+                          {sorted.length} candidate{sorted.length === 1 ? '' : 's'}
+                        </span>
+                        {winner ? (
+                          <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                            <Crown className="size-3" />
+                            {winner.name.split(' ')[0]} won
+                          </span>
+                        ) : isTied ? (
+                          <span className="font-medium text-amber-600 dark:text-amber-400">
+                            Tied
+                          </span>
+                        ) : isActive && sorted[0]?.voteCount > 0 ? (
+                          <span className="inline-flex items-center gap-1 font-medium text-cyan-accent">
+                            <TrendingUp className="size-3" />
+                            {sorted[0].name.split(' ')[0]} leading
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                }
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Live results preview — BUG FIXED */}
       {election?.positions && election.positions.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="font-display text-lg flex items-center gap-2">
-              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-              Live Results
+              <span
+                className={cn(
+                  'size-2 rounded-full',
+                  isActive ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground'
+                )}
+              />
+              {hasEnded ? 'Final Results' : 'Live Results'}
             </CardTitle>
             <CardDescription>
-              Per-position candidate standings
+              Per-position candidate standings · percentages based on display
+              vote counts
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {election.positions.map((p) => {
-              const total =
-                p._count?.votes ??
-                p.voteCount ??
-                p.candidates.reduce((s, c) => s + c.voteCount, 0)
-              return (
-                <div key={p.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-display text-sm font-semibold">
-                      {p.title}
-                    </h4>
-                    <Badge variant="secondary" className="text-xs">
-                      {total} votes
-                    </Badge>
+            {positionStats.map(
+              ({
+                position: p,
+                sorted,
+                displayTotal,
+                winner,
+                isTied,
+              }) => (
+                <div key={p.id} className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <h4 className="font-display text-sm font-semibold">
+                        {p.title}
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        {displayTotal} display votes · {sorted.length} candidate{sorted.length === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                    {winner ? (
+                      <Badge className="shrink-0 border-transparent bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px]">
+                        <Crown className="size-3" />
+                        Winner declared
+                      </Badge>
+                    ) : isTied ? (
+                      <Badge className="shrink-0 border-transparent bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px]">
+                        Tied
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="shrink-0 text-[10px]">
+                        {displayTotal} votes
+                      </Badge>
+                    )}
                   </div>
                   <div className="space-y-1.5">
-                    {p.candidates
-                      .slice()
-                      .sort((a, b) => b.voteCount - a.voteCount)
-                      .map((c, idx) => {
-                        const pct =
-                          total > 0
-                            ? Math.round((c.voteCount / total) * 100)
-                            : 0
-                        const leading = idx === 0 && c.voteCount > 0
-                        return (
-                          <div
-                            key={c.id}
-                            className={cn(
-                              'space-y-1 rounded-lg border p-2',
-                              leading
+                    {sorted.map((c, idx) => {
+                      // BUG FIX: use displayTotal (sum of candidate voteCounts)
+                      // not real Vote row count — see comment above positionStats.
+                      const pct =
+                        displayTotal > 0
+                          ? Math.round((c.voteCount / displayTotal) * 100)
+                          : 0
+                      const isWinner = winner?.id === c.id
+                      const leading = idx === 0 && c.voteCount > 0 && !winner
+                      return (
+                        <div
+                          key={c.id}
+                          className={cn(
+                            'space-y-1 rounded-lg border p-2.5',
+                            isWinner
+                              ? 'border-emerald-500/40 bg-emerald-500/5'
+                              : leading
                                 ? 'border-cyan-accent/40 bg-cyan-accent/5'
                                 : 'border-border/60'
-                            )}
-                          >
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="flex items-center gap-2">
-                                {leading && (
-                                  <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent text-[10px]">
-                                    Leading
-                                  </Badge>
-                                )}
-                                <span className="font-medium">{c.name}</span>
+                          )}
+                        >
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="flex min-w-0 items-center gap-2">
+                              {isWinner ? (
+                                <Badge className="shrink-0 border-transparent bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px]">
+                                  <Crown className="size-3" />
+                                  Winner
+                                </Badge>
+                              ) : leading ? (
+                                <Badge className="shrink-0 border-transparent bg-cyan-accent/20 text-cyan-accent text-[10px]">
+                                  Leading
+                                </Badge>
+                              ) : null}
+                              <span className="truncate font-medium">
+                                {c.name}
                               </span>
-                              <span className="text-xs text-muted-foreground">
-                                {c.voteCount} · {pct}%
-                              </span>
-                            </div>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${pct}%` }}
-                                transition={{ duration: 0.6, ease: 'easeOut' }}
-                                className={cn(
-                                  'h-full rounded-full',
-                                  leading ? 'bg-cyan-accent' : 'bg-primary'
-                                )}
-                              />
-                            </div>
+                              {c.level && c.programme && (
+                                <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
+                                  · {c.level} · {c.programme}
+                                </span>
+                              )}
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {c.voteCount} · {pct}%
+                            </span>
                           </div>
-                        )
-                      })}
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ duration: 0.6, ease: 'easeOut' }}
+                              className={cn(
+                                'h-full rounded-full',
+                                isWinner
+                                  ? 'bg-emerald-500'
+                                  : leading
+                                    ? 'bg-cyan-accent'
+                                    : 'bg-primary'
+                              )}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )
-            })}
+            )}
           </CardContent>
         </Card>
       )}
