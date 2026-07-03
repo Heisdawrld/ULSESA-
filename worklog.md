@@ -664,3 +664,131 @@ Files modified this session:
 - src/app/api/auth/send-otp/route.ts (added two-layer rate limiting)
 
 Not yet committed to git — will commit once user confirms direction on email provider.
+
+---
+Task ID: 3-a
+Agent: full-stack-developer
+Task: Build admin manual-verify + reset-password + add-student backend routes, update claim + set-password to support admin_verified status
+
+Work Log:
+- Read worklog and the pattern file `/api/admin/students/[id]/verify/route.ts` plus `claim`, `set-password`, `server-auth`, `otp-store`, `prisma/schema.prisma` to understand existing contracts.
+- Created NEW `src/app/api/admin/students/[id]/manual-verify/route.ts` (POST): admin-only fallback that sets `verificationStatus='admin_verified'` + `isVerified=true`, writes `VerificationLog(action:'admin_verified')` + `AuditLog(action:'manual_verify')` + `Activity(action:'account_verified')`. Returns updated student + success message. Mirrors the verify route's auth/error/logging pattern exactly.
+- Created NEW `src/app/api/admin/students/[id]/reset-password/route.ts` (POST): admin-only — sets `password=null`, `verificationStatus='admin_verified'`, `isVerified=true`. Writes `VerificationLog(action:'password_reset')` + `AuditLog(action:'reset_password')`. Student re-enters the claim flow and `set-password` lets them through via the admin_verified bypass. Password hash never returned.
+- Updated `src/app/api/admin/students/route.ts` — added a POST handler (GET untouched). Validates matricNumber (required + unique, 400 on dup), fullName (required), level ∈ [100,200,300,400,500], programme (required); creates student with `password=null`, `isVerified=false`, `verificationStatus='pending'`; writes `AuditLog(action:'create_student')`; returns 201 `{ student, message }`.
+- Updated `src/app/api/auth/claim/route.ts` — added top-level `adminVerified: student.verificationStatus === 'admin_verified'` to the response (next to `student`). Frontend uses this to skip the OTP step.
+- Updated `src/app/api/auth/set-password/route.ts` — removed the hard `isOTPVerified` early-return; now fetches student (with `verificationStatus`) FIRST, keeps the existing 404 + already-claimed 400 checks, then runs the combined check `if (!otpVerified && !adminVerified) return 403`. After password set: `verificationStatus = adminVerified ? 'approved' : 'submitted'`, `isVerified=true` only when adminVerified (conditional spread). VerificationLog.action/notes and the final success message both branch on adminVerified. Cookie/token logic untouched.
+- Ran `bun run lint` → 0 errors, 0 warnings.
+- Ran `bunx tsc --noEmit` → no errors in any of the 5 modified/created files (pre-existing TS errors in `examples/`, `skills/`, `src/lib/email.ts`, `src/app/api/health/route.ts`, `src/components/shared/theme-toggle.tsx` remain out of scope).
+- Wrote detailed work record to `/agent-ctx/3-a-full-stack-developer.md` per orchestrator rule.
+
+Stage Summary:
+- Files created (2): `src/app/api/admin/students/[id]/manual-verify/route.ts`, `src/app/api/admin/students/[id]/reset-password/route.ts`
+- Files modified (3): `src/app/api/admin/students/route.ts` (added POST), `src/app/api/auth/claim/route.ts` (added adminVerified flag), `src/app/api/auth/set-password/route.ts` (admin_verified bypass)
+- End-to-end fallback flow now works: admin manual-verify → student re-claims → frontend skips OTP (adminVerified=true) → set-password bypasses OTP, sets status='approved', issues token. For forgotten password: admin reset-password → student re-claims → same set-password path.
+- All admin routes use `getCurrentAdmin` auth, follow existing try/catch + console.error + NextResponse.json pattern, no rate limiting (admin trusted), no tests.
+- Password hash is never returned in any response.
+- Lint: ✅ passes. TypeScript: ✅ clean for all 5 files touched.
+
+---
+Task ID: 3-b
+Agent: full-stack-developer
+Task: Add admin UI for manual-verify, reset-password, and add-student features
+
+Work Log:
+- Read previous worklog + agent-ctx/3-a-full-stack-developer.md to understand the backend API shapes (POST /admin/students, /admin/students/[id]/manual-verify, /admin/students/[id]/reset-password).
+- Read admin-view.tsx in chunks (imports, types, statusBadge helper, StudentsSection component, student detail dialog at lines ~1057-1210).
+- Discovered the GET /api/admin/students route deliberately excluded `password` from the select, so the UI had no way to know whether a student had claimed their account yet. The task spec requires the Manual Verify button to show only when `!hasPassword` and the Reset Password button to show only when `hasPassword`.
+- Backend surgical change: `src/app/api/admin/students/route.ts` GET handler now also fetches `password: true`, then maps the result to strip the hash and expose a derived `hasPassword: Boolean(password)` boolean. The actual password hash is never returned. Also added `admin_verified` to the list of valid `status` filter values so the new status filter in the UI works.
+- Frontend changes to `src/components/views/admin-view.tsx` (targeted edits only — full file untouched):
+  1. Added `KeyRound` and `UserPlus` to the lucide-react imports (`ShieldCheck` was already imported).
+  2. Added `hasPassword?: boolean` to the `StudentRow` interface.
+  3. Feature 3 — added a new `'admin_verified'` case to the `statusBadge()` helper: emerald-tinted Badge with a `ShieldCheck` icon and the label "Admin Verified", visually distinct from the regular "Approved" badge (deeper emerald background, icon-led).
+  4. Feature 2 — header: wrapped the existing Refresh button in a `<div className="flex gap-2">` alongside a new primary "Add Student" button (`UserPlus` icon).
+  5. Feature 2 — form: added state (`showAddDialog`, `addingStudent`, `newMatric`, `newFullName`, `newLevel`, `newProgramme`, `newEmail`, `newPhone`), a `resetAddForm()` helper, and a `handleAddStudent(e)` async function that POSTs to `/api/admin/students`, shows `toast.success("Student added")` on success or surfaces the API error message (e.g. duplicate matric) via `toast.error` on failure. The dialog has Matric Number (Input, required), Full Name (Input, required), Level (Select 100–500, required), Programme (Select with the 16 ULSESA programmes from the task spec, required), Email (Input, optional), Phone (Input, optional), and a Create Student submit button with a Loader2 spinner during submission. Closing the dialog resets the form.
+  6. Feature 1 — added state (`manualVerifying`, `resettingPassword`, `showManualVerifyConfirm`, `showResetPasswordConfirm`) and two async handlers (`handleManualVerify`, `handleResetPassword`) that POST to the manual-verify / reset-password endpoints with optional `notes`, toast on success, close both the confirm dialog and the student detail dialog, clear notes, and refresh the student list. Error handling follows the exact same pattern as the existing `verify()` function.
+  7. Feature 1 — extended the existing notes Textarea condition so it also shows when the manual-verify or reset-password buttons are visible (so admin notes can be attached to those actions too).
+  8. Feature 1 — added a Manual Verify panel inside the student detail dialog body, shown only when `verificationStatus !== 'admin_verified' && !hasPassword`. Emerald-tinted card with a `ShieldCheck` icon, helper text ("Use this when the student's email OTP fails or they can't access their email. The student can then claim their account and set a password without the email code."), and a "Manually Verify (Skip OTP)" button.
+  9. Feature 1 — added a Reset Password panel inside the student detail dialog body, shown only when `hasPassword`. Amber-tinted card with a `KeyRound` icon, warning text ("The student will need to go through the claim flow again with their matric number. Since they're already admin-verified, they won't need an email code."), and a "Reset Password" button.
+  10. Feature 1 — added two controlled `AlertDialog` confirmations as siblings of the student detail `Dialog` (placed after it in the JSX so they layer correctly). The Manual Verify confirmation asks "This will verify the student's identity without an email OTP code. They will be able to set a password immediately. Continue?" with an emerald confirm action. The Reset Password confirmation asks "This will clear the student's current password. They will need to claim their account again and set a new password (no OTP required since they were already verified). Continue?" with an amber confirm action. Both show Loader2 spinners during the API call and disable the Cancel button while pending.
+  11. Added `admin_verified` as a filter option in the status Select dropdown in the students table header for consistency with the new badge.
+- Lint: ran `bun run lint` — passes with 0 errors and 0 warnings. ✅
+
+Stage Summary:
+- Backend (1 file, surgical): `src/app/api/admin/students/route.ts` — GET now returns a derived `hasPassword` boolean (hash stripped) and accepts `admin_verified` as a valid status filter.
+- Frontend (1 file, surgical): `src/components/views/admin-view.tsx` — added 2 lucide icons, 1 StudentRow field, 1 new statusBadge case, the Add Student button + dialog form, and the Manual Verify + Reset Password panels + their controlled AlertDialog confirmations in the student detail dialog. All existing functionality (verify/approve/reject flow, search, filter, table, dialog) is preserved unchanged.
+- All three features are end-to-end functional:
+  • Admin can add a new pre-registered student (POST /api/admin/students) → toast + list refresh + form reset.
+  • Admin can manually verify a student who hasn't claimed yet (POST /api/admin/students/[id]/manual-verify) → status becomes `admin_verified` → student can set password without OTP.
+  • Admin can reset a claimed student's password (POST /api/admin/students/[id]/reset-password) → password cleared, status becomes `admin_verified` → student re-claims with matric and sets new password without OTP.
+- The `admin_verified` status now has a distinct emerald badge with a ShieldCheck icon and is filterable in the students table.
+- Lint passes. No issues encountered.
+
+---
+Task ID: 3
+Agent: main-orchestrator
+Task: Admin manual verification fallback (zero-cost email solution) + SuperTokens evaluation
+
+Work Log:
+- Evaluated SuperTokens (supertokens.com/docs) — it's an auth solution, NOT an email provider. Does not solve the Gmail 500/day limit. Recommended NOT switching (election is Tuesday, rewrite too risky, doesn't solve email problem).
+- Designed zero-cost fallback strategy: Gmail (500/day) for self-service + admin manual verify for overflow.
+- Backend (Task 3-a, subagent): Created 3 new API routes + updated 2 existing:
+  - POST /api/admin/students (add student)
+  - POST /api/admin/students/[id]/manual-verify (skip OTP)
+  - POST /api/admin/students/[id]/reset-password (clear password)
+  - Updated /api/auth/claim to return adminVerified flag
+  - Updated /api/auth/set-password to accept admin_verified as alternate proof (no OTP needed)
+- Frontend (Task 3-b, subagent): Updated admin-view.tsx with:
+  - "Manually Verify (Skip OTP)" button in student detail dialog (emerald, ShieldCheck icon)
+  - "Reset Password" button in student detail dialog (amber, KeyRound icon)
+  - "Add Student" button + form dialog in Students section
+  - admin_verified status badge
+- Frontend (main): Updated auth-view.tsx claim flow:
+  - Added adminVerified state
+  - Claim response with adminVerified=true skips OTP (step 2+3), goes straight to set password (step 4)
+  - Added emerald "Identity verified by ULSESA admin" banner in step 4 when adminVerified
+- Set up local SQLite dev database (.env with file:./prisma/dev.db)
+- Ran prisma db push + seed (13 students, admin, election, events, announcements)
+- Tested all 7 API endpoints with curl — ALL PASS:
+  1. Admin login → 200, token issued
+  2. List students → 13 students with hasPassword field
+  3. Manual verify → student becomes admin_verified
+  4. Claim detects adminVerified: true
+  5. Set password WITHOUT OTP → works, status → approved, token issued
+  6. Reset password → clears password for re-claim
+  7. Add student → new student created
+- Browser testing (agent-browser): Admin login works, dashboard loads, Add Student button visible, no console errors.
+- bun run lint: 0 errors, 0 warnings
+
+Stage Summary:
+- Zero-cost email fallback strategy: COMPLETE. Admin manual verify is the safety net for Gmail's 500/day cap.
+- Full flow verified: Admin verifies → student claims → skips OTP → sets password → can vote.
+- SuperTokens: Evaluated and rejected for now (doesn't solve email problem, too risky to rewrite before election).
+- Local dev DB set up for testing.
+- All code lint-clean.
+
+Unresolved — NEEDS USER INPUT:
+- Set up Gmail sender account (ulsesa.official@gmail.com or similar) + App Password
+- Add SMTP env vars to Render (SMTP_HOST, SMTP_PORT=465, SMTP_USER, SMTP_PASSWORD, SMTP_FROM)
+- Decide: should claiming close X hours before election opens?
+- User still needs to send real candidate list
+- User still needs to send real student details (David's proper info)
+- Manual document upload (student ID / biodata) — user said "last thing", not built yet
+
+Files created/modified this session:
+- src/app/api/admin/students/[id]/manual-verify/route.ts (NEW)
+- src/app/api/admin/students/[id]/reset-password/route.ts (NEW)
+- src/app/api/admin/students/route.ts (MODIFIED — added POST handler)
+- src/app/api/auth/claim/route.ts (MODIFIED — added adminVerified flag)
+- src/app/api/auth/set-password/route.ts (MODIFIED — admin_verified bypass)
+- src/components/views/admin-view.tsx (MODIFIED — manual verify, reset password, add student UI)
+- src/components/views/auth-view.tsx (MODIFIED — adminVerified claim flow)
+- .env (NEW — local dev SQLite config)
+
+Previous session work (still in place):
+- src/components/shared/theme-toggle.tsx (View Transitions API circular reveal)
+- src/app/globals.css (view-transition keyframes)
+- src/app/layout.tsx (removed disableTransitionOnChange)
+- src/lib/rate-limit.ts (NEW — token bucket rate limiter)
+- src/app/api/auth/send-otp/route.ts (two-layer rate limiting)
+
+Not yet committed to git.

@@ -68,3 +68,6 @@ Thumbs.db
 
 # prisma local database
 prisma/db/
+.env
+prisma/dev.db
+db/custom.db

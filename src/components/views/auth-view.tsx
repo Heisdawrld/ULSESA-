@@ -284,6 +284,10 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
   const [student, setStudent] = useState<ClaimStudent | null>(null)
   const [alreadyClaimed, setAlreadyClaimed] = useState(false)
 
+  // Admin-verified flag — when true, the student was manually verified by
+  // an ULSESA admin and can skip the OTP step entirely.
+  const [adminVerified, setAdminVerified] = useState(false)
+
   // OTP state (step 3)
   const [otp, setOtp] = useState('')
   const [maskedEmail, setMaskedEmail] = useState('')
@@ -312,13 +316,21 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     setLoading(true)
     setAlreadyClaimed(false)
     try {
-      const data = await api.post<{ student: ClaimStudent }>('/auth/claim', {
+      const data = await api.post<{
+        student: ClaimStudent
+        adminVerified: boolean
+      }>('/auth/claim', {
         matricNumber: cleaned,
       })
       setStudent(data.student)
       setMaskedEmail(maskEmail(data.student.email))
+      setAdminVerified(data.adminVerified ?? false)
       if (data.student.hasPassword) {
         setAlreadyClaimed(true)
+      } else if (data.adminVerified) {
+        // Admin manually verified this student — skip OTP, go straight
+        // to setting a password.
+        setStep(4)
       } else {
         setStep(2)
       }
@@ -443,6 +455,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     setMatric('')
     setStudent(null)
     setAlreadyClaimed(false)
+    setAdminVerified(false)
     setOtp('')
     setMaskedEmail('')
     setDemoMode(false)
@@ -794,6 +807,25 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                   Choose a password you&apos;ll use to sign in next time.
                 </p>
               </div>
+
+              {/* Admin-verified banner — shown when the student was manually
+                  verified by an ULSESA admin and skipped the OTP step. */}
+              {adminVerified && (
+                <div className="flex items-start gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
+                  <ShieldCheck className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Identity verified by ULSESA admin
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Your account was manually verified by the ULSESA
+                      administrator, so you can set your password directly
+                      without an email code. Set your password below to
+                      complete your account.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium">

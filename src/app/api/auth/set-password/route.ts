@@ -27,18 +27,6 @@ export async function POST(request: Request) {
       )
     }
 
-    // SECURITY: Verify that the OTP was successfully verified before allowing password creation.
-    // This prevents anyone from setting a password without proving email ownership.
-    if (!isOTPVerified(matricNumber)) {
-      return NextResponse.json(
-        {
-          error:
-            'Email verification required. Please verify your email with the code before setting a password.',
-        },
-        { status: 403 }
-      )
-    }
-
     const student = await db.student.findUnique({
       where: { matricNumber },
       select: {
@@ -46,6 +34,7 @@ export async function POST(request: Request) {
         matricNumber: true,
         fullName: true,
         password: true,
+        verificationStatus: true,
       },
     })
 
@@ -68,13 +57,37 @@ export async function POST(request: Request) {
       )
     }
 
+    // SECURITY: Require proof of identity before allowing password creation.
+    // Two valid proof paths:
+    //   1. OTP verified — student proved email ownership (normal flow).
+    //   2. Admin manually verified — admin confirmed identity offline
+    //      (fallback when email delivery fails, e.g. Gmail 500/day cap).
+    const otpVerified = isOTPVerified(matricNumber)
+    const adminVerified = student.verificationStatus === 'admin_verified'
+
+    if (!otpVerified && !adminVerified) {
+      return NextResponse.json(
+        {
+          error:
+            'Email verification required. Please verify your email with the code before setting a password.',
+        },
+        { status: 403 }
+      )
+    }
+
     const passwordHash = await hashPassword(password)
+
+    // If admin already verified identity, the student is fully approved once
+    // they set a password. If they came through OTP, they stay in 'submitted'
+    // pending admin approval (matches the pre-existing behaviour).
+    const newStatus = adminVerified ? 'approved' : 'submitted'
 
     const updated = await db.student.update({
       where: { id: student.id },
       data: {
         password: passwordHash,
-        verificationStatus: 'submitted', // pending admin approval
+        verificationStatus: newStatus,
+        ...(adminVerified ? { isVerified: true } : {}),
       },
       select: {
         id: true,
@@ -92,8 +105,10 @@ export async function POST(request: Request) {
     await db.verificationLog.create({
       data: {
         studentId: student.id,
-        action: 'submitted',
-        notes: 'Student verified email via OTP and set a password. Pending admin approval.',
+        action: newStatus,
+        notes: adminVerified
+          ? 'Admin had manually verified identity. Student set a password; account is now fully approved.'
+          : 'Student verified email via OTP and set a password. Pending admin approval.',
       },
     })
 
@@ -118,8 +133,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       student: updated,
       token,
-      message:
-        'Account claimed successfully! Your account is now pending admin approval. You can explore the portal, but voting will be unlocked once an admin verifies you.',
+      message: adminVerified
+        ? 'Account claimed successfully! Your identity was verified by an admin and you can now use all portal features, including voting.'
+        : 'Account claimed successfully! Your account is now pending admin approval. You can explore the portal, but voting will be unlocked once an admin verifies you.',
     })
   } catch (error) {
     console.error('[auth/set-password] Error:', error)

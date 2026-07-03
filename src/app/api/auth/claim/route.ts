@@ -50,6 +50,9 @@ export async function POST(request: Request) {
         ...student,
         hasPassword,
       },
+      // Tells the frontend to skip the OTP step entirely when an admin has
+      // manually verified the student's identity (Gmail-cap fallback path).
+      adminVerified: student.verificationStatus === 'admin_verified',
     })
   } catch (error) {
     console.error('[auth/claim] Error:', error)

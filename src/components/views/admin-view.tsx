@@ -27,6 +27,8 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  KeyRound,
+  UserPlus,
 } from 'lucide-react'
 
 import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
@@ -124,6 +126,7 @@ interface StudentRow {
   isVerified: boolean
   verificationStatus: string
   hasVoted?: boolean
+  hasPassword?: boolean
   idDocumentUrl?: string | null
   createdAt: string
   updatedAt?: string
@@ -210,6 +213,13 @@ function statusBadge(status: string) {
       return (
         <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
           Approved
+        </Badge>
+      )
+    case 'admin_verified':
+      return (
+        <Badge className="gap-1 border-transparent bg-emerald-600/20 text-emerald-700 dark:text-emerald-300">
+          <ShieldCheck className="size-3" />
+          Admin Verified
         </Badge>
       )
     case 'pending':
@@ -880,6 +890,22 @@ function StudentsSection() {
   const [acting, setActing] = useState(false)
   const [notes, setNotes] = useState('')
 
+  // Manual verify / reset password state
+  const [manualVerifying, setManualVerifying] = useState(false)
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const [showManualVerifyConfirm, setShowManualVerifyConfirm] = useState(false)
+  const [showResetPasswordConfirm, setShowResetPasswordConfirm] = useState(false)
+
+  // Add student dialog state
+  const [showAddDialog, setShowAddDialog] = useState(false)
+  const [addingStudent, setAddingStudent] = useState(false)
+  const [newMatric, setNewMatric] = useState('')
+  const [newFullName, setNewFullName] = useState('')
+  const [newLevel, setNewLevel] = useState('')
+  const [newProgramme, setNewProgramme] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+
   const fetchStudents = useCallback(async () => {
     setLoading(true)
     try {
@@ -924,6 +950,80 @@ function StudentsSection() {
     }
   }
 
+  async function handleManualVerify() {
+    if (!selected) return
+    setManualVerifying(true)
+    try {
+      await api.post(`/admin/students/${selected.id}/manual-verify`, {
+        notes: notes.trim() || undefined,
+      })
+      toast.success(`${selected.fullName} manually verified`)
+      setShowManualVerifyConfirm(false)
+      setSelected(null)
+      setNotes('')
+      void fetchStudents()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Manual verify failed')
+    } finally {
+      setManualVerifying(false)
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!selected) return
+    setResettingPassword(true)
+    try {
+      await api.post(`/admin/students/${selected.id}/reset-password`, {
+        notes: notes.trim() || undefined,
+      })
+      toast.success(`Password reset for ${selected.fullName}`)
+      setShowResetPasswordConfirm(false)
+      setSelected(null)
+      setNotes('')
+      void fetchStudents()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Reset failed')
+    } finally {
+      setResettingPassword(false)
+    }
+  }
+
+  function resetAddForm() {
+    setNewMatric('')
+    setNewFullName('')
+    setNewLevel('')
+    setNewProgramme('')
+    setNewEmail('')
+    setNewPhone('')
+  }
+
+  async function handleAddStudent(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newMatric.trim() || !newFullName.trim() || !newLevel || !newProgramme.trim()) {
+      toast.error('Please fill in all required fields')
+      return
+    }
+    setAddingStudent(true)
+    try {
+      await api.post('/admin/students', {
+        matricNumber: newMatric.trim(),
+        fullName: newFullName.trim(),
+        level: newLevel,
+        programme: newProgramme.trim(),
+        email: newEmail.trim() || undefined,
+        phone: newPhone.trim() || undefined,
+      })
+      toast.success('Student added')
+      setShowAddDialog(false)
+      resetAddForm()
+      void fetchStudents()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add student')
+    } finally {
+      setAddingStudent(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -935,9 +1035,14 @@ function StudentsSection() {
             Manage and verify student accounts
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void fetchStudents()}>
-          <RefreshCw className="size-4" /> Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => void fetchStudents()}>
+            <RefreshCw className="size-4" /> Refresh
+          </Button>
+          <Button size="sm" onClick={() => setShowAddDialog(true)}>
+            <UserPlus className="size-4" /> Add Student
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -965,6 +1070,7 @@ function StudentsSection() {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="submitted">Submitted</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="admin_verified">Admin Verified</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
@@ -1136,7 +1242,10 @@ function StudentsSection() {
                 </div>
 
                 {(selected.verificationStatus === 'submitted' ||
-                  selected.verificationStatus === 'pending') && (
+                  selected.verificationStatus === 'pending' ||
+                  (selected.verificationStatus !== 'admin_verified' &&
+                    !selected.hasPassword) ||
+                  selected.hasPassword) && (
                   <div className="space-y-2">
                     <Label htmlFor="verify-notes">
                       Notes <span className="text-muted-foreground">(optional)</span>
@@ -1148,6 +1257,68 @@ function StudentsSection() {
                       placeholder="Add internal notes for this decision…"
                       rows={2}
                     />
+                  </div>
+                )}
+
+                {/* Manual verify + reset password admin tools */}
+                {selected.verificationStatus !== 'admin_verified' &&
+                  !selected.hasPassword && (
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <ShieldCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                            Manual verification (skip OTP)
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Use this when the student&apos;s email OTP fails or
+                            they can&apos;t access their email. The student can
+                            then claim their account and set a password without
+                            the email code.
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-300"
+                        disabled={manualVerifying || acting}
+                        onClick={() => setShowManualVerifyConfirm(true)}
+                      >
+                        <ShieldCheck className="size-4" />
+                        Manually Verify (Skip OTP)
+                      </Button>
+                    </div>
+                  )}
+
+                {selected.hasPassword && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <KeyRound className="size-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                          Reset password
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          The student will need to go through the claim flow
+                          again with their matric number. Since they&apos;re
+                          already admin-verified, they won&apos;t need an email
+                          code.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-700 dark:text-amber-300"
+                      disabled={resettingPassword || acting}
+                      onClick={() => setShowResetPasswordConfirm(true)}
+                    >
+                      <KeyRound className="size-4" />
+                      Reset Password
+                    </Button>
                   </div>
                 )}
               </div>
@@ -1200,6 +1371,241 @@ function StudentsSection() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual verify confirmation */}
+      <AlertDialog
+        open={showManualVerifyConfirm}
+        onOpenChange={setShowManualVerifyConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Manually verify this student without OTP?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will verify the student&apos;s identity without an email OTP
+              code. They will be able to set a password immediately. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={manualVerifying}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+              disabled={manualVerifying}
+              onClick={(e) => {
+                e.preventDefault()
+                void handleManualVerify()
+              }}
+            >
+              {manualVerifying ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Verifying…
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="size-4" /> Confirm Manual Verify
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reset password confirmation */}
+      <AlertDialog
+        open={showResetPasswordConfirm}
+        onOpenChange={setShowResetPasswordConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset this student&apos;s password?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will clear the student&apos;s current password. They will
+              need to claim their account again and set a new password (no OTP
+              required since they were already verified). Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resettingPassword}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 text-white hover:bg-amber-600/90"
+              disabled={resettingPassword}
+              onClick={(e) => {
+                e.preventDefault()
+                void handleResetPassword()
+              }}
+            >
+              {resettingPassword ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Resetting…
+                </>
+              ) : (
+                <>
+                  <KeyRound className="size-4" /> Confirm Reset
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Add student dialog */}
+      <Dialog
+        open={showAddDialog}
+        onOpenChange={(o) => {
+          setShowAddDialog(o)
+          if (!o) resetAddForm()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Add Student</DialogTitle>
+            <DialogDescription>
+              Pre-register a student record. The student will start unverified
+              and can claim their account with their matric number.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddStudent} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-matric">
+                Matric Number <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="new-matric"
+                placeholder="e.g., 230315011"
+                value={newMatric}
+                onChange={(e) => setNewMatric(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-fullname">
+                Full Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="new-fullname"
+                placeholder="e.g., Adekunle Bola Ahmed"
+                value={newFullName}
+                onChange={(e) => setNewFullName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="new-level">
+                  Level <span className="text-destructive">*</span>
+                </Label>
+                <Select value={newLevel} onValueChange={setNewLevel} required>
+                  <SelectTrigger id="new-level">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="200">200</SelectItem>
+                    <SelectItem value="300">300</SelectItem>
+                    <SelectItem value="400">400</SelectItem>
+                    <SelectItem value="500">500</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-programme">
+                  Programme <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={newProgramme}
+                  onValueChange={setNewProgramme}
+                  required
+                >
+                  <SelectTrigger id="new-programme">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value="BSc Physics">BSc Physics</SelectItem>
+                    <SelectItem value="BSc Astrophysics">
+                      BSc Astrophysics
+                    </SelectItem>
+                    <SelectItem value="BSc Geophysics">
+                      BSc Geophysics
+                    </SelectItem>
+                    <SelectItem value="BSc Geology">BSc Geology</SelectItem>
+                    <SelectItem value="BSc Chemistry">BSc Chemistry</SelectItem>
+                    <SelectItem value="BSc Biochemistry">
+                      BSc Biochemistry
+                    </SelectItem>
+                    <SelectItem value="BSc Botany">BSc Botany</SelectItem>
+                    <SelectItem value="BSc Zoology">BSc Zoology</SelectItem>
+                    <SelectItem value="BSc Microbiology">
+                      BSc Microbiology
+                    </SelectItem>
+                    <SelectItem value="BSc Mathematics">
+                      BSc Mathematics
+                    </SelectItem>
+                    <SelectItem value="BSc Statistics">
+                      BSc Statistics
+                    </SelectItem>
+                    <SelectItem value="BEd Computer Science">
+                      BEd Computer Science
+                    </SelectItem>
+                    <SelectItem value="Ed Biology">Ed Biology</SelectItem>
+                    <SelectItem value="Ed Chemistry">Ed Chemistry</SelectItem>
+                    <SelectItem value="Ed Mathematics">Ed Mathematics</SelectItem>
+                    <SelectItem value="Ed Physics">Ed Physics</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-email">
+                Email{' '}
+                <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="new-email"
+                type="email"
+                placeholder="student@example.com"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-phone">
+                Phone{' '}
+                <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="new-phone"
+                placeholder="e.g., 08031234567"
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+              />
+            </div>
+            <DialogFooter className="gap-2">
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={addingStudent}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button type="submit" disabled={addingStudent}>
+                {addingStudent ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Adding…
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="size-4" /> Create Student
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
