@@ -43,6 +43,7 @@ import {
   Hourglass,
   RotateCcw,
   FileUp,
+  FolderUp,
   ImagePlus,
   Camera,
   X,
@@ -338,6 +339,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
   const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   // Map claim step (1..4) → indicator step (1..3) for the OTP path.
   // For the manual-upload path ('upload' | 'pending' | 'rejected') the
@@ -787,9 +789,10 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                   className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
                   onClick={handleReset}
                   disabled={loading}
+                  aria-label="Go back"
                 >
                   <ArrowLeft className="size-4" />
-                  <span className="sm:inline">Back</span>
+                  <span className="hidden sm:inline">Back</span>
                 </Button>
                 <Button
                   type="button"
@@ -801,12 +804,17 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                   {loading ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />
-                      Sending…
+                      <span className="truncate">Sending…</span>
                     </>
                   ) : (
                     <>
-                      <Mail className="size-4" />
-                      Send Verification Code
+                      <Mail className="size-4 shrink-0" />
+                      <span className="truncate">
+                        <span className="sm:hidden">Send Code</span>
+                        <span className="hidden sm:inline">
+                          Send Verification Code
+                        </span>
+                      </span>
                     </>
                   )}
                 </Button>
@@ -1204,45 +1212,92 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                 </div>
               ) : (
                 <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      fileInputRef.current?.click()
-                    }
-                  }}
                   onDragOver={(e) => {
                     e.preventDefault()
                     setDragging(true)
                   }}
                   onDragLeave={() => setDragging(false)}
                   onDrop={onDrop}
-                  className={[
-                    'flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 text-center transition-colors',
-                    dragging
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50 hover:bg-muted/40',
-                  ].join(' ')}
+                  className="space-y-3"
                 >
-                  <div className="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
-                    <Upload className="size-5" />
+                  {/* Drag & drop hint zone (visual only — actual picking is
+                      done via the two explicit buttons below so the user
+                      always has a clear choice between file and camera). */}
+                  <div
+                    className={[
+                      'flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center transition-colors',
+                      dragging
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border bg-muted/20',
+                    ].join(' ')}
+                  >
+                    <div className="grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                      <Upload className="size-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {dragging
+                          ? 'Drop the image to upload'
+                          : 'Drag & drop an image here'}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        JPG, PNG, or HEIC · up to 8 MB
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      Tap to upload or drag &amp; drop
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      JPG, PNG, or HEIC · up to 8 MB
-                    </p>
+
+                  {/* Explicit choice: upload from file OR take a photo.
+                      The file input has NO `capture` attribute so the OS
+                      file picker opens (Photo Library / Browse / Files).
+                      The camera input has `capture="environment"` so it
+                      opens the device camera directly. */}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="group flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20 transition-colors group-hover:bg-primary/15">
+                        <FolderUp className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          Upload from device
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          Choose a photo from your files
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="group flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-accent/10 text-cyan-accent ring-1 ring-cyan-accent/20 transition-colors group-hover:bg-cyan-accent/15">
+                        <Camera className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          Take a photo
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          Use your device camera
+                        </p>
+                      </div>
+                    </button>
                   </div>
-                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <Camera className="size-3.5" />
-                    <span>You can use your phone camera</span>
-                  </div>
+
+                  {/* Hidden inputs — one for file picking, one for camera */}
                   <input
                     ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={onFileInputChange}
+                    className="hidden"
+                  />
+                  <input
+                    ref={cameraInputRef}
                     type="file"
                     accept="image/*"
                     capture="environment"
@@ -1270,9 +1325,10 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                   className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
                   onClick={() => setStep(2)}
                   disabled={uploading}
+                  aria-label="Go back"
                 >
                   <ArrowLeft className="size-4" />
-                  <span className="sm:inline">Back</span>
+                  <span className="hidden sm:inline">Back</span>
                 </Button>
                 <Button
                   type="button"

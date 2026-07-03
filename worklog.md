@@ -881,3 +881,45 @@ Unresolved / risks:
 - Test students Blessing (approved+claimed) and Zainab (rejected) are in non-pristine state — reseed if a clean demo state is needed.
 - Still not committed to git. Recommend committing the manual verification feature + this QA pass.
 - Production TODO (unchanged): Gmail SMTP creds in Render env, real student/candidate lists from user.
+
+---
+Task ID: QA-UI-FIT-UPLOAD-OPTIONS
+Agent: main-orchestrator
+Task: Fix two UI issues reported by user: (1) "Send Verification" text not fitting inside its purple button box on mobile; (2) Upload student ID/biodata step going straight to camera instead of offering file vs camera options.
+
+Work Log:
+- Read worklog to understand prior context (auth-view claim flow, manual ID upload feature, primary color = oklch hue 290 = purple).
+- Inspected `src/components/views/auth-view.tsx`:
+  - Step 2 ("Confirm your details"): the primary "Send Verification Code" button used `text-sm sm:text-base` + base Button class `whitespace-nowrap shrink-0`. On 390px mobile, with the Back button + Mail icon + full label, the text overflowed the purple button's `flex-1 min-w-0` width and got clipped.
+  - Upload step: single `<input type="file" accept="image/*" capture="environment">` hidden behind one big dropzone. The `capture="environment"` attribute is what forced mobile browsers straight to the camera with no file option.
+- Fix 1 — responsive Send button label:
+  - Back button: changed `<span className="sm:inline">Back</span>` → `<span className="hidden sm:inline">Back</span>` + `aria-label="Go back"` so on mobile only the arrow shows (more room for the primary action). Applied same fix to the upload step's Back button.
+  - Send button: wrapped label in `<span className="truncate">` with two children: `<span className="sm:hidden">Send Code</span>` + `<span className="hidden sm:inline">Send Verification Code</span>`. Mobile shows "Send Code" (fits), desktop shows full "Send Verification Code". Also added `shrink-0` to the Mail icon so it never squishes.
+- Fix 2 — explicit file vs camera choice on upload step:
+  - Added `cameraInputRef = useRef<HTMLInputElement>(null)` alongside existing `fileInputRef`.
+  - Added `FolderUp` to lucide-react imports.
+  - Replaced the single click-anywhere dropzone with a 3-part layout:
+    1. A visual-only drag & drop hint zone (dashed border, shows "Drag & drop an image here" / "Drop the image to upload" when dragging). Still wired to onDrop/onDragOver/onDragLeave for desktop drag&drop.
+    2. A 2-column grid (1 col on mobile) of explicit choice tiles:
+       - "Upload from device" (FolderUp icon, primary tint) → triggers `fileInputRef.click()` — input has NO `capture` attribute, so the OS file picker opens (Photo Library / Browse / Files).
+       - "Take a photo" (Camera icon, cyan tint) → triggers `cameraInputRef.click()` — input HAS `capture="environment"`, so the device camera opens directly.
+    3. Two hidden `<input type="file" accept="image/*">` elements: one without capture (file), one with capture="environment" (camera). Both reuse the existing `onFileInputChange` handler.
+- Verification via agent-browser (mobile viewport 390×844):
+  - Navigated home → opened Claim Account → entered matric 250317001 → Continue → reached step 2 "Confirm your details".
+  - VLM analysis of step 2 screenshot: "The text 'Send Code' fits properly inside the purple button box. There is no cutting off, overflowing, or clipping."
+  - Clicked "Can't access email? Upload Student ID" → reached upload step.
+  - DOM check confirmed: two file inputs present — `fileInputRef` input has `capture:null`, `cameraInputRef` input has `capture:"environment"`. Both hidden. Two choice tiles rendered: "Upload from device" + "Take a photo".
+  - VLM analysis of upload step screenshot (after scroll): confirmed both "Upload from device" (with "Choose a photo from your files") and "Take a photo" (with "Use your device camera") tiles are visible together, layout clean and aligned.
+- `bun run lint` → 0 errors, 0 warnings. ✅
+- Dev server confirmed serving HTTP 200 throughout.
+
+Stage Summary:
+- Both user-reported UI bugs FIXED and browser-verified:
+  1. "Send Verification" button now fits inside its purple box on mobile (responsive short label "Send Code" on mobile, full "Send Verification Code" on desktop; Back button collapses to icon-only on mobile).
+  2. Upload step now offers explicit choice between "Upload from device" (file picker, no forced camera) and "Take a photo" (camera), plus a drag&drop zone for desktop. No longer jumps straight to camera.
+- Files modified (1): `src/components/views/auth-view.tsx` — added `FolderUp` import + `cameraInputRef`, responsive Send/Back button labels on step 2 and upload step, redesigned upload dropzone into hint zone + 2 explicit choice tiles + 2 hidden inputs.
+- Lint clean. No backend changes needed (upload-id API unchanged — it already accepts any base64 image data URL regardless of source).
+
+Unresolved / risks:
+- None for these two fixes.
+- Standing items from prior sessions still open: Gmail SMTP creds in Render env, real student/candidate lists from user, git commit of accumulated work.
