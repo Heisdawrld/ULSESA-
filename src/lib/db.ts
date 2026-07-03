@@ -7,9 +7,11 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 function createPrismaClient(): PrismaClient {
-  const databaseUrl = process.env.TURSO_DATABASE_URL
+  // Read the Turso URL. Prefer TURSO_DATABASE_URL (the name used on Render),
+  // but fall back to DATABASE_URL so the same code works anywhere.
+  const databaseUrl = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL
 
-  // If the TURSO_DATABASE_URL is a Turso/libsql URL, use the libsql adapter
+  // If the database URL is a Turso/libsql URL, use the libsql adapter
   // (this is for production — Render, etc. — where the filesystem is ephemeral)
   if (databaseUrl && databaseUrl.startsWith('libsql://')) {
     const libsql = createClient({
