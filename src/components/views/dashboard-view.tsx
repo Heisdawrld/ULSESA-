@@ -19,6 +19,8 @@ import {
   AlertCircle,
   RefreshCw,
   Sparkles,
+  Ticket,
+  Copy,
 } from 'lucide-react'
 
 import { useNav } from '@/lib/stores/nav-store'
@@ -37,6 +39,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
+import { formatReceiptCode } from '@/lib/receipt'
 
 // ============ Types ============
 interface Activity {
@@ -52,6 +55,12 @@ interface StudentMeResponse {
     hasVoted: boolean
   }
   activities: Activity[]
+}
+
+interface VoteReceipt {
+  receiptCode: string
+  positionTitle: string
+  timestamp: string
 }
 
 // ============ Helpers ============
@@ -140,6 +149,7 @@ export function DashboardView() {
   const [data, setData] = useState<StudentMeResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [receipts, setReceipts] = useState<VoteReceipt[]>([])
 
   const fetchDashboard = useCallback(async () => {
     if (!student) {
@@ -164,6 +174,32 @@ export function DashboardView() {
   useEffect(() => {
     fetchDashboard()
   }, [fetchDashboard])
+
+  // Fetch the student's vote receipt codes once we know they've voted.
+  // Receipts are anonymous — they prove the vote was recorded but don't
+  // reveal who the student voted for.
+  const hasVotedFlag = data?.student.hasVoted ?? false
+  useEffect(() => {
+    if (!student || !hasVotedFlag) {
+      setReceipts([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await api.get<{ receipts: VoteReceipt[] }>(
+          '/elections/my-receipts'
+        )
+        if (!cancelled) setReceipts(res.receipts ?? [])
+      } catch {
+        // Non-fatal — receipts are a nice-to-have, not core dashboard data
+        if (!cancelled) setReceipts([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [student, hasVotedFlag])
 
   // ---- Not signed in ----
   if (!student) {
@@ -473,14 +509,62 @@ export function DashboardView() {
               </div>
               <CardContent className="pt-5">
                 {hasVoted ? (
-                  <div className="text-center py-2">
-                    <div className="mx-auto w-12 h-12 rounded-2xl bg-green-500/15 text-green-500 flex items-center justify-center mb-2">
-                      <CheckCircle className="h-6 w-6" />
+                  <div className="py-2">
+                    <div className="text-center">
+                      <div className="mx-auto w-12 h-12 rounded-2xl bg-green-500/15 text-green-500 flex items-center justify-center mb-2">
+                        <CheckCircle className="h-6 w-6" />
+                      </div>
+                      <p className="text-sm font-semibold">Thank you for voting!</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Your voice matters. Results will be published after voting ends.
+                      </p>
                     </div>
-                    <p className="text-sm font-semibold">Thank you for voting!</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Your voice matters. Results will be published after voting ends.
-                    </p>
+
+                    {/* Vote receipts — anonymous codes the student can use to
+                        verify their votes were counted. */}
+                    {receipts.length > 0 && (
+                      <div className="mt-4 rounded-xl border border-border/70 bg-muted/30 p-3">
+                        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <Ticket className="size-3.5 text-primary" />
+                          Your Receipt Codes
+                        </div>
+                        <ul className="space-y-1.5">
+                          {receipts.map((r) => (
+                            <li
+                              key={r.receiptCode}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-mono text-sm font-semibold tracking-wider text-foreground">
+                                  {formatReceiptCode(r.receiptCode)}
+                                </p>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {r.positionTitle}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard
+                                    ?.writeText(formatReceiptCode(r.receiptCode))
+                                    .then(() =>
+                                      toast.success('Receipt code copied')
+                                    )
+                                    .catch(() =>
+                                      toast.error('Could not copy code')
+                                    )
+                                }}
+                                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                                aria-label={`Copy receipt code for ${r.positionTitle}`}
+                              >
+                                <Copy className="size-3.5" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     <Button
                       onClick={() => navigate('elections')}
                       variant="outline"

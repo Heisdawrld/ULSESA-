@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentStudent } from '@/lib/auth/server-auth'
+import { generateReceiptCode } from '@/lib/receipt'
 
 export async function POST(request: Request) {
   try {
@@ -71,7 +72,11 @@ export async function POST(request: Request) {
       )
     }
 
-    // Cast vote + increment candidate count atomically
+    // Cast vote + increment candidate count atomically.
+    // A unique 8-char receipt code is generated so the student can later
+    // confirm their vote was recorded — without revealing who they voted for.
+    const receiptCode = await generateReceiptCode()
+
     await db.$transaction([
       db.vote.create({
         data: {
@@ -79,6 +84,7 @@ export async function POST(request: Request) {
           positionId,
           candidateId,
           studentId: student.id,
+          receiptCode,
         },
       }),
       db.candidate.update({
@@ -117,6 +123,8 @@ export async function POST(request: Request) {
       message: 'Vote cast successfully',
       candidateId,
       positionId,
+      receiptCode,
+      positionTitle: candidate.position.title,
       completedAllPositions: studentVotes >= totalPositions,
     })
   } catch (error) {

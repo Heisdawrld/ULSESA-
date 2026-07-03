@@ -25,6 +25,10 @@ import {
   Quote,
   PartyPopper,
   TrendingUp,
+  Copy,
+  Check,
+  Ticket,
+  Search,
 } from 'lucide-react'
 
 import { useNav } from '@/lib/stores/nav-store'
@@ -62,7 +66,9 @@ import {
 } from '@/components/ui/alert-dialog'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { formatReceiptCode, normaliseReceiptCode } from '@/lib/receipt'
 
 // ============ Types ============
 interface Candidate {
@@ -213,6 +219,274 @@ const TRANSPARENCY_FEATURES = [
   },
 ]
 
+// ============ Vote Receipt Dialog ============
+// Shown immediately after a vote is cast. Displays the unique 8-char receipt
+// code so the student can confirm their vote was recorded. The code is
+// anonymous — it doesn't reveal who they voted for.
+interface ReceiptInfo {
+  receiptCode: string
+  positionTitle: string
+  candidateName: string
+}
+
+function VoteReceiptDialog({
+  receipt,
+  onClose,
+}: {
+  receipt: ReceiptInfo | null
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  // Reset copied state whenever a new receipt is shown
+  useEffect(() => {
+    if (receipt) setCopied(false)
+  }, [receipt])
+
+  const formatted = receipt ? formatReceiptCode(receipt.receiptCode) : ''
+
+  const handleCopy = async () => {
+    if (!receipt) return
+    try {
+      await navigator.clipboard.writeText(formatted)
+      setCopied(true)
+      toast.success('Receipt code copied')
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API can fail on insecure origins; fall back to select
+      toast.error('Could not copy — please write the code down manually.')
+    }
+  }
+
+  return (
+    <Dialog open={!!receipt} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <div className="mx-auto mb-2 grid size-14 place-items-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20">
+            <CheckCircle className="size-7" />
+          </div>
+          <DialogTitle className="text-center text-2xl">
+            Vote Recorded
+          </DialogTitle>
+          <DialogDescription className="text-center">
+            Your ballot for{' '}
+            <span className="font-semibold text-foreground">
+              {receipt?.positionTitle}
+            </span>{' '}
+            has been counted anonymously.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Receipt code display */}
+          <div className="rounded-2xl border-2 border-dashed border-primary/30 bg-primary/5 p-5 text-center">
+            <div className="mb-1.5 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Ticket className="size-3.5" />
+              Your Receipt Code
+            </div>
+            <p className="font-display text-3xl font-extrabold tracking-[0.2em] text-primary sm:text-4xl">
+              {formatted}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Save this code — you can use it to verify your vote was counted.
+            </p>
+          </div>
+
+          {/* Copy + info row */}
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-xl"
+              onClick={handleCopy}
+            >
+              {copied ? (
+                <>
+                  <Check className="size-4 text-emerald-600" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="size-4" />
+                  Copy code
+                </>
+              )}
+            </Button>
+            <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3 text-left">
+              <Shield className="mt-0.5 size-4 shrink-0 text-cyan-accent" />
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  Anonymous &amp; verifiable.
+                </span>{' '}
+                This code proves your vote was recorded — but it can never
+                reveal who you voted for. You can verify it anytime from the
+                Results tab.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-center">
+          <Button type="button" className="rounded-xl px-8" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ============ Receipt Verifier Card ============
+// Shown on the Results sub-view. Lets anyone (no auth needed) enter a
+// receipt code to confirm a vote was counted — without revealing the
+// candidate chosen.
+interface VerifyResult {
+  valid: boolean
+  electionTitle?: string
+  positionTitle?: string
+  timestamp?: string
+  error?: string
+}
+
+function ReceiptVerifierCard() {
+  const [code, setCode] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<VerifyResult | null>(null)
+
+  const handleVerify = async () => {
+    const cleaned = normaliseReceiptCode(code)
+    if (cleaned.length !== 8) {
+      setResult({
+        valid: false,
+        error: 'Receipt codes are 8 characters (e.g. ABCD-1234).',
+      })
+      return
+    }
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await api.post<VerifyResult>('/elections/verify-receipt', {
+        receiptCode: cleaned,
+      })
+      setResult(res)
+    } catch (e) {
+      // 404 comes back as an error from api.post
+      setResult({
+        valid: false,
+        error:
+          e instanceof Error
+            ? e.message
+            : 'No vote found with that receipt code.',
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card className="rounded-2xl border-border/60">
+      <CardContent className="p-5 sm:p-6">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="grid size-10 place-items-center rounded-xl bg-cyan-accent/15 text-cyan-accent ring-1 ring-cyan-accent/20">
+            <Search className="size-5" />
+          </div>
+          <div>
+            <h3 className="font-display text-lg font-bold tracking-tight">
+              Verify a Receipt
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Confirm a vote was counted — without revealing who it was for.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !loading) handleVerify()
+            }}
+            placeholder="e.g. ABCD-1234"
+            className="flex-1 font-mono uppercase tracking-widest"
+            maxLength={9}
+            inputMode="text"
+            autoComplete="off"
+            aria-label="Receipt code to verify"
+          />
+          <Button
+            type="button"
+            onClick={handleVerify}
+            disabled={loading || code.length < 8}
+            className="rounded-xl sm:w-auto"
+          >
+            {loading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Search className="size-4" />
+            )}
+            Verify
+          </Button>
+        </div>
+
+        <AnimatePresence mode="wait">
+          {result && (
+            <motion.div
+              key={result.valid ? 'valid' : 'invalid' + (result.error ?? '')}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className={[
+                'mt-3 rounded-xl border p-3',
+                result.valid
+                  ? 'border-emerald-500/30 bg-emerald-500/5'
+                  : 'border-destructive/30 bg-destructive/5',
+              ].join(' ')}
+            >
+              {result.valid ? (
+                <div className="flex items-start gap-2.5">
+                  <CheckCircle className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-foreground">
+                      Valid receipt — vote confirmed
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Recorded for{' '}
+                      <span className="font-medium text-foreground">
+                        {result.positionTitle}
+                      </span>{' '}
+                      on{' '}
+                      <span className="font-medium text-foreground">
+                        {new Date(result.timestamp!).toLocaleString(undefined, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </span>
+                      .
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-foreground">
+                      Receipt not recognised
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {result.error}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ============ Main Component ============
 export function ElectionsView() {
   const { navigate } = useNav()
@@ -344,26 +618,28 @@ function SubViewNav({
     { id: 'results', label: 'Results', icon: BarChart3 },
   ]
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin pb-1 -mb-1">
-      {items.map((item) => {
-        const Icon = item.icon
-        const active = subview === item.id
-        return (
-          <button
-            key={item.id}
-            onClick={() => setSubview(item.id)}
-            className={cn(
-              'flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all',
-              active
-                ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20'
-                : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {item.label}
-          </button>
-        )
-      })}
+    <div className="relative">
+      <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin pb-1 -mb-1 [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)]">
+        {items.map((item) => {
+          const Icon = item.icon
+          const active = subview === item.id
+          return (
+            <button
+              key={item.id}
+              onClick={() => setSubview(item.id)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all',
+                active
+                  ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20'
+                  : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {item.label}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -682,6 +958,7 @@ function CandidatesView() {
     position: Position
   } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [receipt, setReceipt] = useState<ReceiptInfo | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -709,7 +986,10 @@ function CandidatesView() {
     if (!voteCandidate) return
     setSubmitting(true)
     try {
-      await api.post('/elections/vote', {
+      const res = await api.post<{
+        receiptCode: string
+        positionTitle: string
+      }>('/elections/vote', {
         candidateId: voteCandidate.candidate.id,
         positionId: voteCandidate.position.id,
       })
@@ -717,6 +997,12 @@ function CandidatesView() {
         description: `You voted for ${voteCandidate.candidate.name} as ${voteCandidate.position.title}.`,
       })
       setVoteCandidate(null)
+      // Show the receipt dialog so the student can save their code
+      setReceipt({
+        receiptCode: res.receiptCode,
+        positionTitle: voteCandidate.position.title,
+        candidateName: voteCandidate.candidate.name,
+      })
       await fetchData()
     } catch (e) {
       toast.error('Failed to cast vote', {
@@ -886,6 +1172,12 @@ function CandidatesView() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Receipt dialog — shown after a successful vote */}
+      <VoteReceiptDialog
+        receipt={receipt}
+        onClose={() => setReceipt(null)}
+      />
     </div>
   )
 }
@@ -1076,6 +1368,7 @@ function VoteFlow() {
     positionTitle: string
   } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [receipt, setReceipt] = useState<ReceiptInfo | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -1098,14 +1391,23 @@ function VoteFlow() {
     if (!voteTarget) return
     setSubmitting(true)
     try {
-      await api.post('/elections/vote', {
-        candidateId: voteTarget.candidateId,
-        positionId: voteTarget.positionId,
-      })
+      const res = await api.post<{ receiptCode: string }>(
+        '/elections/vote',
+        {
+          candidateId: voteTarget.candidateId,
+          positionId: voteTarget.positionId,
+        }
+      )
       toast.success('Vote cast successfully!', {
         description: `You voted for ${voteTarget.candidateName} as ${voteTarget.positionTitle}.`,
       })
       setVoteTarget(null)
+      // Show the receipt dialog so the student can save their code
+      setReceipt({
+        receiptCode: res.receiptCode,
+        positionTitle: voteTarget.positionTitle,
+        candidateName: voteTarget.candidateName,
+      })
       // Clear selection for this position
       setSelections((prev) => {
         const next = { ...prev }
@@ -1381,6 +1683,12 @@ function VoteFlow() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Receipt dialog — shown after a successful vote */}
+      <VoteReceiptDialog
+        receipt={receipt}
+        onClose={() => setReceipt(null)}
+      />
     </div>
   )
 }
@@ -1545,6 +1853,9 @@ function ResultsView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Receipt verifier — anyone can confirm a vote was counted */}
+      <ReceiptVerifierCard />
     </div>
   )
 }

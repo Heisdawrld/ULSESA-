@@ -923,3 +923,74 @@ Stage Summary:
 Unresolved / risks:
 - None for these two fixes.
 - Standing items from prior sessions still open: Gmail SMTP creds in Render env, real student/candidate lists from user, git commit of accumulated work.
+
+---
+Task ID: CRON-WEBDEV-REVIEW-1
+Agent: main-orchestrator
+Task: Scheduled web dev review — assess project status, QA test via agent-browser, fix bugs, improve styling, and add new features.
+
+Work Log:
+- Read full worklog (925 lines) to understand project state: ULSESA student portal with auth (claim/OTP/manual ID upload), dashboard, elections (overview/candidates/vote/results), academics, community, resources, admin portal. Prior sessions built manual verification fallback + UI fixes (Send Verification button fit, upload file/camera choice).
+- Verified dev server running on :3000 (HTTP 200).
+- QA pass via agent-browser (mobile viewport 390×844) across all main views with VLM analysis:
+  - Home (auth/claim screen for logged-out): 6/10 polish, minor alignment notes
+  - Academics: 8/10, course cards clean, no issues
+  - Community: 6/10, WhatsApp card description perceived clipping, tab switching (Radix tabs — agent-browser pointer-event limitation, not a real bug)
+  - Dashboard (logged in as Dawrld): 6/10, "Recent Activity" properly displayed, redundant avatar badges (header + welcome card) noted as minor
+  - Elections: 7/10, hero card + countdown + transparency features render well, sub-nav "Vote" tab clipped on right edge (overflow-x-auto already present but no scroll hint)
+  - Admin dashboard: 7/10, stat cards functional, "System Health" label perceived clipping (VLM misread on 1-col mobile layout)
+- Identified real actionable issues: (1) elections sub-nav needs scroll-fade hint, (2) community card readability. Most other "issues" were VLM misreads or viewport-crop artifacts.
+
+STYLING FIX:
+- Elections sub-nav (`SubNav` component in elections-view.tsx): added CSS mask-image gradient fade on both left/right edges (12px transparent → solid → 12px transparent) so users can see the tab list is scrollable. Wrapped the flex row in a `relative` parent. Pure CSS, no JS, no layout shift.
+
+NEW FEATURE — Vote Receipt System (anonymous, verifiable):
+A complete transparency feature: every vote generates a unique 8-char receipt code. The student can use it to prove their vote was recorded — without revealing WHO they voted for. Anyone can verify a code publicly.
+
+Backend:
+1. `prisma/schema.prisma` — added `receiptCode String @unique` to Vote model. Ran `bun run db:push` to sync schema + regenerate Prisma client.
+2. `src/lib/receipt.ts` (NEW) — receipt code utilities:
+   - `generateReceiptCode()`: generates a unique 8-char code from an ambiguous-character-free alphabet (no 0/O/1/I/L), checks DB for collisions (8 retries), returns the code.
+   - `formatReceiptCode(code)`: formats stored code as "XXXX-XXXX" for display.
+   - `normaliseReceiptCode(input)`: strips dashes/spaces, uppercases — for lookup.
+3. `src/app/api/elections/vote/route.ts` (MODIFIED) — vote handler now generates a receiptCode, stores it with the vote, and returns it (+ positionTitle) in the response.
+4. `src/app/api/elections/my-receipts/route.ts` (NEW) — authenticated GET. Returns the calling student's receipt codes for the current election (code + position title + timestamp, NO candidate).
+5. `src/app/api/elections/verify-receipt/route.ts` (NEW) — public POST (no auth). Anyone can submit a code; returns valid/invalid + position title + timestamp (NO candidate, NO voter identity).
+
+Frontend:
+6. `src/components/views/elections-view.tsx` (MODIFIED):
+   - Added `Copy`, `Check`, `Ticket`, `Search` to lucide imports; `Input` to ui imports; `formatReceiptCode`, `normaliseReceiptCode` from `@/lib/receipt`.
+   - New `VoteReceiptDialog` component: shown immediately after a vote is cast. Displays the formatted code (XXXX-XXXX) in a large dashed-border primary-tinted box, a copy-to-clipboard button with copied-state feedback, and an "Anonymous & verifiable" explainer. Wired into both `CandidatesView` and `VoteFlow` via a `receipt` state set on successful vote.
+   - New `ReceiptVerifierCard` component: rendered at the bottom of the Results sub-view. Has a monospace uppercase input + Verify button. Calls `/api/elections/verify-receipt`, shows animated green success ("Valid receipt — vote confirmed" + position + date) or red error ("Receipt not recognised") result box with AnimatePresence transitions.
+   - `CandidatesView.handleConfirmVote` + `VoteFlow.handleConfirmVote`: now read `receiptCode` from the API response and set the `receipt` state to trigger the dialog.
+   - `SubNav` component: added scroll-fade mask gradient (styling fix above).
+7. `src/components/views/dashboard-view.tsx` (MODIFIED):
+   - Added `Ticket`, `Copy` to lucide imports; `formatReceiptCode` from `@/lib/receipt`.
+   - Added `VoteReceipt` interface + `receipts` state.
+   - New `useEffect`: when `hasVoted` is true, fetches `/api/elections/my-receipts` and stores the receipts (non-blocking — failures just leave receipts empty).
+   - Enhanced the "Thank you for voting!" block in the Election Status card: now shows a "Your Receipt Codes" panel listing each code (formatted XXXX-XXXX in monospace) with its position title and a per-row copy button.
+
+QA VERIFICATION (curl + agent-browser):
+- Started election as admin, voted as Dawrld (230317091) on all 6 positions via API → each vote returned a unique receiptCode.
+- `/api/elections/verify-receipt` with valid code → `{"valid":true,"positionTitle":"President","timestamp":"..."}` ✓
+- `/api/elections/verify-receipt` with formatted code (9488-SBNX) → valid (normalisation works) ✓
+- `/api/elections/verify-receipt` with invalid code (AAAAAAAA) → 404 `{"valid":false,"error":"No vote found..."}` ✓
+- `/api/elections/my-receipts` as Dawrld → all 6 receipts returned with position titles ✓
+- Dashboard (browser): "Your Receipt Codes" card rendered with all 6 formatted codes + copy buttons. VLM confirmed: "9488-SBNX (President), Y56P-QZ24 (Vice President), H8QK-G3GM (Secretary General)..." ✓
+- Results tab (browser): "Verify a Receipt" card rendered. Entered "9488SBNX" → green "Valid receipt — vote confirmed / Recorded for President on Jul 3, 2026, 3:04 PM." ✓. Entered "ZZZZ0000" → red "Receipt not recognised / No vote found with that receipt code." ✓
+- `bun run lint` → 0 errors, 0 warnings ✓
+- Dev server stable, HTTP 200 throughout.
+
+Stage Summary:
+- Project status: STABLE. All existing features (auth, claim, OTP, manual ID verification, dashboard, elections, voting, results, admin portal) intact and working.
+- Styling fix: elections sub-nav now has a scroll-fade gradient hint (mask-image) so mobile users can tell the tab list scrolls.
+- New feature: Vote Receipt System — full-stack transparency feature. Every vote generates a unique 8-char anonymous receipt code. Students see it immediately after voting (dialog with copy button), on their dashboard (receipts list with per-row copy), and anyone can verify a code publicly on the Results tab (no auth needed). The code proves a vote was recorded WITHOUT revealing who was voted for — reinforcing the election's "anonymous but verifiable" promise.
+- Files created (4): `src/lib/receipt.ts`, `src/app/api/elections/my-receipts/route.ts`, `src/app/api/elections/verify-receipt/route.ts`, (this worklog entry).
+- Files modified (4): `prisma/schema.prisma` (+receiptCode field), `src/app/api/elections/vote/route.ts` (generate+return receipt), `src/components/views/elections-view.tsx` (+VoteReceiptDialog, +ReceiptVerifierCard, +sub-nav scroll fade, wired into both vote flows), `src/components/views/dashboard-view.tsx` (+receipts fetch + display).
+- All endpoints tested via curl. All UI states verified via agent-browser + VLM. Lint clean.
+
+Unresolved / risks:
+- Dev server needed a full `.next` cache clear + restart to pick up the new Prisma client (receiptCode field). This is a one-time cost after schema changes — production deploy will run a fresh build.
+- Test data state: Dawrld (230317091) has voted all 6 positions (hasVoted=true). Adaeze (230317042) and Chidi (230317088) voted for President only. Blessing (250317014) was approved in prior session. The election is currently ACTIVE (started for testing). Reseed or admin-end-election to reset.
+- Standing items from prior sessions: Gmail SMTP creds in Render env, real student/candidate lists from user, git commit of accumulated work.
+- Recommended next step: git commit the vote receipt feature + styling fix. Then consider adding a per-position turnout breakdown or a live turnout donut chart on the admin dashboard for the next review cycle.

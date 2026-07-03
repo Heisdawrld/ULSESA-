@@ -100,6 +100,10 @@ model Vote {
   candidateId String
   studentId   String   // stored for one-vote-per-student enforcement, but not displayed publicly
   timestamp   DateTime @default(now())
+  // Anonymous 8-char receipt code the student can use to confirm their vote
+  // was recorded — without revealing WHO they voted for. Unique across all
+  // votes so it can be looked up publicly.
+  receiptCode String   @unique
   // Anonymous: no relation back to student identity in public views
 
   election    Election  @relation(fields: [electionId], references: [id], onDelete: Cascade)
