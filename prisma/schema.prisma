@@ -8,7 +8,9 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("TURSO_DATABASE_URL")
+  // Supports both local file: SQLite and Turso libsql:// URLs.
+  // Set DATABASE_URL (or TURSO_DATABASE_URL) in your environment.
+  url = env("DATABASE_URL")
 }
 
 // ============ AUTH & USERS ============

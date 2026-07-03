@@ -9,9 +9,6 @@ export async function GET() {
     return NextResponse.json({ groups })
   } catch (error) {
     console.error('[community] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch community groups' },
-      { status: 500 }
-    )
+    return NextResponse.json({ groups: [], error: 'Database unavailable' })
   }
 }

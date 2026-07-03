@@ -1,6 +1,5 @@
 # Render Blueprint — ULSESA Portal
-# This file lets you deploy to Render with one click.
-# Go to: https://dashboard.render.com/blueprints → New Blueprint → connect your repo
+# Deploy at: https://dashboard.render.com/blueprints
 
 services:
   - type: web
@@ -9,30 +8,50 @@ services:
     plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run start
-    healthCheckPath: /
+    healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
-      - key: TURSO_DATABASE_URL
-        sync: false  # Set this to your Turso URL (libsql://...) in Render dashboard
+      # Database (REQUIRED — set these in Render dashboard → Environment)
+      - key: DATABASE_URL
+        sync: false  # Set to: libsql://ulsesa-dawrld.aws-us-west-2.turso.io
       - key: TURSO_AUTH_TOKEN
-        sync: false  # Set this to your Turso auth token in Render dashboard
+        sync: false  # Set to your Turso auth token
+      # Auth
       - key: JWT_SECRET
         value: ulse-sa-election-2026
       - key: ADMIN_USERNAME
         value: admin
       - key: ADMIN_PASSWORD
         value: ulsesa-admin-2026
+      # Email (for OTP — set these to enable real email delivery)
       - key: SMTP_HOST
-        sync: false  # Set for email (e.g. smtp.gmail.com)
+        sync: false  # smtp.gmail.com
       - key: SMTP_PORT
-        value: 587
+        value: "587"
       - key: SMTP_USER
-        sync: false  # Set for email (e.g. ulsesa01@gmail.com)
+        sync: false  # ulsesa01@gmail.com
       - key: SMTP_PASSWORD
-        sync: false  # Set your Gmail App Password
+        sync: false  # Gmail App Password
       - key: SMTP_FROM
         value: ULSESA Portal <ulsesa01@gmail.com>
-      - key: PORT
-        value: 10000
+
+  # One-time job to create database tables + seed data
+  - type: job
+    name: ulsesa-db-setup
+    runtime: node
+    plan: free
+    buildCommand: npm install && npx prisma generate
+    startCommand: npx prisma db push && npm run seed
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: JWT_SECRET
+        value: ulse-sa-election-2026
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        value: ulsesa-admin-2026

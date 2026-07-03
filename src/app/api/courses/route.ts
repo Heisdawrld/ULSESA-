@@ -9,9 +9,6 @@ export async function GET() {
     return NextResponse.json({ courses })
   } catch (error) {
     console.error('[courses] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch courses' },
-      { status: 500 }
-    )
+    return NextResponse.json({ courses: [], error: 'Database unavailable' })
   }
 }

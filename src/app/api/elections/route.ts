@@ -72,10 +72,14 @@ export async function GET() {
       isAuthenticated: !!student,
     })
   } catch (error) {
+    // DB unreachable — return empty election so the frontend shows an
+    // empty state instead of crashing.
     console.error('[elections] Error:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch election' },
-      { status: 500 }
-    )
+    return NextResponse.json({
+      election: null,
+      positions: [],
+      hasVoted: {},
+      error: 'Database unavailable',
+    })
   }
 }
