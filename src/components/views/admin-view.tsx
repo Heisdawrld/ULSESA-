@@ -738,6 +738,10 @@ function DashboardSection() {
   const [election, setElection] = useState<Election | null>(null)
   const [acting, setActing] = useState(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
+  const [editDatesOpen, setEditDatesOpen] = useState(false)
+  const [editStart, setEditStart] = useState('')
+  const [editEnd, setEditEnd] = useState('')
+  const [savingDates, setSavingDates] = useState(false)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -764,6 +768,37 @@ function DashboardSection() {
   useEffect(() => {
     void fetchAll()
   }, [fetchAll])
+
+  async function updateElectionDates() {
+    setSavingDates(true)
+    try {
+      const res = await api.put<{ election: Election }>('/admin/election', {
+        startDate: editStart,
+        endDate: editEnd || undefined,
+      })
+      setElection(res.election)
+      toast.success('Election dates updated')
+      setEditDatesOpen(false)
+      void fetchAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update dates')
+    } finally {
+      setSavingDates(false)
+    }
+  }
+
+  function openEditDates() {
+    if (!election) return
+    // Convert ISO string to datetime-local format (YYYY-MM-DDTHH:MM)
+    const fmt = (d: string) => {
+      const dt = new Date(d)
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+    }
+    setEditStart(election.startDate ? fmt(election.startDate) : '')
+    setEditEnd(election.endDate ? fmt(election.endDate) : '')
+    setEditDatesOpen(true)
+  }
 
   async function toggleElection(action: 'start' | 'end') {
     setActing(true)
@@ -2361,24 +2396,38 @@ function ElectionSection() {
             <>
               {/* Premium stats row with icons */}
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="size-3.5" />
-                    Start date
+                <button
+                  type="button"
+                  onClick={openEditDates}
+                  className="group rounded-xl border border-border/60 bg-muted/30 p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="size-3.5" />
+                      Start date
+                    </div>
+                    <span className="text-[10px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">Edit</span>
                   </div>
                   <p className="mt-1 text-sm font-semibold">
                     {formatDateTime(election.startDate)}
                   </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="size-3.5" />
-                    End date
+                </button>
+                <button
+                  type="button"
+                  onClick={openEditDates}
+                  className="group rounded-xl border border-border/60 bg-muted/30 p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="size-3.5" />
+                      End date
+                    </div>
+                    <span className="text-[10px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">Edit</span>
                   </div>
                   <p className="mt-1 text-sm font-semibold">
                     {election.endDate ? formatDateTime(election.endDate) : '—'}
                   </p>
-                </div>
+                </button>
                 <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Vote className="size-3.5 text-primary" />
@@ -2486,6 +2535,57 @@ function ElectionSection() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit Election Dates Dialog */}
+      <Dialog open={editDatesOpen} onOpenChange={setEditDatesOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <Clock className="size-5 text-primary" />
+              Edit Election Schedule
+            </DialogTitle>
+            <DialogDescription>
+              Change the start and end date/time for this election. Times are in WAT (UTC+1).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-start">Start Date & Time</Label>
+              <Input
+                id="edit-start"
+                type="datetime-local"
+                value={editStart}
+                onChange={(e) => setEditStart(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-end">End Date & Time</Label>
+              <Input
+                id="edit-end"
+                type="datetime-local"
+                value={editEnd}
+                onChange={(e) => setEditEnd(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <DialogClose asChild>
+              <Button variant="outline" disabled={savingDates}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              onClick={() => void updateElectionDates()}
+              disabled={savingDates || !editStart}
+            >
+              {savingDates && <Loader2 className="size-4 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Per-position turnout breakdown */}
       {positionStats.length > 0 && (
