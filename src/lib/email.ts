@@ -22,6 +22,12 @@ function getTransporter(): nodemailer.Transporter {
       user: SMTP_USER,
       pass: SMTP_PASSWORD,
     },
+    // Fail fast instead of hanging forever — if SMTP credentials are wrong
+    // or the server is unreachable, fall back to demo mode within seconds.
+    connectionTimeout: 10_000,   // 10s to establish TCP connection
+    greetingTimeout: 10_000,     // 10s to receive SMTP greeting
+    socketTimeout: 15_000,       // 15s of inactivity → error
+    pool: false,                 // don't keep connections open between sends
   })
   return transporter
 }
