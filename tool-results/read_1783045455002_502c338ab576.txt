@@ -1,0 +1,557 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { motion } from 'framer-motion'
+     4→     4→import { toast } from 'sonner'
+     5→     5→import Image from 'next/image'
+     6→     6→import { useNav } from '@/lib/stores/nav-store'
+     7→     7→import { Button } from '@/components/ui/button'
+     8→     8→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     9→     9→import { Badge } from '@/components/ui/badge'
+    10→    10→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    11→    11→import { cn } from '@/lib/utils'
+    12→    12→import {
+    13→    13→  Sparkles,
+    14→    14→  Target,
+    15→    15→  Eye,
+    16→    16→  Award,
+    17→    17→  Lightbulb,
+    18→    18→  ShieldCheck,
+    19→    19→  Users2,
+    20→    20→  TrendingUp,
+    21→    21→  GraduationCap,
+    22→    22→  FlaskConical,
+    23→    23→  Phone,
+    24→    24→  Mail,
+    25→    25→  MapPin,
+    26→    26→  Clock,
+    27→    27→  ArrowRight,
+    28→    28→  Quote,
+    29→    29→  Building2,
+    30→    30→  Atom,
+    31→    31→  Leaf,
+    32→    32→  Calculator,
+    33→    33→  Beaker,
+    34→    34→  Microscope,
+    35→    35→  Instagram,
+    36→    36→  Twitter,
+    37→    37→  Music2,
+    38→    38→} from 'lucide-react'
+    39→    39→
+    40→    40→// ===================== Static data =====================
+    41→    41→
+    42→    42→const OVERVIEW_PARAGRAPHS = [
+    43→    43→  'The University of Lagos Science Education Students’ Association (ULSESA) is the largest departmental student body in UNILAG’s Faculty of Education. We bring together future science educators across five distinct cohorts — Biology, Chemistry, Mathematics, Physics, and Integrated Science Education.',
+    44→    44→  'ULSESA exists to shape tomorrow’s scientific innovators by nurturing teachers, researchers, and education leaders. Beyond the classroom, we host teaching competitions, entrepreneurship programmes, departmental sports, and a vibrant academic community that supports every student’s growth.',
+    45→    45→  'This Digital Platform is our latest initiative — a transparent, secure space where ULSESA members vote, learn, connect, and grow, all backed by verified identities and auditable records.',
+    46→    46→]
+    47→    47→
+    48→    48→const VALUES = [
+    49→    49→  { icon: Award, title: 'Excellence', desc: 'We hold ourselves to the highest academic and professional standards in everything we do.', tint: 'from-primary/15 to-primary/5 text-primary' },
+    50→    50→  { icon: Lightbulb, title: 'Innovation', desc: 'We embrace new tools, ideas, and teaching methods to advance science education.', tint: 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent dark:text-cyan-accent' },
+    51→    51→  { icon: ShieldCheck, title: 'Integrity', desc: 'Honesty, transparency, and accountability guide every decision and action.', tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400' },
+    52→    52→  { icon: Users2, title: 'Community', desc: 'We foster an inclusive environment where every voice matters and every student thrives.', tint: 'from-blue-500/15 to-blue-500/5 text-blue-600 dark:text-blue-400' },
+    53→    53→  { icon: TrendingUp, title: 'Transparency', desc: 'Open processes — from elections to results — that students can trust and verify.', tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400' },
+    54→    54→  { icon: GraduationCap, title: 'Growth', desc: 'We invest in continuous learning for students, faculty, and the wider community.', tint: 'from-rose-500/15 to-rose-500/5 text-rose-600 dark:text-rose-400' },
+    55→    55→]
+    56→    56→
+    57→    57→const STATS = [
+    58→    58→  { icon: Users2, label: 'Students', value: '2,450+', sub: 'Across 5 levels', tint: 'from-primary/15 to-primary/5 text-primary' },
+    59→    59→  { icon: GraduationCap, label: 'Faculty', value: '45+', sub: 'Lecturers & researchers', tint: 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent dark:text-cyan-accent' },
+    60→    60→  { icon: FlaskConical, label: 'Courses', value: '30+', sub: 'Undergraduate & postgrad', tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400' },
+    61→    61→  { icon: Building2, label: 'Departments', value: '5', sub: 'Science Education cohorts', tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400' },
+    62→    62→]
+    63→    63→
+    64→    64→const DEPARTMENTS = [
+    65→    65→  { icon: Leaf, title: 'Biology Education', code: 'BED', desc: 'Cell biology, genetics, ecology, and evolution — preparing future biology teachers for secondary schools.', tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400' },
+    66→    66→  { icon: Beaker, title: 'Chemistry Education', code: 'CED', desc: 'Organic, physical, and analytical chemistry with pedagogical training for chemistry educators.', tint: 'from-amber-500/15 to-amber-500/5 text-amber-600 dark:text-amber-400' },
+    67→    67→  { icon: Calculator, title: 'Mathematics Education', code: 'MED', desc: 'Calculus, algebra, and geometry for future mathematics teachers, with modern teaching methods.', tint: 'from-blue-500/15 to-blue-500/5 text-blue-600 dark:text-blue-400' },
+    68→    68→  { icon: Atom, title: 'Physics Education', code: 'PED', desc: 'Classical mechanics, quantum physics, and electromagnetism for tomorrow’s physics teachers.', tint: 'from-primary/15 to-primary/5 text-primary' },
+    69→    69→  { icon: Microscope, title: 'Integrated Science Education', code: 'IED', desc: 'A multidisciplinary blend of all sciences with teaching strategies for integrated science curricula.', tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400' },
+    70→    70→]
+    71→    71→
+    72→    72→const TEAM = [
+    73→    73→  { name: 'Dr. Adewale Johnson', title: 'Head of Department', field: 'Science Education', initials: 'AJ', tint: 'bg-primary/10 text-primary' },
+    74→    74→  { name: 'Dr. Adebayo Smith', title: 'ULSESA Staff Adviser', field: 'Physics Education', initials: 'AS', tint: 'bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent' },
+    75→    75→  { name: 'Dr. Funmilayo Okafor', title: 'Associate Professor', field: 'Biology Education', initials: 'FO', tint: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+    76→    76→  { name: 'Dr. Chinedu Eze', title: 'Senior Lecturer', field: 'Chemistry Education', initials: 'CE', tint: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+    77→    77→  { name: 'Dr. Aisha Mohammed', title: 'Lecturer', field: 'Mathematics Education', initials: 'AM', tint: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+    78→    78→  { name: 'Samuel Ike', title: 'ULSESA President', field: 'Physics Education • 500 Level', initials: 'SI', tint: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    79→    79→]
+    80→    80→
+    81→    81→const SOCIALS = [
+    82→    82→  { icon: Instagram, label: 'Instagram', handle: '@ulsesa01', url: 'https://instagram.com/ulsesa01', tint: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/15' },
+    83→    83→  { icon: Twitter, label: 'X / Twitter', handle: '@ulsesa01', url: 'https://x.com/ulsesa01', tint: 'bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/15' },
+    84→    84→  { icon: Music2, label: 'TikTok', handle: '@ulsesa01', url: 'https://tiktok.com/@ulsesa01', tint: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/15' },
+    85→    85→  { icon: Mail, label: 'Email', handle: 'ulsesa01@gmail.com', url: 'mailto:ulsesa01@gmail.com', tint: 'bg-primary/10 text-primary hover:bg-primary/15' },
+    86→    86→]
+    87→    87→
+    88→    88→// ===================== Main view =====================
+    89→    89→
+    90→    90→export function AboutView() {
+    91→    91→  const { navigate } = useNav()
+    92→    92→
+    93→    93→  function copyToClipboard(value: string, label: string) {
+    94→    94→    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    95→    95→      navigator.clipboard.writeText(value).then(() => {
+    96→    96→        toast.success(`${label} copied`, { description: value })
+    97→    97→      }).catch(() => {
+    98→    98→        toast.message(`${label}: ${value}`)
+    99→    99→      })
+   100→   100→    }
+   101→   101→  }
+   102→   102→
+   103→   103→  return (
+   104→   104→    <div className="animate-fade-in">
+   105→   105→      {/* ===================== HERO ===================== */}
+   106→   106→      <section className="relative overflow-hidden border-b border-border/40">
+   107→   107→        <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
+   108→   108→        <div className="absolute -top-24 left-1/2 -translate-x-1/2 h-72 w-[60rem] rounded-full bg-primary/20 blur-3xl pointer-events-none" aria-hidden />
+   109→   109→        <div className="absolute top-32 right-12 h-40 w-40 rounded-full bg-cyan-accent/20 blur-3xl pointer-events-none" aria-hidden />
+   110→   110→
+   111→   111→        <div className="container mx-auto px-4 lg:px-6 relative py-16 md:py-24">
+   112→   112→          <motion.div
+   113→   113→            initial={{ opacity: 0, y: 24 }}
+   114→   114→            animate={{ opacity: 1, y: 0 }}
+   115→   115→            transition={{ duration: 0.6, ease: 'easeOut' }}
+   116→   116→            className="max-w-4xl mx-auto text-center"
+   117→   117→          >
+   118→   118→            <motion.div
+   119→   119→              initial={{ opacity: 0, scale: 0.85 }}
+   120→   120→              animate={{ opacity: 1, scale: 1 }}
+   121→   121→              transition={{ duration: 0.5, delay: 0.1 }}
+   122→   122→              className="inline-flex mb-6"
+   123→   123→            >
+   124→   124→              <div className="relative h-20 w-20 rounded-2xl overflow-hidden ring-2 ring-primary/20 shadow-lg shadow-primary/20 glow-primary">
+   125→   125→                <Image
+   126→   126→                  src="/ulsesa-logo.jpg"
+   127→   127→                  alt="ULSESA Logo"
+   128→   128→                  fill
+   129→   129→                  className="object-cover"
+   130→   130→                  sizes="80px"
+   131→   131→                  priority
+   132→   132→                />
+   133→   133→              </div>
+   134→   134→            </motion.div>
+   135→   135→
+   136→   136→            <Badge variant="outline" className="mb-6 rounded-full bg-background/70 backdrop-blur px-4 py-1.5 text-xs font-medium border-primary/20">
+   137→   137→              <Building2 className="h-3.5 w-3.5 text-primary mr-1.5" />
+   138→   138→              University of Lagos • Faculty of Education
+   139→   139→            </Badge>
+   140→   140→
+   141→   141→            <h1 className="font-display font-extrabold tracking-tight text-4xl sm:text-5xl md:text-6xl leading-[1.05]">
+   142→   142→              About <span className="text-gradient-brand">ULSESA</span>
+   143→   143→            </h1>
+   144→   144→
+   145→   145→            <p className="mt-4 text-base md:text-lg font-medium text-foreground/80">
+   146→   146→              University of Lagos Science Education Students&apos; Association
+   147→   147→            </p>
+   148→   148→            <p className="mt-3 text-sm md:text-base text-muted-foreground max-w-2xl mx-auto">
+   149→   149→              Shaping tomorrow&apos;s scientific innovators — the largest department in UNILAG&apos;s Faculty of Education, uniting 5 Science Education cohorts.
+   150→   150→            </p>
+   151→   151→
+   152→   152→            <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+   153→   153→              <Button
+   154→   154→                size="lg"
+   155→   155→                onClick={() => navigate('academics')}
+   156→   156→                className="w-full sm:w-auto rounded-full px-7 h-11 shadow-lg shadow-primary/30 hover:-translate-y-0.5 transition-all"
+   157→   157→              >
+   158→   158→                <GraduationCap className="h-4.5 w-4.5" />
+   159→   159→                Explore Academics
+   160→   160→              </Button>
+   161→   161→              <Button
+   162→   162→                size="lg"
+   163→   163→                variant="outline"
+   164→   164→                onClick={() => navigate('help')}
+   165→   165→                className="w-full sm:w-auto rounded-full px-7 h-11 bg-background/60 backdrop-blur hover:bg-accent"
+   166→   166→              >
+   167→   167→                Get Help
+   168→   168→                <ArrowRight className="h-4 w-4" />
+   169→   169→              </Button>
+   170→   170→            </div>
+   171→   171→          </motion.div>
+   172→   172→        </div>
+   173→   173→      </section>
+   174→   174→
+   175→   175→      {/* ===================== OVERVIEW ===================== */}
+   176→   176→      <section className="container mx-auto px-4 lg:px-6 py-12 md:py-16">
+   177→   177→        <div className="grid lg:grid-cols-[1fr_320px] gap-10">
+   178→   178→          <motion.div
+   179→   179→            initial={{ opacity: 0, y: 16 }}
+   180→   180→            whileInView={{ opacity: 1, y: 0 }}
+   181→   181→            viewport={{ once: true, margin: '-60px' }}
+   182→   182→            transition={{ duration: 0.5 }}
+   183→   183→          >
+   184→   184→            <Badge variant="outline" className="rounded-full bg-primary/5 text-primary border-primary/20 mb-3">
+   185→   185→              Our Story
+   186→   186→            </Badge>
+   187→   187→            <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight mb-5">
+   188→   188→              A legacy of scientific education
+   189→   189→            </h2>
+   190→   190→            <div className="space-y-4 text-sm md:text-base text-muted-foreground leading-relaxed">
+   191→   191→              {OVERVIEW_PARAGRAPHS.map((p, i) => (
+   192→   192→                <p key={i}>{p}</p>
+   193→   193→              ))}
+   194→   194→            </div>
+   195→   195→          </motion.div>
+   196→   196→
+   197→   197→          {/* Quote card */}
+   198→   198→          <motion.div
+   199→   199→            initial={{ opacity: 0, y: 16 }}
+   200→   200→            whileInView={{ opacity: 1, y: 0 }}
+   201→   201→            viewport={{ once: true, margin: '-60px' }}
+   202→   202→            transition={{ duration: 0.5, delay: 0.15 }}
+   203→   203→          >
+   204→   204→            <Card className="rounded-2xl bg-gradient-to-br from-primary via-primary to-primary/80 text-primary-foreground overflow-hidden sticky top-6">
+   205→   205→              <div className="absolute -top-12 -right-8 h-40 w-40 rounded-full bg-cyan-accent/30 blur-3xl pointer-events-none" aria-hidden />
+   206→   206→              <CardContent className="relative">
+   207→   207→                <Quote className="h-8 w-8 text-cyan-accent mb-3" />
+   208→   208→                <p className="text-base font-medium leading-relaxed">
+   209→   209→                  &ldquo;Shaping tomorrow&apos;s scientific innovators — one classroom at a time.&rdquo;
+   210→   210→                </p>
+   211→   211→                <div className="mt-5 flex items-center gap-3">
+   212→   212→                  <div className="relative h-10 w-10 rounded-full overflow-hidden ring-2 ring-cyan-accent/40">
+   213→   213→                    <Image
+   214→   214→                      src="/ulsesa-logo.jpg"
+   215→   215→                      alt="ULSESA"
+   216→   216→                      fill
+   217→   217→                      className="object-cover"
+   218→   218→                      sizes="40px"
+   219→   219→                    />
+   220→   220→                  </div>
+   221→   221→                  <div>
+   222→   222→                    <div className="text-sm font-semibold">ULSESA</div>
+   223→   223→                    <div className="text-xs text-primary-foreground/70">Shaping Tomorrow&apos;s Scientific Innovators</div>
+   224→   224→                  </div>
+   225→   225→                </div>
+   226→   226→              </CardContent>
+   227→   227→            </Card>
+   228→   228→          </motion.div>
+   229→   229→        </div>
+   230→   230→      </section>
+   231→   231→
+   232→   232→      {/* ===================== VISION & MISSION ===================== */}
+   233→   233→      <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
+   234→   234→        <div className="grid md:grid-cols-2 gap-5">
+   235→   235→          <motion.div
+   236→   236→            initial={{ opacity: 0, y: 16 }}
+   237→   237→            whileInView={{ opacity: 1, y: 0 }}
+   238→   238→            viewport={{ once: true, margin: '-40px' }}
+   239→   239→            transition={{ duration: 0.5 }}
+   240→   240→          >
+   241→   241→            <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
+   242→   242→              <CardContent className="flex flex-col gap-3">
+   243→   243→                <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 text-primary">
+   244→   244→                  <Eye className="h-6 w-6" strokeWidth={1.75} />
+   245→   245→                </div>
+   246→   246→                <h3 className="font-display font-bold text-xl">Our Vision</h3>
+   247→   247→                <p className="text-sm text-muted-foreground leading-relaxed">
+   248→   248→                  To be Africa&apos;s leading centre for science education — producing graduates who drive scientific, technological, and educational innovation in their classrooms and communities.
+   249→   249→                </p>
+   250→   250→              </CardContent>
+   251→   251→            </Card>
+   252→   252→          </motion.div>
+   253→   253→
+   254→   254→          <motion.div
+   255→   255→            initial={{ opacity: 0, y: 16 }}
+   256→   256→            whileInView={{ opacity: 1, y: 0 }}
+   257→   257→            viewport={{ once: true, margin: '-40px' }}
+   258→   258→            transition={{ duration: 0.5, delay: 0.1 }}
+   259→   259→          >
+   260→   260→            <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
+   261→   261→              <CardContent className="flex flex-col gap-3">
+   262→   262→                <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent dark:text-cyan-accent">
+   263→   263→                  <Target className="h-6 w-6" strokeWidth={1.75} />
+   264→   264→                </div>
+   265→   265→                <h3 className="font-display font-bold text-xl">Our Mission</h3>
+   266→   266→                <p className="text-sm text-muted-foreground leading-relaxed">
+   267→   267→                  To deliver world-class science education through rigorous coursework, hands-on teaching practice, and cutting-edge research — while fostering an inclusive, transparent, and supportive community for every ULSESA member.
+   268→   268→                </p>
+   269→   269→              </CardContent>
+   270→   270→            </Card>
+   271→   271→          </motion.div>
+   272→   272→        </div>
+   273→   273→      </section>
+   274→   274→
+   275→   275→      {/* ===================== CORE VALUES ===================== */}
+   276→   276→      <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
+   277→   277→        <div className="text-center mb-8">
+   278→   278→          <Badge variant="outline" className="rounded-full bg-cyan-accent/10 text-cyan-accent dark:text-cyan-accent border-cyan-accent/30 mb-3">
+   279→   279→            What we stand for
+   280→   280→          </Badge>
+   281→   281→          <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">Core Values</h2>
+   282→   282→          <p className="mt-2 text-sm text-muted-foreground max-w-xl mx-auto">
+   283→   283→            The principles that shape our culture, our teaching, and our community.
+   284→   284→          </p>
+   285→   285→        </div>
+   286→   286→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   287→   287→          {VALUES.map((v, i) => {
+   288→   288→            const Icon = v.icon
+   289→   289→            return (
+   290→   290→              <motion.div
+   291→   291→                key={v.title}
+   292→   292→                initial={{ opacity: 0, y: 16 }}
+   293→   293→                whileInView={{ opacity: 1, y: 0 }}
+   294→   294→                viewport={{ once: true, margin: '-40px' }}
+   295→   295→                transition={{ duration: 0.4, delay: i * 0.06 }}
+   296→   296→              >
+   297→   297→                <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300">
+   298→   298→                  <CardContent className="flex flex-col gap-3">
+   299→   299→                    <div className={cn('inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br', v.tint)}>
+   300→   300→                      <Icon className="h-5 w-5" strokeWidth={1.75} />
+   301→   301→                    </div>
+   302→   302→                    <h3 className="font-semibold text-base">{v.title}</h3>
+   303→   303→                    <p className="text-sm text-muted-foreground leading-relaxed">{v.desc}</p>
+   304→   304→                  </CardContent>
+   305→   305→                </Card>
+   306→   306→              </motion.div>
+   307→   307→            )
+   308→   308→          })}
+   309→   309→        </div>
+   310→   310→      </section>
+   311→   311→
+   312→   312→      {/* ===================== 5 DEPARTMENTS ===================== */}
+   313→   313→      <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
+   314→   314→        <div className="text-center mb-8">
+   315→   315→          <Badge variant="outline" className="rounded-full bg-primary/5 text-primary border-primary/20 mb-3">
+   316→   316→            Our 5 Cohorts
+   317→   317→          </Badge>
+   318→   318→          <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">Science Education Departments</h2>
+   319→   319→          <p className="mt-2 text-sm text-muted-foreground max-w-xl mx-auto">
+   320→   320→            ULSESA unites five distinct science education programmes under one vibrant community.
+   321→   321→          </p>
+   322→   322→        </div>
+   323→   323→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   324→   324→          {DEPARTMENTS.map((d, i) => {
+   325→   325→            const Icon = d.icon
+   326→   326→            return (
+   327→   327→              <motion.div
+   328→   328→                key={d.title}
+   329→   329→                initial={{ opacity: 0, y: 16 }}
+   330→   330→                whileInView={{ opacity: 1, y: 0 }}
+   331→   331→                viewport={{ once: true, margin: '-40px' }}
+   332→   332→                transition={{ duration: 0.4, delay: i * 0.07 }}
+   333→   333→              >
+   334→   334→                <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300 group">
+   335→   335→                  <CardContent className="flex flex-col gap-3 h-full">
+   336→   336→                    <div className="flex items-start justify-between gap-2">
+   337→   337→                      <div className={cn('inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br', d.tint)}>
+   338→   338→                        <Icon className="h-6 w-6" strokeWidth={1.75} />
+   339→   339→                      </div>
+   340→   340→                      <Badge variant="outline" className="rounded-md font-mono font-bold text-[11px]">
+   341→   341→                        {d.code}
+   342→   342→                      </Badge>
+   343→   343→                    </div>
+   344→   344→                    <h3 className="font-semibold text-base leading-snug group-hover:text-primary transition-colors">{d.title}</h3>
+   345→   345→                    <p className="text-sm text-muted-foreground leading-relaxed flex-1">{d.desc}</p>
+   346→   346→                  </CardContent>
+   347→   347→                </Card>
+   348→   348→              </motion.div>
+   349→   349→            )
+   350→   350→          })}
+   351→   351→        </div>
+   352→   352→      </section>
+   353→   353→
+   354→   354→      {/* ===================== STATISTICS ===================== */}
+   355→   355→      <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
+   356→   356→        <Card className="rounded-2xl overflow-hidden">
+   357→   357→          <div className="relative bg-gradient-to-br from-primary via-primary to-primary/80 text-primary-foreground">
+   358→   358→            <div
+   359→   359→              className="absolute inset-0 opacity-20 pointer-events-none"
+   360→   360→              style={{
+   361→   361→                backgroundImage:
+   362→   362→                  'linear-gradient(to right, rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.2) 1px, transparent 1px)',
+   363→   363→                backgroundSize: '40px 40px',
+   364→   364→              }}
+   365→   365→              aria-hidden
+   366→   366→            />
+   367→   367→            <div className="absolute -top-20 -right-10 h-64 w-64 rounded-full bg-cyan-accent/30 blur-3xl pointer-events-none" aria-hidden />
+   368→   368→            <CardContent className="relative">
+   369→   369→              <div className="text-center mb-8">
+   370→   370→                <Badge className="bg-white/15 text-white border-0 backdrop-blur mb-3">
+   371→   371→                  <Sparkles className="h-3 w-3 mr-1 text-cyan-accent" />
+   372→   372→                  By the numbers
+   373→   373→                </Badge>
+   374→   374→                <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">
+   375→   375→                  ULSESA at a glance
+   376→   376→                </h2>
+   377→   377→                <p className="mt-2 text-sm text-primary-foreground/80">
+   378→   378→                  A growing community of learners, educators, and future science teachers.
+   379→   379→                </p>
+   380→   380→              </div>
+   381→   381→              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   382→   382→                {STATS.map((s, i) => {
+   383→   383→                  const Icon = s.icon
+   384→   384→                  return (
+   385→   385→                    <motion.div
+   386→   386→                      key={s.label}
+   387→   387→                      initial={{ opacity: 0, scale: 0.95 }}
+   388→   388→                      whileInView={{ opacity: 1, scale: 1 }}
+   389→   389→                      viewport={{ once: true }}
+   390→   390→                      transition={{ duration: 0.4, delay: i * 0.08 }}
+   391→   391→                      className="rounded-2xl bg-white/10 backdrop-blur border border-white/20 p-5 text-center"
+   392→   392→                    >
+   393→   393→                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-white mb-3">
+   394→   394→                        <Icon className="h-5 w-5" strokeWidth={1.75} />
+   395→   395→                      </div>
+   396→   396→                      <div className="text-3xl md:text-4xl font-bold font-display tabular-nums">{s.value}</div>
+   397→   397→                      <div className="text-xs font-semibold mt-1">{s.label}</div>
+   398→   398→                      <div className="text-[11px] text-primary-foreground/70 mt-0.5">{s.sub}</div>
+   399→   399→                    </motion.div>
+   400→   400→                  )
+   401→   401→                })}
+   402→   402→              </div>
+   403→   403→            </CardContent>
+   404→   404→          </div>
+   405→   405→        </Card>
+   406→   406→      </section>
+   407→   407→
+   408→   408→      {/* ===================== TEAM ===================== */}
+   409→   409→      <section className="container mx-auto px-4 lg:px-6 pb-12 md:pb-16">
+   410→   410→        <div className="text-center mb-8">
+   411→   411→          <Badge variant="outline" className="rounded-full bg-primary/5 text-primary border-primary/20 mb-3">
+   412→   412→            Leadership & Faculty
+   413→   413→          </Badge>
+   414→   414→          <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">Meet the team</h2>
+   415→   415→          <p className="mt-2 text-sm text-muted-foreground max-w-xl mx-auto">
+   416→   416→            Dedicated educators and student leaders shaping the future of science education at UNILAG.
+   417→   417→          </p>
+   418→   418→        </div>
+   419→   419→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   420→   420→          {TEAM.map((member, i) => (
+   421→   421→            <motion.div
+   422→   422→              key={member.name}
+   423→   423→              initial={{ opacity: 0, y: 16 }}
+   424→   424→              whileInView={{ opacity: 1, y: 0 }}
+   425→   425→              viewport={{ once: true, margin: '-40px' }}
+   426→   426→              transition={{ duration: 0.4, delay: i * 0.06 }}
+   427→   427→            >
+   428→   428→              <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300">
+   429→   429→                <CardContent className="flex items-center gap-4">
+   430→   430→                  <Avatar className="h-14 w-14 shrink-0">
+   431→   431→                    <AvatarFallback className={cn('font-semibold', member.tint)}>
+   432→   432→                      {member.initials}
+   433→   433→                    </AvatarFallback>
+   434→   434→                  </Avatar>
+   435→   435→                  <div className="flex-1 min-w-0">
+   436→   436→                    <h3 className="font-semibold text-base leading-snug truncate">{member.name}</h3>
+   437→   437→                    <div className="text-xs font-medium text-primary mt-0.5">{member.title}</div>
+   438→   438→                    <div className="text-xs text-muted-foreground mt-1 truncate">{member.field}</div>
+   439→   439→                  </div>
+   440→   440→                </CardContent>
+   441→   441→              </Card>
+   442→   442→            </motion.div>
+   443→   443→          ))}
+   444→   444→        </div>
+   445→   445→      </section>
+   446→   446→
+   447→   447→      {/* ===================== SOCIALS + CONTACT ===================== */}
+   448→   448→      <section className="container mx-auto px-4 lg:px-6 pb-16 md:pb-24">
+   449→   449→        {/* Socials row */}
+   450→   450→        <div className="text-center mb-8">
+   451→   451→          <Badge variant="outline" className="rounded-full bg-cyan-accent/10 text-cyan-accent dark:text-cyan-accent border-cyan-accent/30 mb-3">
+   452→   452→            Connect with us
+   453→   453→          </Badge>
+   454→   454→          <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">Follow ULSESA</h2>
+   455→   455→          <p className="mt-2 text-sm text-muted-foreground max-w-xl mx-auto">
+   456→   456→            Stay updated on events, elections, and ULSESA news across our social platforms.
+   457→   457→          </p>
+   458→   458→        </div>
+   459→   459→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
+   460→   460→          {SOCIALS.map((s, i) => {
+   461→   461→            const Icon = s.icon
+   462→   462→            return (
+   463→   463→              <motion.a
+   464→   464→                key={s.label}
+   465→   465→                href={s.url}
+   466→   466→                target="_blank"
+   467→   467→                rel="noopener noreferrer"
+   468→   468→                initial={{ opacity: 0, y: 16 }}
+   469→   469→                whileInView={{ opacity: 1, y: 0 }}
+   470→   470→                viewport={{ once: true, margin: '-30px' }}
+   471→   471→                transition={{ duration: 0.35, delay: i * 0.06 }}
+   472→   472→                whileHover={{ y: -4 }}
+   473→   473→              >
+   474→   474→                <Card className="rounded-2xl h-full hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
+   475→   475→                  <CardContent className="flex flex-col items-center gap-2 text-center">
+   476→   476→                    <div className={cn('inline-flex h-11 w-11 items-center justify-center rounded-2xl transition-colors', s.tint)}>
+   477→   477→                      <Icon className="h-5 w-5" strokeWidth={1.75} />
+   478→   478→                    </div>
+   479→   479→                    <div>
+   480→   480→                      <div className="text-xs font-semibold">{s.label}</div>
+   481→   481→                      <div className="text-[11px] text-muted-foreground">{s.handle}</div>
+   482→   482→                    </div>
+   483→   483→                  </CardContent>
+   484→   484→                </Card>
+   485→   485→              </motion.a>
+   486→   486→            )
+   487→   487→          })}
+   488→   488→        </div>
+   489→   489→
+   490→   490→        {/* Contact card */}
+   491→   491→        <Card className="rounded-2xl overflow-hidden">
+   492→   492→          <CardHeader className="border-b pb-4">
+   493→   493→            <CardTitle className="font-display flex items-center gap-2">
+   494→   494→              <MapPin className="h-5 w-5 text-primary" />
+   495→   495→              Contact ULSESA
+   496→   496→            </CardTitle>
+   497→   497→            <CardDescription>
+   498→   498→              Reach out for enquiries, collaborations, or to get involved.
+   499→   499→            </CardDescription>
+   500→   500→          </CardHeader>
+   501→   501→          <CardContent className="grid sm:grid-cols-3 gap-4">
+   502→   502→            <button
+   503→   503→              onClick={() => copyToClipboard('ulsesa01@gmail.com', 'Email')}
+   504→   504→              className="flex items-start gap-3 p-4 rounded-xl border hover:bg-muted/40 transition-colors text-left"
+   505→   505→            >
+   506→   506→              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+   507→   507→                <Mail className="h-5 w-5" />
+   508→   508→              </div>
+   509→   509→              <div className="min-w-0">
+   510→   510→                <div className="text-xs text-muted-foreground">Email</div>
+   511→   511→                <div className="text-sm font-medium truncate">ulsesa01@gmail.com</div>
+   512→   512→                <div className="text-[11px] text-primary mt-0.5">Tap to copy</div>
+   513→   513→              </div>
+   514→   514→            </button>
+   515→   515→
+   516→   516→            <button
+   517→   517→              onClick={() => copyToClipboard('+234 801 234 5678', 'Phone')}
+   518→   518→              className="flex items-start gap-3 p-4 rounded-xl border hover:bg-muted/40 transition-colors text-left"
+   519→   519→            >
+   520→   520→              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent shrink-0">
+   521→   521→                <Phone className="h-5 w-5" />
+   522→   522→              </div>
+   523→   523→              <div className="min-w-0">
+   524→   524→                <div className="text-xs text-muted-foreground">Phone</div>
+   525→   525→                <div className="text-sm font-medium tabular-nums">+234 801 234 5678</div>
+   526→   526→                <div className="text-[11px] text-primary mt-0.5">Tap to copy</div>
+   527→   527→              </div>
+   528→   528→            </button>
+   529→   529→
+   530→   530→            <div className="flex items-start gap-3 p-4 rounded-xl border">
+   531→   531→              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0">
+   532→   532→                <MapPin className="h-5 w-5" />
+   533→   533→              </div>
+   534→   534→              <div className="min-w-0">
+   535→   535→                <div className="text-xs text-muted-foreground">Location</div>
+   536→   536→                <div className="text-sm font-medium leading-snug">Department of Science Education</div>
+   537→   537→                <div className="text-xs text-muted-foreground">Faculty of Education, UNILAG, Akoka, Yaba, Lagos</div>
+   538→   538→              </div>
+   539→   539→            </div>
+   540→   540→          </CardContent>
+   541→   541→          <CardContent>
+   542→   542→            <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-4 text-sm">
+   543→   543→              <Clock className="h-4 w-4 text-primary shrink-0" />
+   544→   544→              <div>
+   545→   545→                <span className="font-semibold">Office hours:</span>{' '}
+   546→   546→                <span className="text-muted-foreground">Monday — Friday, 9:00 AM — 4:00 PM (WAT)</span>
+   547→   547→              </div>
+   548→   548→            </div>
+   549→   549→          </CardContent>
+   550→   550→        </Card>
+   551→   551→      </section>
+   552→   552→    </div>
+   553→   553→  )
+   554→   554→}
+   555→   555→
+   556→   556→export default AboutView
+   557→   557→

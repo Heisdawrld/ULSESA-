@@ -360,3 +360,172 @@ Stage Summary:
 - Social: Instagram/X/TikTok @ulsesa01, ulsesa01@gmail.com
 - All 10 views rebranded + premium polished, mobile-first responsive
 - Production-ready
+
+---
+Task ID: U2-U3
+Agent: rebuild-community-academics
+Task: Rebuild CommunityView (single WhatsApp community) + AcademicsView (remove Results, add personal timetable builder)
+
+Work Log:
+- Read worklog (Tasks 1, R1, R3, R-VERIFY history), globals.css design system (ULSESA indigo primary #4B0082, cyan-accent #00CED1, Sora + Plus Jakarta Sans fonts, premium utilities — bg-brand-gradient-soft, glass, glow-primary/cyan, ring-brand, animate-fade-in), prisma seed (verified `/api/community` now returns ONE entry: "ULSESA Official Community" with WhatsApp link `https://chat.whatsapp.com/ENV11x4Fs4wLi828he1wcp`, memberCount=500), both target view files (community-view.tsx ~507 lines, academics-view.tsx ~863 lines).
+- Confirmed available UI components: Select, Input, Label, Dialog, AlertDialog, Tabs, Card, Button, Badge, Skeleton, Avatar — all from `@/components/ui/*`.
+
+**community-view.tsx** — FULL REBUILD (~510 lines):
+- Removed: `CATEGORIES` array (6 category filter pills), `categoryBadgeClass`, `categoryLabel`, `formatMemberCount`, `initials` kept (used by Discussions), `CategoryPills` component, `GroupCard` component, `GroupSkeleton` component, the entire "WhatsApp Groups" grid section, `activeCat` state, `filtered`/`totalMembers` useMemo.
+- Kept & reused: `WhatsAppIcon` (custom inline SVG component with brand path), `SERVICES` static array (4 ULSESA student service cards: Peer Tutoring, Mentorship Program, Study Groups, Teaching Practice Support — each with cyan-accent / emerald / primary / purple tints), `DISCUSSIONS` static array (5 ULSESA-themed topics), `initials` helper.
+- Renamed tabs: "WhatsApp Groups" → "Connect"; "Student Services" and "Discussions" kept.
+- **Connect tab** (NEW main feature): single premium hero card featuring the official ULSESA WhatsApp Community:
+  - Card: `rounded-3xl border-[#25D366]/25 shadow-xl shadow-[#25D366]/10`, layered backdrop with `bg-brand-gradient-soft` + two glow orbs (#25D366 top-right, cyan-accent bottom-left).
+  - Large glowing WhatsApp icon: 24×24 / 28×28 (responsive) rounded-3xl tile in WhatsApp brand green #25D366 with `shadow-2xl shadow-[#25D366]/40 glow-cyan`, animated entrance (scale + fade, delay 0.1s).
+  - Badges: "Official ULSESA" (ShieldCheck + green tint) + "{memberCount}+ members" (Users icon, cyan-accent, reads 500+ from API).
+  - Title: `community.title` rendered as `font-display font-extrabold text-2xl md:text-4xl` ("ULSESA Official Community").
+  - Description: `community.description` (the full text from seed about the department under one roof, 5 cohorts).
+  - **Join CTA**: huge `Button size="lg"` with `h-14 px-8 text-base font-semibold bg-[#25D366] text-white hover:bg-[#1FB855] shadow-lg shadow-[#25D366]/30 transition-all hover:scale-[1.02] active:scale-[0.98]` — rendered as `<a href={community.whatsappLink} target="_blank" rel="noopener noreferrer">` with WhatsAppIcon + "Join the Community" + ArrowRight icon. Secondary hint "Free • One tap • All cohorts" with Sparkles icon in cyan-accent.
+  - Framer Motion entrance (initial opacity:0 y:20 → animate to 1/0, 0.5s duration).
+- **"What's inside?" section** below hero: 4 feature cards in a `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4`:
+  - "All 5 Cohorts" (Users2, primary tint) — Biology, Chemistry, Mathematics, Physics & Integrated Science Education under one roof.
+  - "Announcements" (Megaphone, cyan-accent) — ULSESA news, election updates, event reminders, deadline alerts.
+  - "Departmental Updates" (Bell, emerald) — Faculty notices, exam schedules, registration windows, TP info.
+  - "Stay Connected" (MessageCircle, purple) — Ask questions, share notes, find study partners.
+  - Each card: gradient-tinted icon tile (`bg-gradient-to-br`), title, description, Framer Motion staggered entrance (delay 0.15 + i×0.08), hover lift shadow.
+- Loading state: custom `HeroSkeleton` (rounded-3xl with icon + title + description + button skeletons) + 4× `FeatureSkeleton` cards.
+- Error state: dashed border card with WhatsAppIcon + error text + "Try again" button calling `fetchGroups()`.
+- Empty state: dashed card with WhatsAppIcon + "No community is available right now."
+- Hero section (page top): refreshed headline "One Community, Every ULSESA Student" with `text-gradient-brand` on "Community"; subhead explains the entire department lives under a single official WhatsApp Community across all 5 cohorts.
+- **Student Services tab**: kept verbatim from prior version (4 cards with ULSESA cohort-aware copy).
+- **Discussions tab**: kept verbatim; updated "Start Discussion" toast to point users to WhatsApp Community ("…for now, chat in the WhatsApp Community.").
+
+**academics-view.tsx** — FULL REBUILD (~830 lines):
+- Removed: Results/CGPA tab entirely — `ResultsPanel` component, `RESULTS` data, `SEMESTERS`, `GRADE_POINTS`, `gradeBadgeClass`, `computeCgpa`, `ResultRow` interface, all `Table`/`TableHeader`/`TableBody`/`TableHead`/`TableRow`/`TableCell` imports, `Award`/`TrendingUp`/`GraduationCap`/`MapPin`(MapPin kept for timetable venue)/`Clock` Lucide imports, the Results `TabsTrigger` and `TabsContent`. Hero headline changed from "Courses, Timetable & Results" → "Courses & Timetable" (with `text-gradient-brand` on "Timetable"); hero subhead rewritten to mention building a personal weekly timetable.
+- Removed: old static `TIMETABLE` array (12 hardcoded 300-level class blocks) and old `TimetableGrid` component (read-only weekly schedule viewer).
+- Removed: `DAYS`/`TIME_SLOTS` static demo arrays for old timetable (replaced with new versions for the builder).
+- **Kept Courses tab** almost verbatim from prior R3 rebuild:
+  - Fetches `/api/courses`, filters by department pills (7 options: All, Biology/Chemistry/Mathematics/Physics/Integrated Sci Edu, General) and level pills (All Levels, 100-500).
+  - `CourseCard` shows code badge (mono font), level + semester badges, title, description, department badge with dept-specific Lucide icon (Leaf/Beaker/Calculator/Atom/Microscope/FlaskConical) and color tint.
+  - "Open Materials" button (cyan-accent, `target="_blank"`) when course has `googleDriveUrl`. "View Resources" button opens per-course resources Dialog.
+  - Resources Dialog kept intact: Google Drive callout banner, resource list with type-specific icons (FileText/FileQuestion/Book/Presentation/Video), empty state with "Open Drive" CTA, "Browse all resources" navigation button.
+  - Loading skeletons + error + empty states preserved.
+- **NEW Timetable tab — Personal Timetable Builder** (`TimetableBuilder` component):
+  - State: `entries: TimetableEntry[]` (loaded from localStorage), `dialogOpen` (Add Class dialog), `hydrated` flag (prevents SSR/CSR mismatch), form fields (course, day, startTime, endTime, venue, color).
+  - **Persistence**: localStorage key `'ulsesa-timetable'`. Loaded once on mount via `useEffect`; saved on every entries change after hydration (try/catch around JSON.parse + localStorage.setItem to handle quota/malformed data gracefully).
+  - `TimetableEntry` interface: `{ id, course, day, startTime, endTime, venue, color }`. IDs generated via `crypto.randomUUID()` with fallback to `tt-{timestamp}-{random}`.
+  - Header: "My Timetable" (`font-display`), subtitle showing live class count, "Add Class" button (primary, Plus icon), "Clear Timetable" button (only when entries exist; AlertDialog confirmation).
+  - **Add Class Dialog** (shadcn Dialog, `sm:max-w-md`): 
+    - Course name (Input, placeholder "e.g. Quantum Mechanics or SED 301", Enter key submits).
+    - Day (Select: Monday–Saturday).
+    - Venue (Input, placeholder "e.g. Physics Lab 1").
+    - Start time (Select, 9 options 08:00–16:00, formatted as "8:00 AM"–"4:00 PM").
+    - End time (Select, 9 options 09:00–17:00).
+    - Color picker (5 swatches: primary/Indigo, cyan-accent/Cyan, emerald/Emerald, amber/Amber, rose/Rose — each rendered as a 9×9 round button with the swatch color, `aria-pressed` state, selected state shows ring + scale + Sparkles icon).
+    - Validation toasts: empty course name, empty venue, end time ≤ start time.
+    - "Add to Timetable" button (primary, Plus icon) — closes dialog + resets form + toast success.
+    - "Cancel" button — closes dialog + resets form.
+  - **Weekly grid display** (desktop + horizontal scroll on mobile via `overflow-x-auto scrollbar-thin`, `min-w-[860px]`):
+    - CSS grid with `gridTemplateColumns: '88px repeat(6, minmax(140px, 1fr))'` (Time column + 6 day columns Mon–Sat) and `gridTemplateRows: '44px repeat(9, minmax(60px, 1fr))'` (header row + 9 hourly rows 8AM–5PM).
+    - Header row: "Time" label + 6 day headers (Mon–Sat) with per-day class count in cyan-accent.
+    - Left column: 9 time labels (8:00 AM, 9:00 AM, …, 4:00 PM) formatted via `formatTime()`.
+    - Background cells: 6×9 = 54 empty background cells (bg-background) for clean grid lines.
+    - Entry blocks: positioned via inline `style={{ gridColumn: dIdx+2, gridRow: \`${rowStart} / span ${rowSpan}\` }}`. `rowStart = hourValue(startTime) - 6` (so 8AM → row 2, after header). `rowSpan = hourValue(endTime) - hourValue(startTime)` (so 8–10AM spans 2 rows). Block class = `colorBlockClass(color)` (e.g. `bg-primary/85 text-primary-foreground border-primary`).
+    - Block content: course name (bold, line-clamp-2), venue with MapPin icon (truncate), time range (e.g. "8:00 AM – 10:00 AM") at bottom.
+    - Delete button: appears top-right of block on hover (`opacity-0 group-hover:opacity-100`), 6×6 rounded-full with `bg-black/30 text-white hover:bg-black/50`, calls `handleRemove(id)` with toast confirmation.
+  - **Mobile list view** (`lg:hidden` Card): grouped by day (only days with classes shown), each day shows entries sorted by start time as colored blocks with full info + delete button. Provides better UX on small screens vs. horizontal-scroll grid.
+  - **Empty state**: `Card border-dashed bg-brand-gradient-soft` with `CalendarClock` icon in primary-tinted rounded-3xl tile with `glow-primary`, headline "Your timetable is empty", description, and "Add your first class" CTA button.
+  - **Clear All**: AlertDialog (`AlertDialogTrigger` wraps outline button; AlertDialogContent with title "Clear all classes?", description showing class count, Cancel + "Clear all" actions in destructive red).
+- Imports cleaned: removed `Award`, `TrendingUp`, `GraduationCap`, `Clock`, all `Table*` imports; added `Input`, `Label`, `AlertDialog*` (8 named imports), `Select`/`SelectContent`/`SelectItem`/`SelectTrigger`/`SelectValue`, `Plus`, `Trash2`, `CalendarClock`.
+
+Verification:
+- `bun run lint` → exit 0, 0 errors, 0 warnings.
+- `bunx tsc --noEmit` → 0 errors in `src/` (only pre-existing unrelated errors in `examples/websocket/` and `skills/` dirs).
+- `bunx next build` → all 28 routes generated successfully (~180ms static generation).
+- Grep audit: 0 `gold`, 0 `Results`, 0 `SEMESTERS`, 0 `GRADE_POINTS`, 0 `computeCgpa`, 0 `ResultRow`, 0 `Marketplace`/`marketplace`, 0 `CATEGORIES`, 0 `categoryBadgeClass`, 0 `GroupCard`, 0 `CategoryPills`, 0 `Department of Physics`, 0 `PHS/2023` references in either rebuilt file.
+
+Stage Summary:
+- Files modified (2): `src/components/views/community-view.tsx` (rebuilt, ~510 lines), `src/components/views/academics-view.tsx` (rebuilt, ~830 lines).
+- CommunityView now features ONE official ULSESA WhatsApp Community (sourced from `/api/community` groups[0]) in a premium hero card with: large glowing WhatsApp-green icon, "Official ULSESA" + "500+ members" badges, `font-display` title, full description, and a huge WhatsApp-green "Join the Community" CTA (h-14, lg size, scale-on-hover). Old category filters + multi-group grid fully removed. New "What's inside?" section explains the community contains all 5 cohorts, announcements, departmental updates, and connection — joining once unlocks everything.
+- AcademicsView reduced to 2 tabs (Courses + Timetable). Results/CGPA tab fully removed. Timetable rebuilt as a personal weekly timetable builder prototype with: localStorage persistence (`ulsesa-timetable`), Add Class dialog (course/day/start/end/venue/color), CSS-grid weekly schedule (Mon–Sat, 8AM–5PM hourly, color-coded blocks with row-spanning for multi-hour classes, hover-to-delete), mobile-friendly list view grouped by day, empty state with `CalendarClock` illustration, AlertDialog-confirmed "Clear Timetable" action.
+- All premium ULSESA brand utilities used: `bg-brand-gradient-soft`, `bg-grid`, `glow-cyan`, `glow-primary`, `text-gradient-brand`, `font-display` (Sora), `scrollbar-thin`, `animate-fade-in`. Framer Motion entrance + hover-lift animations throughout.
+- No `gold` references, no marketplace references, no `Department of Physics` references. WhatsApp brand color #25D366 used consistently for WhatsApp-related UI; cyan-accent used for secondary brand accents.
+- Lint clean, TypeScript clean (src/), Next.js build succeeds (28 routes).
+
+---
+Task ID: U4
+Agent: support-whatsapp-links
+Task: Update HelpView, AboutView, Footer — support links to direct WhatsApp (08117024699)
+
+Work Log:
+
+**New shared helpers (2 files created):**
+
+- `src/lib/support.ts` — Central WhatsApp helper module exporting:
+  - `SUPPORT_WHATSAPP_URL` → `"https://wa.me/2348117024699"` (no-message direct link)
+  - `SUPPORT_PHONE_DISPLAY` → `"08117024699"` (friendly Nigerian display form)
+  - `SUPPORT_PHONE_INTERNATIONAL` → `"2348117024699"` (wa.me international form, drops leading 0, prefix 234)
+  - `supportWhatsAppUrl(message?)` → builds `https://wa.me/2348117024699?text=<encodeURIComponent(message)>` (or the bare URL if no message)
+  - `SUPPORT_MESSAGES` constant object with pre-baked messages: `general`, `account`, `complaint`, `password`, `question` — each pre-prefixed with "Hi David, …" per task spec.
+
+- `src/components/shared/whatsapp-icon.tsx` — Self-contained `WhatsAppIcon` component (inline SVG, `viewBox="0 0 24 24" fill="currentColor"`, official WhatsApp brand glyph path). Accepts `className` plus `strokeWidth` (ignored — filled icon, accepted only for Lucide icon-signature compatibility so it can be swapped into existing `<Icon strokeWidth={1.75} />` rendering paths) and spreads the rest of `SVGProps<SVGSVGElement>`. Default export + named export.
+
+**File 1 — `src/components/views/help-view.tsx` (modified):**
+
+- Imports updated:
+  - Added: `WhatsAppIcon`, `supportWhatsAppUrl`, `SUPPORT_MESSAGES`, `SUPPORT_PHONE_DISPLAY`, plus `type ComponentType` from `react`.
+  - Removed (now unused): `Mail`, `Phone` from `lucide-react` (the email/phone copy-to-clipboard buttons in the Contact Support card were replaced by the WhatsApp CTA).
+- `QUICK_HELP` array given an explicit `readonly QuickHelpItem[]` type. New `whatsapp?: string` field added; when present, clicking the card opens `supportWhatsAppUrl(message)` in a new tab and shows a "Opening WhatsApp" toast.
+  - **"Contact Support" card** → icon swapped from `HeadphonesIcon` to `WhatsAppIcon`, tint changed to WhatsApp-green (`from-[#25D366]/20 to-[#25D366]/5 text-[#1FB855] dark:text-[#25D366]`), description rewritten to "Chat directly with David on WhatsApp — usually replies in minutes.", action set to `whatsapp-general` with `whatsapp: SUPPORT_MESSAGES.general`.
+  - **"Password Reset" card** → keeps `KeyRound` icon, description rewritten to "Forgot your password? Chat with David on WhatsApp to reset it fast.", action set to `whatsapp-password` with `whatsapp: SUPPORT_MESSAGES.password`.
+  - "Account Verification" and "Voting Guide" cards unchanged (still open FAQs).
+- `FAQS` array given an explicit `FaqItem[]` type with new optional `whatsapp?: { label; message }` field. When present, an additional WhatsApp link is rendered below the answer text inside the Accordion content.
+  - **faq-2 (account verification delay)** — answer rewritten: removed the `ulsesa01@gmail.com` reference; now says "please chat with David on WhatsApp for a quick status check" and gets a `whatsapp: { label: 'Chat with David on WhatsApp', message: SUPPORT_MESSAGES.account }` link rendered below.
+  - **faq-6 (forgot password)** — answer rewritten: removed email/office-visit instructions; now says "Please chat with David on WhatsApp at 08117024699 — he will verify your identity and reset your password for you, usually within a few minutes during business hours (Mon–Fri, 9 AM – 4 PM WAT)." and gets a `whatsapp: { label: 'Chat on WhatsApp • 08117024699', message: SUPPORT_MESSAGES.password }` link.
+- `handleQuickAction(action, whatsapp?)` extended: if `whatsapp` is truthy, opens `supportWhatsAppUrl(whatsapp)` in a new tab + toast "Opening WhatsApp • Direct chat with David • 08117024699", returns early. Existing faq-1/faq-3/faq-5/faq-9/contact navigation logic unchanged.
+- `QUICK_HELP` JSX rendering: `onClick={() => handleQuickAction(q.action, q.whatsapp)}`; Card now conditionally adds `hover:shadow-[#25D366]/15 border-[#25D366]/20` for WhatsApp cards (vs `hover:shadow-primary/5` for FAQ cards); CTA text changes from "Open" → "Chat" and color from `text-primary` → `text-[#1FB855] dark:text-[#25D366]` for WhatsApp cards.
+- FAQ accordion content: previously rendered `{f.a}` (plain string); now renders `<p>{f.a}</p>` plus a conditional WhatsApp link (`<a>` with `WhatsAppIcon` + label + `ArrowRight`, styled `text-[#1FB855] dark:text-[#25D366] hover:underline`) when `f.whatsapp` is present.
+- **Contact Support card body replaced**: old email copy-button + phone copy-button (`+234 801 234 5678`) removed. New body is a premium WhatsApp CTA — full-width `<a href={supportWhatsAppUrl(SUPPORT_MESSAGES.general)} target="_blank">` with:
+  - Outer wrapper: `p-[1.5px] bg-gradient-to-br from-[#25D366] via-[#1FB855] to-[#128C7E] shadow-lg shadow-[#25D366]/25 hover:scale-[1.01] active:scale-[0.99]` (gradient border + green glow + scale-on-hover).
+  - Inner: `bg-gradient-to-br from-[#25D366] to-[#1FB855] p-4 text-white` with a 12×12 rounded-2xl icon tile (`bg-white/20 backdrop-blur ring-1 ring-white/30`) containing the `WhatsAppIcon` (h-7 w-7) plus a blurred green glow `bg-[#25D366]/40 blur-md` behind it.
+  - Title: "Chat on WhatsApp" (`text-base font-bold font-display`); subtitle: "Direct line to David • 08117024699" (`tabular-nums`).
+  - Trailing `ArrowRight` icon with `group-hover:translate-x-0.5` micro-animation.
+  - `onClick` shows a "Opening WhatsApp" toast with the phone number description.
+  - Below the CTA: a "Response time" info row (Clock icon + "Usually within minutes during business hours (Mon–Fri, 9 AM – 4 PM WAT)") replaces the old "Office hours" line.
+  - The "Follow ULSESA" socials grid (Instagram/X/TikTok/WhatsApp Community → `#community` navigate) is preserved unchanged.
+- System Status card (operational) unchanged.
+
+**File 2 — `src/components/views/about-view.tsx` (modified):**
+
+- Imports updated:
+  - Added: `WhatsAppIcon`, `supportWhatsAppUrl`, `SUPPORT_MESSAGES`, `SUPPORT_PHONE_DISPLAY`.
+  - Removed (now unused): `Phone` from `lucide-react` (the phone copy-button was removed).
+- Contact card restructured (was a 3-col grid: Email/Phone/Location + a separate CardContent for office hours):
+  - Header icon changed from `MapPin` to `WhatsAppIcon` (with `text-[#25D366]`); card description updated to "Reach out for enquiries, collaborations, or to get involved — WhatsApp is the fastest way."
+  - Body now a single `CardContent` with `space-y-4`:
+    1. **Premium WhatsApp CTA** — same gradient-border + green-glow design as the help-view CTA, links to `supportWhatsAppUrl(SUPPORT_MESSAGES.question)` ("Hi David, I have a question about ULSESA."), shows "Chat on WhatsApp" + "Direct line to David • 08117024699", opens in new tab, fires "Opening WhatsApp" toast.
+    2. **Secondary 2-col grid**: Email (copy-to-clipboard button — preserved) | Location (static info — preserved). The redundant phone copy-button (`+234 801 234 5678`) is removed since WhatsApp IS the phone channel.
+    3. Office hours row (Clock icon, unchanged) — collapsed into the same CardContent.
+- `SOCIALS` array (Instagram/X/TikTok/Email — the "Follow ULSESA" grid above the contact card) is **unchanged** per task spec (email stays as a social channel).
+
+**File 3 — `src/components/layout/footer.tsx` (modified):**
+
+- Imports updated: Added `WhatsAppIcon`, `supportWhatsAppUrl`, `SUPPORT_MESSAGES`, `SUPPORT_PHONE_DISPLAY`. Existing `Mail`, `MapPin`, `Instagram`, `Twitter`, `Music2` retained.
+- "Connect" column restructured:
+  - First contact row is now a WhatsApp link: `<a href={supportWhatsAppUrl(SUPPORT_MESSAGES.general)} target="_blank">` showing `WhatsAppIcon` (h-3.5 w-3.5, `text-[#25D366]`) + phone number `08117024699` (tabular-nums) + a small "WHATSAPP" label tag. Hover color shifts to WhatsApp green.
+  - Second row: email link (`mailto:ulsesa01@gmail.com`) — changed from plain text `<li>` to a clickable `<a>` for better UX; Mail icon retained.
+  - Third row: location (unchanged).
+  - Social icon row: Instagram, X, TikTok buttons unchanged. **New** 4th WhatsApp icon button added — `aria-label="Chat with ULSESA support on WhatsApp"`, border tinted `border-[#25D366]/40`, text `text-[#1FB855] dark:text-[#25D366]`, hover `hover:bg-[#25D366]/10 hover:border-[#25D366]`, links to `supportWhatsAppUrl(SUPPORT_MESSAGES.general)`.
+- Brand/Platform/Community columns and bottom copyright row unchanged.
+
+**Verification:**
+- `bun run lint` → exit 0, 0 errors, 0 warnings (eslint.config.mjs already ignores `examples/**` and `skills`).
+- `bunx tsc --noEmit` → 0 errors in `src/` (only 4 pre-existing unrelated errors in `examples/websocket/` and `skills/stock-analysis-skill/` and `skills/image-edit/` — none touched by this task).
+- All `'use client'` directives preserved (help-view, about-view, footer all remain client components).
+- No broken references — `Mail`/`Phone` imports only removed where they were genuinely unused after the edit (verified via `rg '\bMail\b|Phone'` → no remaining references in help-view or about-view).
+- WhatsApp green `#25D366` used consistently for fills/borders/glow; darker `#1FB855` and `#128C7E` for gradient depth; light-mode text uses `#1FB855`, dark-mode text uses `#25D366`.
+
+Stage Summary:
+- Files created (2): `src/lib/support.ts` (WhatsApp URL helpers + pre-baked messages), `src/components/shared/whatsapp-icon.tsx` (inline-SVG `WhatsAppIcon` component with Lucide-compatible props).
+- Files modified (3): `src/components/views/help-view.tsx` (Help Center), `src/components/views/about-view.tsx` (About page contact card), `src/components/layout/footer.tsx` (footer Connect column + icon row).
+- All "support / complaints / contact / help" CTAs across the 3 views now route to `https://wa.me/2348117024699?text=<encoded-message>` with a context-appropriate pre-filled message ("Hi David, …") — general support, account issues, password reset, and questions are all covered.
+- Two premium "Chat on WhatsApp" CTAs (HelpView contact card + AboutView contact card) using a gradient-border + green-glow + scale-on-hover design with the `WhatsAppIcon` in a frosted-glass tile and the phone number `08117024699` shown in tabular-nums. Footer gets a more compact WhatsApp link in the Connect column plus a WhatsApp icon button at the end of the socials row.
+- FAQ answers in HelpView no longer point students to email (`ulsesa01@gmail.com`) or phone (`+234 801 234 5678`) — they now say "chat with David on WhatsApp at 08117024699" with a clickable `wa.me` link rendered below the answer.
+- Quick-help cards in HelpView: "Contact Support" now opens WhatsApp directly (WhatsApp-green card with WhatsApp icon, "Chat" CTA); "Password Reset" now opens WhatsApp with the forgot-password pre-filled message.
+- WhatsApp brand color #25D366 (with #1FB855 / #128C7E gradient siblings) used consistently for fills, borders, glows, and dark-mode text; light-mode text uses #1FB855. ULSESA brand primary (purple) and cyan-accent preserved elsewhere.
+- Lint clean, TypeScript clean for `src/`, no broken references, no `'use client'` regressions, mobile-friendly anchor-based CTAs (Android-primary).

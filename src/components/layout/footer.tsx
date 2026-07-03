@@ -1,8 +1,14 @@
 'use client'
 
 import Image from 'next/image'
-import { Mail, Phone, MapPin, Instagram, Twitter, Music2 } from 'lucide-react'
+import { Mail, MapPin, Instagram, Twitter, Music2 } from 'lucide-react'
 import { useNav } from '@/lib/stores/nav-store'
+import { WhatsAppIcon } from '@/components/shared/whatsapp-icon'
+import {
+  supportWhatsAppUrl,
+  SUPPORT_MESSAGES,
+  SUPPORT_PHONE_DISPLAY,
+} from '@/lib/support'
 
 export function Footer() {
   const { navigate } = useNav()
@@ -56,8 +62,31 @@ export function Footer() {
           <div>
             <h4 className="text-sm font-semibold mb-4 font-display">Connect</h4>
             <ul className="space-y-2.5 text-sm text-muted-foreground mb-4">
-              <li className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-primary" /> ulsesa01@gmail.com</li>
-              <li className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-primary" /> Faculty of Education, UNILAG</li>
+              <li>
+                <a
+                  href={supportWhatsAppUrl(SUPPORT_MESSAGES.general)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 hover:text-[#1FB855] dark:hover:text-[#25D366] transition-colors"
+                >
+                  <WhatsAppIcon className="h-3.5 w-3.5 text-[#25D366]" />
+                  <span className="tabular-nums">{SUPPORT_PHONE_DISPLAY}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">WhatsApp</span>
+                </a>
+              </li>
+              <li>
+                <a
+                  href="mailto:ulsesa01@gmail.com"
+                  className="flex items-center gap-2 hover:text-primary transition-colors"
+                >
+                  <Mail className="h-3.5 w-3.5 text-primary" />
+                  ulsesa01@gmail.com
+                </a>
+              </li>
+              <li className="flex items-center gap-2">
+                <MapPin className="h-3.5 w-3.5 text-primary" />
+                Faculty of Education, UNILAG
+              </li>
             </ul>
             <div className="flex items-center gap-3">
               <a
@@ -86,6 +115,15 @@ export function Footer() {
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/60 text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all"
               >
                 <Music2 className="h-4 w-4" />
+              </a>
+              <a
+                href={supportWhatsAppUrl(SUPPORT_MESSAGES.general)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Chat with ULSESA support on WhatsApp"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#25D366]/40 text-[#1FB855] dark:text-[#25D366] hover:bg-[#25D366]/10 hover:border-[#25D366] transition-all"
+              >
+                <WhatsAppIcon className="h-4 w-4" />
               </a>
             </div>
           </div>

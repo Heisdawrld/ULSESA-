@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import type { ComponentType } from 'react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useNav } from '@/lib/stores/nav-store'
@@ -15,6 +16,12 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 import { cn } from '@/lib/utils'
+import { WhatsAppIcon } from '@/components/shared/whatsapp-icon'
+import {
+  supportWhatsAppUrl,
+  SUPPORT_MESSAGES,
+  SUPPORT_PHONE_DISPLAY,
+} from '@/lib/support'
 import {
   Search,
   LifeBuoy,
@@ -22,8 +29,6 @@ import {
   Vote,
   KeyRound,
   HeadphonesIcon,
-  Mail,
-  Phone,
   Clock,
   ChevronRight,
   HelpCircle,
@@ -39,7 +44,19 @@ import {
 
 // ===================== Static data =====================
 
-const QUICK_HELP = [
+type IconType = ComponentType<{ className?: string; strokeWidth?: number }>
+
+type QuickHelpItem = {
+  icon: IconType
+  title: string
+  desc: string
+  tint: string
+  action: string
+  /** If present, clicking this card opens WhatsApp with this pre-filled message. */
+  whatsapp?: string
+}
+
+const QUICK_HELP: readonly QuickHelpItem[] = [
   {
     icon: ShieldCheck,
     title: 'Account Verification',
@@ -57,20 +74,30 @@ const QUICK_HELP = [
   {
     icon: KeyRound,
     title: 'Password Reset',
-    desc: 'Forgot your password? Here is what to do.',
-    tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400',
-    action: 'faq-6',
+    desc: 'Forgot your password? Chat with David on WhatsApp to reset it fast.',
+    tint: 'from-amber-500/15 to-amber-500/5 text-amber-600 dark:text-amber-400',
+    action: 'whatsapp-password',
+    whatsapp: SUPPORT_MESSAGES.password,
   },
   {
-    icon: HeadphonesIcon,
+    icon: WhatsAppIcon,
     title: 'Contact Support',
-    desc: 'Reach the ULSESA support team directly.',
-    tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400',
-    action: 'contact',
+    desc: 'Chat directly with David on WhatsApp — usually replies in minutes.',
+    tint: 'from-[#25D366]/20 to-[#25D366]/5 text-[#1FB855] dark:text-[#25D366]',
+    action: 'whatsapp-general',
+    whatsapp: SUPPORT_MESSAGES.general,
   },
-] as const
+]
 
-const FAQS = [
+type FaqItem = {
+  id: string
+  q: string
+  a: string
+  /** Optional WhatsApp link rendered at the end of the answer. */
+  whatsapp?: { label: string; message: string }
+}
+
+const FAQS: FaqItem[] = [
   {
     id: 'faq-1',
     q: 'How do I claim my account?',
@@ -79,7 +106,8 @@ const FAQS = [
   {
     id: 'faq-2',
     q: 'Why is my account not verified yet?',
-    a: 'After you complete the claim flow, a ULSESA administrator reviews your submission — typically within 24 hours during business days. You can check your status on the Dashboard. If your account is rejected, you will see a note explaining why and can re-submit. If it has been more than 48 hours with no update, please contact the ULSESA office directly at ulsesa01@gmail.com.',
+    a: 'After you complete the claim flow, a ULSESA administrator reviews your submission — typically within 24 hours during business days. You can check your status on the Dashboard. If your account is rejected, you will see a note explaining why and can re-submit. If it has been more than 48 hours with no update, please chat with David on WhatsApp for a quick status check.',
+    whatsapp: { label: 'Chat with David on WhatsApp', message: SUPPORT_MESSAGES.account },
   },
   {
     id: 'faq-3',
@@ -99,7 +127,8 @@ const FAQS = [
   {
     id: 'faq-6',
     q: 'What if I forgot my password?',
-    a: 'For security reasons, self-service password reset is not currently available. Please contact the ULSESA support team via email at ulsesa01@gmail.com or visit the Science Education Department office during business hours (Mon–Fri, 9 AM – 4 PM) with your student ID. An administrator will reset your password after verifying your identity.',
+    a: 'For security reasons, self-service password reset is not currently available. Please chat with David on WhatsApp at 08117024699 — he will verify your identity and reset your password for you, usually within a few minutes during business hours (Mon–Fri, 9 AM – 4 PM WAT).',
+    whatsapp: { label: 'Chat on WhatsApp • 08117024699', message: SUPPORT_MESSAGES.password },
   },
   {
     id: 'faq-7',
@@ -154,7 +183,16 @@ export function HelpView() {
     })
   }, [search])
 
-  function handleQuickAction(action: string) {
+  function handleQuickAction(action: string, whatsapp?: string) {
+    if (whatsapp) {
+      if (typeof window !== 'undefined') {
+        window.open(supportWhatsAppUrl(whatsapp), '_blank', 'noopener,noreferrer')
+      }
+      toast.message('Opening WhatsApp', {
+        description: `Direct chat with David • ${SUPPORT_PHONE_DISPLAY}`,
+      })
+      return
+    }
     if (action === 'contact') {
       document.getElementById('contact-support')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
@@ -245,22 +283,28 @@ export function HelpView() {
             return (
               <motion.button
                 key={q.title}
-                onClick={() => handleQuickAction(q.action)}
+                onClick={() => handleQuickAction(q.action, q.whatsapp)}
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: i * 0.06 }}
                 whileHover={{ y: -4 }}
                 className="text-left"
               >
-                <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
+                <Card className={cn(
+                  'h-full rounded-2xl hover:shadow-lg transition-all duration-300',
+                  q.whatsapp ? 'hover:shadow-[#25D366]/15 border-[#25D366]/20' : 'hover:shadow-primary/5'
+                )}>
                   <CardContent className="flex flex-col gap-3">
                     <div className={cn('inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br', q.tint)}>
                       <Icon className="h-5 w-5" strokeWidth={1.75} />
                     </div>
                     <h3 className="font-semibold text-base leading-snug">{q.title}</h3>
                     <p className="text-xs text-muted-foreground leading-relaxed flex-1">{q.desc}</p>
-                    <div className="flex items-center gap-1 text-xs font-medium text-primary mt-1">
-                      Open
+                    <div className={cn(
+                      'flex items-center gap-1 text-xs font-medium mt-1',
+                      q.whatsapp ? 'text-[#1FB855] dark:text-[#25D366]' : 'text-primary'
+                    )}>
+                      {q.whatsapp ? 'Chat' : 'Open'}
                       <ChevronRight className="h-3 w-3" />
                     </div>
                   </CardContent>
@@ -305,7 +349,19 @@ export function HelpView() {
                       {f.q}
                     </AccordionTrigger>
                     <AccordionContent className="text-sm text-muted-foreground leading-relaxed">
-                      {f.a}
+                      <p>{f.a}</p>
+                      {f.whatsapp && (
+                        <a
+                          href={supportWhatsAppUrl(f.whatsapp.message)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#1FB855] dark:text-[#25D366] hover:underline"
+                        >
+                          <WhatsAppIcon className="h-3.5 w-3.5" />
+                          {f.whatsapp.label}
+                          <ArrowRight className="h-3 w-3" />
+                        </a>
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 ))}
@@ -328,39 +384,38 @@ export function HelpView() {
               <CardDescription>Can&apos;t find what you need? Reach ULSESA directly.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <button
-                onClick={() => copyToClipboard('ulsesa01@gmail.com', 'Email')}
-                className="w-full flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/40 transition-colors text-left"
+              {/* Premium WhatsApp CTA */}
+              <a
+                href={supportWhatsAppUrl(SUPPORT_MESSAGES.general)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() =>
+                  toast.message('Opening WhatsApp', {
+                    description: `Direct chat with David • ${SUPPORT_PHONE_DISPLAY}`,
+                  })
+                }
+                className="group relative block overflow-hidden rounded-2xl p-[1.5px] bg-gradient-to-br from-[#25D366] via-[#1FB855] to-[#128C7E] shadow-lg shadow-[#25D366]/25 transition-transform hover:scale-[1.01] active:scale-[0.99]"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
-                  <Mail className="h-5 w-5" />
+                <div className="flex items-center gap-4 rounded-[14px] bg-gradient-to-br from-[#25D366] to-[#1FB855] p-4 text-white">
+                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur ring-1 ring-white/30">
+                    <WhatsAppIcon className="h-7 w-7" />
+                    <span className="absolute -inset-1 rounded-2xl bg-[#25D366]/40 blur-md -z-10" aria-hidden />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-base font-bold font-display leading-tight">Chat on WhatsApp</div>
+                    <div className="text-xs text-white/85 mt-0.5 tabular-nums">
+                      Direct line to David • {SUPPORT_PHONE_DISPLAY}
+                    </div>
+                  </div>
+                  <ArrowRight className="h-5 w-5 shrink-0 opacity-90 transition-transform group-hover:translate-x-0.5" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-muted-foreground">Email</div>
-                  <div className="text-sm font-medium truncate">ulsesa01@gmail.com</div>
-                </div>
-                <span className="text-xs text-primary font-medium">Copy</span>
-              </button>
-
-              <button
-                onClick={() => copyToClipboard('+234 801 234 5678', 'Phone')}
-                className="w-full flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/40 transition-colors text-left"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent shrink-0">
-                  <Phone className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-muted-foreground">Phone</div>
-                  <div className="text-sm font-medium tabular-nums">+234 801 234 5678</div>
-                </div>
-                <span className="text-xs text-primary font-medium">Copy</span>
-              </button>
+              </a>
 
               <div className="flex items-center gap-3 p-3 rounded-xl bg-muted/40">
                 <Clock className="h-5 w-5 text-primary shrink-0" />
                 <div className="text-sm">
-                  <span className="font-semibold">Office hours:</span>{' '}
-                  <span className="text-muted-foreground">Mon–Fri, 9:00 AM – 4:00 PM (WAT)</span>
+                  <span className="font-semibold">Response time:</span>{' '}
+                  <span className="text-muted-foreground">Usually within minutes during business hours (Mon–Fri, 9 AM – 4 PM WAT).</span>
                 </div>
               </div>
 

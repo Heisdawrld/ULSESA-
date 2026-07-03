@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import type { SVGProps } from 'react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
@@ -24,10 +24,9 @@ import {
   ArrowRight,
   PlusCircle,
   Megaphone,
-  Trophy,
-  Layers,
-  FlaskConical,
-  Hash,
+  Bell,
+  Users2,
+  ShieldCheck,
 } from 'lucide-react'
 
 // ===================== Types =====================
@@ -36,7 +35,7 @@ interface CommunityGroup {
   id: string
   title: string
   description?: string
-  category: string // general | level | department | sports | academic | announcement
+  category: string
   whatsappLink: string
   memberCount: number
   createdAt?: string
@@ -58,57 +57,35 @@ function WhatsAppIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
   )
 }
 
-// ===================== Helpers =====================
-
-const CATEGORIES = [
-  { key: 'all', label: 'All', icon: Hash },
-  { key: 'general', label: 'General', icon: Sparkles },
-  { key: 'level', label: 'Level', icon: Layers },
-  { key: 'department', label: 'Department', icon: BookOpen },
-  { key: 'sports', label: 'Sports', icon: Trophy },
-  { key: 'academic', label: 'Academic', icon: GraduationCap },
-  { key: 'announcement', label: 'Announcements', icon: Megaphone },
-] as const
-
-function categoryBadgeClass(category: string) {
-  switch (category) {
-    case 'general':
-      return 'bg-cyan-accent/10 text-cyan-accent dark:text-cyan-accent border-cyan-accent/20'
-    case 'level':
-      return 'bg-primary/10 text-primary border-primary/20'
-    case 'department':
-      return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
-    case 'sports':
-      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-    case 'academic':
-      return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-    case 'announcement':
-      return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
-    default:
-      return 'bg-muted text-muted-foreground border-border'
-  }
-}
-
-function categoryLabel(category: string) {
-  const found = CATEGORIES.find((c) => c.key === category)
-  return found ? found.label : category
-}
-
-function formatMemberCount(count: number) {
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}k`
-  return String(count)
-}
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
-}
-
 // ===================== Static data =====================
+
+// Feature cards explaining what's inside the official ULSESA WhatsApp Community
+const COMMUNITY_FEATURES = [
+  {
+    icon: Users2,
+    title: 'All 5 Cohorts',
+    desc: 'Biology, Chemistry, Mathematics, Physics & Integrated Science Education — every ULSESA student under one roof.',
+    tint: 'from-primary/15 to-primary/5 text-primary',
+  },
+  {
+    icon: Megaphone,
+    title: 'Announcements',
+    desc: 'ULSESA news, election updates, event reminders, and deadline alerts the moment they drop.',
+    tint: 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent',
+  },
+  {
+    icon: Bell,
+    title: 'Departmental Updates',
+    desc: 'Faculty notices, exam schedules, registration windows, and Teaching Practice info — straight from the source.',
+    tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400',
+  },
+  {
+    icon: MessageCircle,
+    title: 'Stay Connected',
+    desc: 'Ask questions, share notes, find study partners, and keep in touch across levels and cohorts.',
+    tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400',
+  },
+]
 
 const SERVICES = [
   {
@@ -122,7 +99,7 @@ const SERVICES = [
     icon: HeartHandshake,
     title: 'Mentorship Program',
     desc: 'Connect with ULSESA alumni and faculty mentors for guidance on teaching careers, postgraduate studies, and education research opportunities.',
-    tint: 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent dark:text-cyan-accent',
+    tint: 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent',
     cta: 'Find a mentor',
   },
   {
@@ -149,95 +126,44 @@ const DISCUSSIONS = [
   { id: '5', title: 'ULSESA Career Talk: EdTech opportunities for science educators', author: 'Tunde Bello', replies: 31, lastActivity: '3d ago', tag: 'Careers' },
 ]
 
+// ===================== Helpers =====================
+
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
 // ===================== Sub-components =====================
 
-function CategoryPills({ active, onChange }: { active: string; onChange: (v: string) => void }) {
+function HeroSkeleton() {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {CATEGORIES.map((c) => {
-        const Icon = c.icon
-        const isActive = active === c.key
-        return (
-          <Button
-            key={c.key}
-            size="sm"
-            variant={isActive ? 'default' : 'outline'}
-            onClick={() => onChange(c.key)}
-            className={cn('rounded-full h-9 px-4', !isActive && 'hover:bg-muted')}
-          >
-            <Icon className="h-4 w-4" />
-            {c.label}
-          </Button>
-        )
-      })}
-    </div>
+    <Card className="rounded-3xl overflow-hidden">
+      <CardContent className="grid md:grid-cols-[auto_1fr] gap-6 p-6 md:p-10">
+        <Skeleton className="h-24 w-24 rounded-3xl" />
+        <div className="space-y-4">
+          <Skeleton className="h-5 w-40 rounded-full" />
+          <Skeleton className="h-9 w-3/4" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+          <Skeleton className="h-12 w-56 rounded-full mt-4" />
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
-function GroupCard({ group, index }: { group: CommunityGroup; index: number }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.4) }}
-    >
-      <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300 group flex flex-col overflow-hidden">
-        <CardContent className="flex flex-col gap-3 h-full">
-          <div className="flex items-start justify-between gap-2">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25D366]/15 text-[#25D366] shrink-0">
-              <WhatsAppIcon className="h-6 w-6" />
-            </div>
-            <Badge variant="outline" className={cn('rounded-full text-[11px] font-semibold capitalize', categoryBadgeClass(group.category))}>
-              {categoryLabel(group.category)}
-            </Badge>
-          </div>
-
-          <h3 className="font-semibold text-base leading-snug group-hover:text-primary transition-colors line-clamp-2">
-            {group.title}
-          </h3>
-          {group.description && (
-            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 flex-1">
-              {group.description}
-            </p>
-          )}
-
-          <div className="flex items-center gap-2 pt-1">
-            <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Users className="h-3.5 w-3.5" />
-              <span className="font-semibold text-foreground tabular-nums">{formatMemberCount(group.memberCount)}</span>
-              <span>members</span>
-            </div>
-          </div>
-
-          <Button
-            size="sm"
-            asChild
-            className="w-full rounded-full mt-1 bg-[#25D366] text-white hover:bg-[#1FB855] border-0"
-          >
-            <a href={group.whatsappLink} target="_blank" rel="noopener noreferrer">
-              <WhatsAppIcon className="h-4 w-4" />
-              Join Group
-            </a>
-          </Button>
-        </CardContent>
-      </Card>
-    </motion.div>
-  )
-}
-
-function GroupSkeleton() {
+function FeatureSkeleton() {
   return (
     <Card className="rounded-2xl">
       <CardContent className="flex flex-col gap-3 h-full">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-12 w-12 rounded-2xl" />
-          <Skeleton className="h-5 w-20 rounded-full" />
-        </div>
-        <Skeleton className="h-5 w-4/5" />
+        <Skeleton className="h-12 w-12 rounded-2xl" />
+        <Skeleton className="h-5 w-3/4" />
         <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-3/4" />
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-9 w-full rounded-full" />
+        <Skeleton className="h-3 w-5/6" />
       </CardContent>
     </Card>
   )
@@ -249,7 +175,6 @@ export function CommunityView() {
   const [groups, setGroups] = useState<CommunityGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeCat, setActiveCat] = useState<string>('all')
 
   const fetchGroups = useCallback(() => {
     let mounted = true
@@ -263,7 +188,7 @@ export function CommunityView() {
       })
       .catch((e: unknown) => {
         if (!mounted) return
-        setError(e instanceof Error ? e.message : 'Failed to load community groups')
+        setError(e instanceof Error ? e.message : 'Failed to load community')
         setGroups([])
       })
       .finally(() => mounted && setLoading(false))
@@ -276,15 +201,8 @@ export function CommunityView() {
     return fetchGroups()
   }, [fetchGroups])
 
-  const filtered = useMemo(() => {
-    if (activeCat === 'all') return groups
-    return groups.filter((g) => g.category === activeCat)
-  }, [groups, activeCat])
-
-  const totalMembers = useMemo(
-    () => groups.reduce((sum, g) => sum + (g.memberCount || 0), 0),
-    [groups]
-  )
+  // The single official ULSESA community (first group from API)
+  const community = groups[0]
 
   return (
     <div className="animate-fade-in">
@@ -292,7 +210,7 @@ export function CommunityView() {
       <section className="relative overflow-hidden border-b border-border/40">
         <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
         <div className="absolute -top-20 left-1/2 -translate-x-1/2 h-64 w-[50rem] rounded-full bg-[#25D366]/20 blur-3xl pointer-events-none" aria-hidden />
-        <div className="absolute top-16 right-16 h-32 w-32 rounded-full bg-primary/20 blur-3xl pointer-events-none" aria-hidden />
+        <div className="absolute top-16 right-16 h-32 w-32 rounded-full bg-cyan-accent/25 blur-3xl pointer-events-none" aria-hidden />
 
         <div className="container mx-auto px-4 lg:px-6 relative py-12 md:py-16">
           <motion.div
@@ -306,34 +224,22 @@ export function CommunityView() {
               ULSESA Community Hub
             </Badge>
             <h1 className="font-display font-extrabold tracking-tight text-3xl sm:text-4xl md:text-5xl leading-tight">
-              Connect on <span className="text-gradient-brand">WhatsApp</span> & beyond
+              One <span className="text-gradient-brand">Community</span>, Every ULSESA Student
             </h1>
             <p className="mt-3 text-sm md:text-base text-muted-foreground max-w-2xl">
-              Join official ULSESA WhatsApp groups across all 5 Science Education cohorts, levels, and interests — plus peer support services and student discussions.
+              The entire ULSESA department — all 5 Science Education cohorts — lives under a single official WhatsApp Community. Join it once and stay connected to announcements, discussions, and peer support.
             </p>
-            {!loading && !error && groups.length > 0 && (
-              <div className="mt-5 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <FlaskConical className="h-4 w-4 text-primary" />
-                  <span className="font-semibold text-foreground tabular-nums">{groups.length}</span> groups
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Users className="h-4 w-4 text-cyan-accent" />
-                  <span className="font-semibold text-foreground tabular-nums">{totalMembers.toLocaleString()}</span> total members
-                </span>
-              </div>
-            )}
           </motion.div>
         </div>
       </section>
 
       {/* ===================== TABS ===================== */}
       <section className="container mx-auto px-4 lg:px-6 py-8 md:py-12">
-        <Tabs defaultValue="groups" className="gap-6">
+        <Tabs defaultValue="connect" className="gap-6">
           <TabsList className="bg-muted/60 rounded-full p-1 h-auto flex flex-wrap">
-            <TabsTrigger value="groups" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            <TabsTrigger value="connect" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <WhatsAppIcon className="h-4 w-4" />
-              WhatsApp Groups
+              Connect
             </TabsTrigger>
             <TabsTrigger value="services" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <HeartHandshake className="h-4 w-4" />
@@ -345,50 +251,143 @@ export function CommunityView() {
             </TabsTrigger>
           </TabsList>
 
-          {/* WHATSAPP GROUPS */}
-          <TabsContent value="groups" className="space-y-6 animate-fade-in">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">WhatsApp Community Groups</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  {loading ? 'Loading groups…' : `${filtered.length} group${filtered.length === 1 ? '' : 's'} available`}
-                </p>
-              </div>
-              <Badge variant="outline" className="rounded-full bg-[#25D366]/10 text-[#1FB855] border-[#25D366]/30 w-fit">
-                <WhatsAppIcon className="h-3 w-3 mr-1" />
-                Tap to join on WhatsApp
-              </Badge>
-            </div>
-
-            <CategoryPills active={activeCat} onChange={setActiveCat} />
-
+          {/* CONNECT TAB — single official WhatsApp Community */}
+          <TabsContent value="connect" className="space-y-8 animate-fade-in">
             {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <GroupSkeleton key={i} />
-                ))}
+              <div className="space-y-8">
+                <HeroSkeleton />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <FeatureSkeleton key={i} />
+                  ))}
+                </div>
               </div>
             ) : error ? (
               <Card className="rounded-2xl border-dashed">
                 <CardContent className="py-12 text-center text-sm text-muted-foreground">
                   <WhatsAppIcon className="h-9 w-9 mx-auto mb-3 opacity-40 text-[#25D366]" />
-                  Couldn&apos;t load community groups right now.
+                  Couldn&apos;t load the ULSESA Community right now.
                   <div className="text-xs mt-1 opacity-70">{error}</div>
+                  <Button variant="outline" size="sm" className="mt-4 rounded-full" onClick={fetchGroups}>
+                    Try again
+                  </Button>
                 </CardContent>
               </Card>
-            ) : filtered.length === 0 ? (
+            ) : community ? (
+              <>
+                {/* === Hero community card === */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <Card className="relative overflow-hidden rounded-3xl border-[#25D366]/25 shadow-xl shadow-[#25D366]/10">
+                    {/* Subtle gradient backdrop */}
+                    <div className="absolute inset-0 bg-brand-gradient-soft pointer-events-none" aria-hidden />
+                    <div className="absolute -top-24 -right-16 h-64 w-64 rounded-full bg-[#25D366]/20 blur-3xl pointer-events-none" aria-hidden />
+                    <div className="absolute -bottom-24 -left-16 h-64 w-64 rounded-full bg-cyan-accent/15 blur-3xl pointer-events-none" aria-hidden />
+
+                    <CardContent className="relative grid md:grid-cols-[auto_1fr] gap-6 md:gap-8 p-6 md:p-10 items-center">
+                      {/* Glowing WhatsApp icon */}
+                      <motion.div
+                        initial={{ scale: 0.85, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.5, delay: 0.1 }}
+                        className="mx-auto md:mx-0 flex h-24 w-24 md:h-28 md:w-28 items-center justify-center rounded-3xl bg-[#25D366] text-white shadow-2xl shadow-[#25D366]/40 glow-cyan"
+                      >
+                        <WhatsAppIcon className="h-14 w-14 md:h-16 md:w-16" />
+                      </motion.div>
+
+                      <div className="flex flex-col gap-4 text-center md:text-left">
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                          <Badge className="rounded-full bg-[#25D366]/15 text-[#1FB855] border border-[#25D366]/30 hover:bg-[#25D366]/20">
+                            <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+                            Official ULSESA
+                          </Badge>
+                          <Badge variant="outline" className="rounded-full bg-background/80 backdrop-blur">
+                            <Users className="h-3.5 w-3.5 mr-1 text-cyan-accent" />
+                            {community.memberCount.toLocaleString()}+ members
+                          </Badge>
+                        </div>
+
+                        <div>
+                          <h2 className="font-display font-extrabold text-2xl md:text-4xl tracking-tight leading-tight">
+                            {community.title}
+                          </h2>
+                          {community.description && (
+                            <p className="mt-3 text-sm md:text-base text-muted-foreground leading-relaxed max-w-2xl mx-auto md:mx-0">
+                              {community.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Prominent Join CTA */}
+                        <div className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-3 pt-2">
+                          <Button
+                            asChild
+                            size="lg"
+                            className="w-full sm:w-auto rounded-full h-14 px-8 text-base font-semibold bg-[#25D366] text-white hover:bg-[#1FB855] border-0 shadow-lg shadow-[#25D366]/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            <a href={community.whatsappLink} target="_blank" rel="noopener noreferrer">
+                              <WhatsAppIcon className="h-5 w-5" />
+                              Join the Community
+                              <ArrowRight className="h-4 w-4" />
+                            </a>
+                          </Button>
+                          <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-cyan-accent" />
+                            Free • One tap • All cohorts
+                          </span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+
+                {/* === What's inside? === */}
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-xl md:text-2xl font-bold font-display tracking-tight">
+                      What&apos;s inside?
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Joining the ULSESA WhatsApp Community connects you to everything — instantly.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {COMMUNITY_FEATURES.map((f, i) => {
+                      const Icon = f.icon
+                      return (
+                        <motion.div
+                          key={f.title}
+                          initial={{ opacity: 0, y: 16 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.4, delay: 0.15 + i * 0.08 }}
+                        >
+                          <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300">
+                            <CardContent className="flex flex-col gap-3 h-full">
+                              <div className={cn('inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br shrink-0', f.tint)}>
+                                <Icon className="h-6 w-6" strokeWidth={1.75} />
+                              </div>
+                              <h4 className="font-semibold text-base leading-snug">{f.title}</h4>
+                              <p className="text-sm text-muted-foreground leading-relaxed flex-1">
+                                {f.desc}
+                              </p>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : (
               <Card className="rounded-2xl border-dashed">
                 <CardContent className="py-12 text-center text-sm text-muted-foreground">
                   <WhatsAppIcon className="h-9 w-9 mx-auto mb-3 opacity-40 text-[#25D366]" />
-                  No groups available in this category.
+                  No community is available right now. Please check back soon.
                 </CardContent>
               </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filtered.map((g, i) => (
-                  <GroupCard key={g.id} group={g} index={i} />
-                ))}
-              </div>
             )}
           </TabsContent>
 
@@ -449,7 +448,7 @@ export function CommunityView() {
               </div>
               <Button
                 size="sm"
-                onClick={() => toast.message('Coming soon', { description: 'Discussion posting will be enabled shortly.' })}
+                onClick={() => toast.message('Coming soon', { description: 'Threaded discussions will be available shortly — for now, chat in the WhatsApp Community.' })}
                 className="rounded-full w-fit"
               >
                 <PlusCircle className="h-4 w-4" />
@@ -465,7 +464,7 @@ export function CommunityView() {
                     initial={{ opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.3, delay: i * 0.05 }}
-                    onClick={() => toast.message('Coming soon', { description: 'Threaded discussions will be available shortly.' })}
+                    onClick={() => toast.message('Coming soon', { description: 'Threaded discussions will be available shortly — for now, chat in the WhatsApp Community.' })}
                     className="w-full text-left flex items-center gap-4 p-4 hover:bg-muted/40 transition-colors group"
                   >
                     <Avatar className="h-10 w-10 shrink-0">

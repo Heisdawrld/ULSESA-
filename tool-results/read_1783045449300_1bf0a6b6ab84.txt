@@ -1,0 +1,863 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState, useMemo, useCallback } from 'react'
+     4→import { motion } from 'framer-motion'
+     5→import { toast } from 'sonner'
+     6→import { useNav } from '@/lib/stores/nav-store'
+     7→import { api } from '@/lib/api-client'
+     8→import { Button } from '@/components/ui/button'
+     9→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+    10→import { Badge } from '@/components/ui/badge'
+    11→import { Skeleton } from '@/components/ui/skeleton'
+    12→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    13→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+    14→import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
+    15→import { cn } from '@/lib/utils'
+    16→import {
+    17→  BookOpen,
+    18→  CalendarDays,
+    19→  GraduationCap,
+    20→  ArrowRight,
+    21→  Sparkles,
+    22→  Download,
+    23→  FileText,
+    24→  FileQuestion,
+    25→  Book,
+    26→  Presentation,
+    27→  Video,
+    28→  Clock,
+    29→  MapPin,
+    30→  Award,
+    31→  TrendingUp,
+    32→  ChevronRight,
+    33→  Layers,
+    34→  ExternalLink,
+    35→  FlaskConical,
+    36→  Atom,
+    37→  Leaf,
+    38→  Calculator,
+    39→  Beaker,
+    40→  Microscope,
+    41→} from 'lucide-react'
+    42→
+    43→// ===================== Types =====================
+    44→
+    45→interface Course {
+    46→  id: string
+    47→  code: string
+    48→  title: string
+    49→  level: string
+    50→  semester: string
+    51→  description?: string
+    52→  department?: string
+    53→  googleDriveUrl?: string | null
+    54→}
+    55→
+    56→interface Resource {
+    57→  id: string
+    58→  title: string
+    59→  type: string
+    60→  url: string
+    61→  description?: string
+    62→  course?: { code: string; title: string } | null
+    63→}
+    64→
+    65→// ===================== Static demo data =====================
+    66→
+    67→const LEVELS = ['100', '200', '300', '400', '500'] as const
+    68→
+    69→const DEPARTMENTS = [
+    70→  { key: 'all', label: 'All', short: 'All' },
+    71→  { key: 'Biology Education', label: 'Biology Edu', short: 'BED' },
+    72→  { key: 'Chemistry Education', label: 'Chemistry Edu', short: 'CED' },
+    73→  { key: 'Mathematics Education', label: 'Mathematics Edu', short: 'MED' },
+    74→  { key: 'Physics Education', label: 'Physics Edu', short: 'PED' },
+    75→  { key: 'Integrated Science Education', label: 'Integrated Sci Edu', short: 'IED' },
+    76→  { key: 'General', label: 'General', short: 'GEN' },
+    77→] as const
+    78→
+    79→const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
+    80→const TIME_SLOTS = [
+    81→  '08:00 — 09:00',
+    82→  '09:00 — 10:00',
+    83→  '10:00 — 11:00',
+    84→  '11:00 — 12:00',
+    85→  '12:00 — 13:00',
+    86→  '13:00 — 14:00',
+    87→  '14:00 — 15:00',
+    88→  '15:00 — 16:00',
+    89→] as const
+    90→
+    91→type ClassBlock = {
+    92→  day: number
+    93→  slot: number
+    94→  code: string
+    95→  title: string
+    96→  venue: string
+    97→  tint: string
+    98→}
+    99→
+   100→// 300 Level Science Education weekly schedule — codes: SED/BED/CED/MED/PED/IED
+   101→const TIMETABLE: ClassBlock[] = [
+   102→  { day: 0, slot: 0, code: 'PED 301', title: 'Quantum Mechanics Teaching', venue: 'Sci Ed Hall A', tint: 'bg-primary/15 text-primary border-primary/30' },
+   103→  { day: 0, slot: 2, code: 'SED 401', title: 'Curriculum Development', venue: 'Faculty Aud', tint: 'bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent border-cyan-accent/30' },
+   104→  { day: 0, slot: 5, code: 'MED 301', title: 'Algebra & Geometry Teaching', venue: 'Math Ed Lab', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+   105→
+   106→  { day: 1, slot: 1, code: 'PED 301', title: 'Quantum Mechanics Teaching', venue: 'Sci Ed Hall A', tint: 'bg-primary/15 text-primary border-primary/30' },
+   107→  { day: 1, slot: 3, code: 'CED 301', title: 'Physical Chemistry Teaching', venue: 'Chem Ed Lab', tint: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30' },
+   108→  { day: 1, slot: 6, code: 'MED 301', title: 'Algebra & Geometry Teaching', venue: 'Math Ed Lab', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+   109→
+   110→  { day: 2, slot: 0, code: 'BED 301', title: 'Genetics & Evolution Teaching (Lab)', venue: 'Bio Ed Lab', tint: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30' },
+   111→  { day: 2, slot: 1, code: 'BED 301', title: 'Genetics & Evolution Teaching (Lab)', venue: 'Bio Ed Lab', tint: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30' },
+   112→  { day: 2, slot: 4, code: 'PED 301', title: 'Quantum Tutorial', venue: 'Sci Ed Hall A', tint: 'bg-primary/15 text-primary border-primary/30' },
+   113→
+   114→  { day: 3, slot: 1, code: 'MED 301', title: 'Algebra & Geometry Teaching', venue: 'Math Ed Lab', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+   115→  { day: 3, slot: 3, code: 'IED 301', title: 'Environmental Science Education', venue: 'Int Sci Lab', tint: 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30' },
+   116→  { day: 3, slot: 5, code: 'CED 301', title: 'Physical Chemistry Teaching', venue: 'Chem Ed Lab', tint: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30' },
+   117→
+   118→  { day: 4, slot: 0, code: 'SED 401', title: 'Curriculum Tutorial', venue: 'Faculty Aud', tint: 'bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent border-cyan-accent/30' },
+   119→  { day: 4, slot: 2, code: 'PED 301', title: 'Quantum Mechanics Teaching', venue: 'Sci Ed Hall A', tint: 'bg-primary/15 text-primary border-primary/30' },
+   120→  { day: 4, slot: 4, code: 'Seminar', title: 'ULSESA Departmental Seminar', venue: 'Main Hall', tint: 'bg-primary/15 text-primary border-primary/30' },
+   121→]
+   122→
+   123→const SEMESTERS = ['First Semester 2025/2026', 'Second Semester 2024/2025'] as const
+   124→
+   125→interface ResultRow {
+   126→  code: string
+   127→  title: string
+   128→  unit: number
+   129→  grade: string
+   130→  score: number
+   131→}
+   132→
+   133→const RESULTS: Record<string, ResultRow[]> = {
+   134→  'First Semester 2025/2026': [
+   135→    { code: 'PED 301', title: 'Quantum Mechanics Teaching', unit: 3, grade: 'A', score: 78 },
+   136→    { code: 'CED 301', title: 'Physical Chemistry Teaching', unit: 3, grade: 'B', score: 68 },
+   137→    { code: 'MED 301', title: 'Algebra & Geometry Teaching', unit: 3, grade: 'A', score: 74 },
+   138→    { code: 'SED 401', title: 'Curriculum Development', unit: 2, grade: 'B', score: 65 },
+   139→    { code: 'BED 301', title: 'Genetics & Evolution Teaching', unit: 2, grade: 'A', score: 72 },
+   140→    { code: 'SED 399', title: 'Teaching Practice I', unit: 2, grade: 'A', score: 80 },
+   141→  ],
+   142→  'Second Semester 2024/2025': [
+   143→    { code: 'IED 201', title: 'Integrated Science Methods', unit: 3, grade: 'B', score: 64 },
+   144→    { code: 'SED 205', title: 'Educational Psychology', unit: 3, grade: 'A', score: 76 },
+   145→    { code: 'PED 201', title: 'Classical Mechanics for Educators', unit: 2, grade: 'A', score: 71 },
+   146→    { code: 'GST 202', title: 'Communication Skills', unit: 2, grade: 'B', score: 62 },
+   147→    { code: 'SED 299', title: 'Micro-Teaching Practicum', unit: 2, grade: 'A', score: 79 },
+   148→  ],
+   149→}
+   150→
+   151→const GRADE_POINTS: Record<string, number> = { A: 5, B: 4, C: 3, D: 2, E: 1, F: 0 }
+   152→
+   153→function gradeBadgeClass(grade: string) {
+   154→  switch (grade) {
+   155→    case 'A':
+   156→      return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+   157→    case 'B':
+   158→      return 'bg-primary/15 text-primary border-primary/30'
+   159→    case 'C':
+   160→      return 'bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent border-cyan-accent/30'
+   161→    case 'D':
+   162→      return 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30'
+   163→    default:
+   164→      return 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+   165→  }
+   166→}
+   167→
+   168→function computeCgpa(rows: ResultRow[]) {
+   169→  let totalUnits = 0
+   170→  let totalPoints = 0
+   171→  for (const r of rows) {
+   172→    const gp = GRADE_POINTS[r.grade] ?? 0
+   173→    totalPoints += gp * r.unit
+   174→    totalUnits += r.unit
+   175→  }
+   176→  return {
+   177→    cgpa: totalUnits ? totalPoints / totalUnits : 0,
+   178→    totalUnits,
+   179→    totalPoints,
+   180→  }
+   181→}
+   182→
+   183→function resourceIcon(type: string) {
+   184→  switch (type) {
+   185→    case 'note':
+   186→      return FileText
+   187→    case 'past_question':
+   188→      return FileQuestion
+   189→    case 'textbook':
+   190→      return Book
+   191→    case 'slides':
+   192→      return Presentation
+   193→    case 'video':
+   194→      return Video
+   195→    default:
+   196→      return FileText
+   197→  }
+   198→}
+   199→
+   200→function departmentTint(department?: string) {
+   201→  switch (department) {
+   202→    case 'Biology Education':
+   203→      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+   204→    case 'Chemistry Education':
+   205→      return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+   206→    case 'Mathematics Education':
+   207→      return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+   208→    case 'Physics Education':
+   209→      return 'bg-primary/10 text-primary border-primary/20'
+   210→    case 'Integrated Science Education':
+   211→      return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'
+   212→    default:
+   213→      return 'bg-cyan-accent/10 text-cyan-accent dark:text-cyan-accent border-cyan-accent/20'
+   214→  }
+   215→}
+   216→
+   217→function departmentIcon(department?: string) {
+   218→  switch (department) {
+   219→    case 'Biology Education':
+   220→      return Leaf
+   221→    case 'Chemistry Education':
+   222→      return Beaker
+   223→    case 'Mathematics Education':
+   224→      return Calculator
+   225→    case 'Physics Education':
+   226→      return Atom
+   227→    case 'Integrated Science Education':
+   228→      return Microscope
+   229→    default:
+   230→      return FlaskConical
+   231→  }
+   232→}
+   233→
+   234→// ===================== Sub-components =====================
+   235→
+   236→function LevelPills({ active, onChange }: { active: string; onChange: (v: string) => void }) {
+   237→  return (
+   238→    <div className="flex flex-wrap items-center gap-2">
+   239→      <Button
+   240→        size="sm"
+   241→        variant={active === 'all' ? 'default' : 'outline'}
+   242→        onClick={() => onChange('all')}
+   243→        className="rounded-full h-9 px-4"
+   244→      >
+   245→        All Levels
+   246→      </Button>
+   247→      {LEVELS.map((lvl) => (
+   248→        <Button
+   249→          key={lvl}
+   250→          size="sm"
+   251→          variant={active === lvl ? 'default' : 'outline'}
+   252→          onClick={() => onChange(lvl)}
+   253→          className="rounded-full h-9 px-4"
+   254→        >
+   255→          {lvl} Level
+   256→        </Button>
+   257→      ))}
+   258→    </div>
+   259→  )
+   260→}
+   261→
+   262→function DepartmentPills({ active, onChange }: { active: string; onChange: (v: string) => void }) {
+   263→  return (
+   264→    <div className="flex flex-wrap items-center gap-2">
+   265→      {DEPARTMENTS.map((d) => {
+   266→        const isActive = active === d.key
+   267→        return (
+   268→          <Button
+   269→            key={d.key}
+   270→            size="sm"
+   271→            variant={isActive ? 'default' : 'outline'}
+   272→            onClick={() => onChange(d.key)}
+   273→            className={cn('rounded-full h-9 px-4', !isActive && 'hover:bg-muted')}
+   274→          >
+   275→            {d.label}
+   276→          </Button>
+   277→        )
+   278→      })}
+   279→    </div>
+   280→  )
+   281→}
+   282→
+   283→function CourseCard({ course, index, onView }: { course: Course; index: number; onView: (c: Course) => void }) {
+   284→  const DeptIcon = departmentIcon(course.department)
+   285→  return (
+   286→    <motion.div
+   287→      initial={{ opacity: 0, y: 16 }}
+   288→      animate={{ opacity: 1, y: 0 }}
+   289→      transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.4) }}
+   290→    >
+   291→      <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300 group flex flex-col">
+   292→        <CardContent className="flex flex-col gap-3 h-full">
+   293→          <div className="flex items-start justify-between gap-2">
+   294→            <Badge className="bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 rounded-md font-mono font-semibold">
+   295→              {course.code}
+   296→            </Badge>
+   297→            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+   298→              <Badge variant="outline" className="rounded-full text-[11px] font-medium">
+   299→                <Layers className="h-3 w-3 mr-1 text-muted-foreground" />
+   300→                {course.level} Lvl
+   301→              </Badge>
+   302→              <Badge variant="outline" className="rounded-full text-[11px] font-medium">
+   303→                {course.semester}
+   304→              </Badge>
+   305→            </div>
+   306→          </div>
+   307→          <h3 className="font-semibold text-base leading-snug group-hover:text-primary transition-colors">
+   308→            {course.title}
+   309→          </h3>
+   310→          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 flex-1">
+   311→            {course.description || 'No description available.'}
+   312→          </p>
+   313→          {course.department && (
+   314→            <Badge variant="outline" className={cn('rounded-full text-[11px] font-medium w-fit', departmentTint(course.department))}>
+   315→              <DeptIcon className="h-3 w-3 mr-1" />
+   316→              {course.department}
+   317→            </Badge>
+   318→          )}
+   319→          <div className="flex flex-col gap-2 mt-1">
+   320→            {course.googleDriveUrl && (
+   321→              <Button
+   322→                size="sm"
+   323→                asChild
+   324→                className="w-full rounded-full bg-cyan-accent text-cyan-accent-foreground hover:bg-cyan-accent/90"
+   325→              >
+   326→                <a href={course.googleDriveUrl} target="_blank" rel="noopener noreferrer">
+   327→                  <ExternalLink className="h-4 w-4" />
+   328→                  Open Materials
+   329→                </a>
+   330→              </Button>
+   331→            )}
+   332→            <Button
+   333→              size="sm"
+   334→              variant="outline"
+   335→              onClick={() => onView(course)}
+   336→              className={cn(
+   337→                'w-full rounded-full',
+   338→                !course.googleDriveUrl && 'group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-colors'
+   339→              )}
+   340→            >
+   341→              <BookOpen className="h-4 w-4" />
+   342→              View Resources
+   343→            </Button>
+   344→          </div>
+   345→        </CardContent>
+   346→      </Card>
+   347→    </motion.div>
+   348→  )
+   349→}
+   350→
+   351→function CourseSkeleton() {
+   352→  return (
+   353→    <Card className="rounded-2xl">
+   354→      <CardContent className="flex flex-col gap-3 h-full">
+   355→        <div className="flex items-center justify-between">
+   356→          <Skeleton className="h-6 w-20 rounded-md" />
+   357→          <Skeleton className="h-5 w-16 rounded-full" />
+   358→        </div>
+   359→        <Skeleton className="h-5 w-4/5" />
+   360→        <Skeleton className="h-3 w-full" />
+   361→        <Skeleton className="h-3 w-3/4" />
+   362→        <Skeleton className="h-5 w-28 rounded-full" />
+   363→        <Skeleton className="h-8 w-full rounded-full mt-2" />
+   364→      </CardContent>
+   365→    </Card>
+   366→  )
+   367→}
+   368→
+   369→function TimetableGrid() {
+   370→  return (
+   371→    <Card className="rounded-2xl overflow-hidden">
+   372→      <CardHeader className="border-b">
+   373→        <CardTitle className="font-display flex items-center gap-2">
+   374→          <CalendarDays className="h-5 w-5 text-primary" />
+   375→          Weekly Schedule — 300 Level
+   376→        </CardTitle>
+   377→        <CardDescription>First Semester, 2025/2026 session. Tap and drag horizontally on mobile to view all days.</CardDescription>
+   378→      </CardHeader>
+   379→      <CardContent className="p-0">
+   380→        <div className="overflow-x-auto scrollbar-thin">
+   381→          <div className="min-w-[820px]">
+   382→            {/* Header row */}
+   383→            <div className="grid grid-cols-[120px_repeat(5,1fr)] border-b bg-muted/30">
+   384→              <div className="p-3 text-xs font-semibold text-muted-foreground border-r">
+   385→                Time
+   386→              </div>
+   387→              {DAYS.map((d) => (
+   388→                <div key={d} className="p-3 text-center text-sm font-semibold border-r last:border-r-0">
+   389→                  {d}
+   390→                </div>
+   391→              ))}
+   392→            </div>
+   393→            {/* Rows */}
+   394→            {TIME_SLOTS.map((slot, sIdx) => (
+   395→              <div key={slot} className="grid grid-cols-[120px_repeat(5,1fr)] border-b last:border-b-0 min-h-[64px]">
+   396→                <div className="p-3 text-[11px] text-muted-foreground border-r bg-muted/20 font-medium">
+   397→                  {slot}
+   398→                </div>
+   399→                {DAYS.map((_, dIdx) => {
+   400→                  const block = TIMETABLE.find((c) => c.day === dIdx && c.slot === sIdx)
+   401→                  return (
+   402→                    <div key={dIdx} className="border-r last:border-r-0 p-1.5">
+   403→                      {block ? (
+   404→                        <div className={cn('h-full rounded-lg border p-2 flex flex-col gap-0.5', block.tint)}>
+   405→                          <div className="text-[11px] font-bold font-mono">{block.code}</div>
+   406→                          <div className="text-[10px] font-medium leading-tight line-clamp-2">{block.title}</div>
+   407→                          <div className="text-[10px] opacity-80 flex items-center gap-0.5 mt-auto">
+   408→                            <MapPin className="h-2.5 w-2.5" /> {block.venue}
+   409→                          </div>
+   410→                        </div>
+   411→                      ) : null}
+   412→                    </div>
+   413→                  )
+   414→                })}
+   415→              </div>
+   416→            ))}
+   417→          </div>
+   418→        </div>
+   419→      </CardContent>
+   420→    </Card>
+   421→  )
+   422→}
+   423→
+   424→function ResultsPanel() {
+   425→  const [semester, setSemester] = useState<string>(SEMESTERS[0])
+   426→  const rows = RESULTS[semester] || []
+   427→  const { cgpa, totalUnits } = useMemo(() => computeCgpa(rows), [rows])
+   428→  const cgpaPct = Math.min((cgpa / 5) * 100, 100)
+   429→
+   430→  return (
+   431→    <div className="space-y-5">
+   432→      {/* CGPA Summary */}
+   433→      <Card className="rounded-2xl overflow-hidden">
+   434→        <div className="relative bg-gradient-to-br from-primary via-primary to-primary/80 text-primary-foreground">
+   435→          <div
+   436→            className="absolute inset-0 opacity-20 pointer-events-none"
+   437→            style={{
+   438→              backgroundImage:
+   439→                'linear-gradient(to right, rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.2) 1px, transparent 1px)',
+   440→              backgroundSize: '32px 32px',
+   441→            }}
+   442→            aria-hidden
+   443→          />
+   444→          <div className="absolute -top-16 -right-12 h-48 w-48 rounded-full bg-cyan-accent/30 blur-3xl pointer-events-none" aria-hidden />
+   445→          <CardContent className="relative grid sm:grid-cols-[auto_1fr] gap-6 items-center py-6">
+   446→            <div className="text-center sm:text-left">
+   447→              <div className="text-xs uppercase tracking-wider text-primary-foreground/70 font-semibold">Cumulative GPA</div>
+   448→              <div className="text-5xl font-bold font-display tabular-nums mt-1 leading-none">
+   449→                {cgpa.toFixed(2)}
+   450→                <span className="text-2xl text-primary-foreground/60">/5.00</span>
+   451→              </div>
+   452→              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur px-3 py-1 text-xs font-medium">
+   453→                <TrendingUp className="h-3 w-3 text-cyan-accent" />
+   454→                {cgpa >= 4.5 ? 'First Class' : cgpa >= 3.5 ? 'Second Class Upper' : cgpa >= 2.4 ? 'Second Class Lower' : 'Third Class'}
+   455→              </div>
+   456→            </div>
+   457→            <div className="space-y-2">
+   458→              <div className="flex items-center justify-between text-xs text-primary-foreground/80">
+   459→                <span>Progress to 5.00</span>
+   460→                <span className="font-semibold tabular-nums">{cgpaPct.toFixed(0)}%</span>
+   461→              </div>
+   462→              <div className="h-2.5 w-full rounded-full bg-white/20 overflow-hidden">
+   463→                <motion.div
+   464→                  className="h-full bg-gradient-to-r from-cyan-accent to-white rounded-full"
+   465→                  initial={{ width: 0 }}
+   466→                  animate={{ width: `${cgpaPct}%` }}
+   467→                  transition={{ duration: 0.8, ease: 'easeOut' }}
+   468→                />
+   469→              </div>
+   470→              <div className="flex flex-wrap items-center gap-4 pt-2 text-xs">
+   471→                <div>
+   472→                  <div className="text-primary-foreground/70">Total Units</div>
+   473→                  <div className="font-bold text-lg tabular-nums">{totalUnits}</div>
+   474→                </div>
+   475→                <div>
+   476→                  <div className="text-primary-foreground/70">Courses</div>
+   477→                  <div className="font-bold text-lg tabular-nums">{rows.length}</div>
+   478→                </div>
+   479→                <div>
+   480→                  <div className="text-primary-foreground/70">Best Grade</div>
+   481→                  <div className="font-bold text-lg">{rows[0]?.grade || '—'}</div>
+   482→                </div>
+   483→              </div>
+   484→            </div>
+   485→          </CardContent>
+   486→        </div>
+   487→      </Card>
+   488→
+   489→      {/* Semester selector */}
+   490→      <div className="flex flex-wrap items-center gap-2">
+   491→        <span className="text-sm font-medium text-muted-foreground mr-1">Semester:</span>
+   492→        {SEMESTERS.map((s) => (
+   493→          <Button
+   494→            key={s}
+   495→            size="sm"
+   496→            variant={semester === s ? 'default' : 'outline'}
+   497→            onClick={() => setSemester(s)}
+   498→            className="rounded-full"
+   499→          >
+   500→            {s}
+   501→          </Button>
+   502→        ))}
+   503→      </div>
+   504→
+   505→      {/* Results table */}
+   506→      <Card className="rounded-2xl overflow-hidden">
+   507→        <CardHeader className="border-b pb-4">
+   508→          <CardTitle className="font-display flex items-center gap-2 text-lg">
+   509→            <Award className="h-5 w-5 text-cyan-accent" />
+   510→            Course Results
+   511→          </CardTitle>
+   512→          <CardDescription>Official academic record — {semester}</CardDescription>
+   513→        </CardHeader>
+   514→        <CardContent className="p-0">
+   515→          <Table>
+   516→            <TableHeader>
+   517→              <TableRow className="bg-muted/40 hover:bg-muted/40">
+   518→                <TableHead className="pl-6">Code</TableHead>
+   519→                <TableHead>Course Title</TableHead>
+   520→                <TableHead className="text-center">Units</TableHead>
+   521→                <TableHead className="text-center">Score</TableHead>
+   522→                <TableHead className="text-center pr-6">Grade</TableHead>
+   523→              </TableRow>
+   524→            </TableHeader>
+   525→            <TableBody>
+   526→              {rows.map((r) => (
+   527→                <TableRow key={r.code}>
+   528→                  <TableCell className="pl-6 font-mono font-semibold text-sm">{r.code}</TableCell>
+   529→                  <TableCell className="font-medium">{r.title}</TableCell>
+   530→                  <TableCell className="text-center tabular-nums">{r.unit}</TableCell>
+   531→                  <TableCell className="text-center tabular-nums">{r.score}</TableCell>
+   532→                  <TableCell className="text-center pr-6">
+   533→                    <Badge variant="outline" className={cn('rounded-md font-bold w-8 h-8 justify-center', gradeBadgeClass(r.grade))}>
+   534→                      {r.grade}
+   535→                    </Badge>
+   536→                  </TableCell>
+   537→                </TableRow>
+   538→              ))}
+   539→            </TableBody>
+   540→          </Table>
+   541→        </CardContent>
+   542→      </Card>
+   543→
+   544→      <p className="text-xs text-muted-foreground text-center">
+   545→        Results shown are demo data. Official transcripts are issued by the ULSESA Exams Office.
+   546→      </p>
+   547→    </div>
+   548→  )
+   549→}
+   550→
+   551→// ===================== Main view =====================
+   552→
+   553→export function AcademicsView() {
+   554→  const { navigate } = useNav()
+   555→  const [courses, setCourses] = useState<Course[]>([])
+   556→  const [loading, setLoading] = useState(true)
+   557→  const [error, setError] = useState<string | null>(null)
+   558→  const [activeLevel, setActiveLevel] = useState<string>('all')
+   559→  const [activeDept, setActiveDept] = useState<string>('all')
+   560→
+   561→  const [dialogCourse, setDialogCourse] = useState<Course | null>(null)
+   562→  const [dialogResources, setDialogResources] = useState<Resource[]>([])
+   563→  const [dialogLoading, setDialogLoading] = useState(false)
+   564→
+   565→  const fetchCourses = useCallback(() => {
+   566→    let mounted = true
+   567→    setLoading(true)
+   568→    api
+   569→      .get<{ courses: Course[] }>('/courses')
+   570→      .then((res) => {
+   571→        if (!mounted) return
+   572→        setCourses(res.courses || [])
+   573→        setError(null)
+   574→      })
+   575→      .catch((e: unknown) => {
+   576→        if (!mounted) return
+   577→        setError(e instanceof Error ? e.message : 'Failed to load courses')
+   578→        setCourses([])
+   579→      })
+   580→      .finally(() => mounted && setLoading(false))
+   581→    return () => {
+   582→      mounted = false
+   583→    }
+   584→  }, [])
+   585→
+   586→  useEffect(() => {
+   587→    return fetchCourses()
+   588→  }, [fetchCourses])
+   589→
+   590→  const filtered = useMemo(() => {
+   591→    return courses.filter((c) => {
+   592→      if (activeLevel !== 'all' && c.level !== activeLevel) return false
+   593→      if (activeDept !== 'all' && c.department !== activeDept) return false
+   594→      return true
+   595→    })
+   596→  }, [courses, activeLevel, activeDept])
+   597→
+   598→  const openResources = useCallback(async (course: Course) => {
+   599→    setDialogCourse(course)
+   600→    setDialogResources([])
+   601→    setDialogLoading(true)
+   602→    try {
+   603→      const res = await api.get<{ resources: Resource[] }>(`/resources?courseId=${course.id}`)
+   604→      setDialogResources(res.resources || [])
+   605→    } catch (e: unknown) {
+   606→      toast.error(e instanceof Error ? e.message : 'Failed to load resources')
+   607→    } finally {
+   608→      setDialogLoading(false)
+   609→    }
+   610→  }, [])
+   611→
+   612→  return (
+   613→    <div className="animate-fade-in">
+   614→      {/* ===================== HERO ===================== */}
+   615→      <section className="relative overflow-hidden border-b border-border/40">
+   616→        <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
+   617→        <div className="absolute -top-20 left-1/2 -translate-x-1/2 h-64 w-[50rem] rounded-full bg-primary/20 blur-3xl pointer-events-none" aria-hidden />
+   618→        <div className="absolute top-20 right-12 h-32 w-32 rounded-full bg-cyan-accent/20 blur-3xl pointer-events-none" aria-hidden />
+   619→
+   620→        <div className="container mx-auto px-4 lg:px-6 relative py-12 md:py-16">
+   621→          <motion.div
+   622→            initial={{ opacity: 0, y: 20 }}
+   623→            animate={{ opacity: 1, y: 0 }}
+   624→            transition={{ duration: 0.5 }}
+   625→            className="max-w-3xl"
+   626→          >
+   627→            <Badge variant="outline" className="mb-4 rounded-full bg-background/70 backdrop-blur px-3 py-1 border-primary/20">
+   628→              <Sparkles className="h-3.5 w-3.5 text-cyan-accent mr-1.5" />
+   629→              ULSESA Academic Hub
+   630→            </Badge>
+   631→            <h1 className="font-display font-extrabold tracking-tight text-3xl sm:text-4xl md:text-5xl leading-tight">
+   632→              Courses, <span className="text-gradient-brand">Timetable</span> & Results
+   633→            </h1>
+   634→            <p className="mt-3 text-sm md:text-base text-muted-foreground max-w-2xl">
+   635→              Everything academic in one place — browse all Science Education courses across our 5 cohorts, view your weekly schedule, and track your CGPA progress.
+   636→            </p>
+   637→          </motion.div>
+   638→        </div>
+   639→      </section>
+   640→
+   641→      {/* ===================== TABS ===================== */}
+   642→      <section className="container mx-auto px-4 lg:px-6 py-8 md:py-12">
+   643→        <Tabs defaultValue="courses" className="gap-6">
+   644→          <TabsList className="bg-muted/60 rounded-full p-1 h-auto flex flex-wrap">
+   645→            <TabsTrigger value="courses" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   646→              <BookOpen className="h-4 w-4" />
+   647→              Courses
+   648→            </TabsTrigger>
+   649→            <TabsTrigger value="timetable" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   650→              <CalendarDays className="h-4 w-4" />
+   651→              Timetable
+   652→            </TabsTrigger>
+   653→            <TabsTrigger value="results" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   654→              <GraduationCap className="h-4 w-4" />
+   655→              Results
+   656→            </TabsTrigger>
+   657→          </TabsList>
+   658→
+   659→          {/* COURSES */}
+   660→          <TabsContent value="courses" className="space-y-6 animate-fade-in">
+   661→            <div className="flex flex-col gap-4">
+   662→              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   663→                <div>
+   664→                  <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Science Education Courses</h2>
+   665→                  <p className="text-sm text-muted-foreground mt-0.5">
+   666→                    {loading ? 'Loading courses…' : `${filtered.length} course${filtered.length === 1 ? '' : 's'} available`}
+   667→                  </p>
+   668→                </div>
+   669→                <Button
+   670→                  variant="outline"
+   671→                  size="sm"
+   672→                  onClick={() => navigate('resources')}
+   673→                  className="rounded-full w-fit"
+   674→                >
+   675→                  Browse All Resources
+   676→                  <ArrowRight className="h-4 w-4" />
+   677→                </Button>
+   678→              </div>
+   679→              <div className="space-y-3">
+   680→                <div>
+   681→                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">Department</div>
+   682→                  <DepartmentPills active={activeDept} onChange={setActiveDept} />
+   683→                </div>
+   684→                <div>
+   685→                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">Level</div>
+   686→                  <LevelPills active={activeLevel} onChange={setActiveLevel} />
+   687→                </div>
+   688→              </div>
+   689→            </div>
+   690→
+   691→            {loading ? (
+   692→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   693→                {Array.from({ length: 6 }).map((_, i) => (
+   694→                  <CourseSkeleton key={i} />
+   695→                ))}
+   696→              </div>
+   697→            ) : error ? (
+   698→              <Card className="rounded-2xl border-dashed">
+   699→                <CardContent className="py-12 text-center text-sm text-muted-foreground">
+   700→                  <BookOpen className="h-9 w-9 mx-auto mb-3 opacity-40" />
+   701→                  Couldn&apos;t load courses right now.
+   702→                  <div className="text-xs mt-1 opacity-70">{error}</div>
+   703→                </CardContent>
+   704→              </Card>
+   705→            ) : filtered.length === 0 ? (
+   706→              <Card className="rounded-2xl border-dashed">
+   707→                <CardContent className="py-12 text-center text-sm text-muted-foreground">
+   708→                  <BookOpen className="h-9 w-9 mx-auto mb-3 opacity-40" />
+   709→                  No courses match these filters.
+   710→                </CardContent>
+   711→              </Card>
+   712→            ) : (
+   713→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   714→                {filtered.map((c, i) => (
+   715→                  <CourseCard key={c.id} course={c} index={i} onView={openResources} />
+   716→                ))}
+   717→              </div>
+   718→            )}
+   719→          </TabsContent>
+   720→
+   721→          {/* TIMETABLE */}
+   722→          <TabsContent value="timetable" className="space-y-4 animate-fade-in">
+   723→            <div>
+   724→              <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Weekly Timetable</h2>
+   725→              <p className="text-sm text-muted-foreground mt-0.5">
+   726→                ULSESA 300 Level Science Education schedule — tap and drag horizontally on mobile to view all days.
+   727→              </p>
+   728→            </div>
+   729→            <TimetableGrid />
+   730→
+   731→            <Card className="rounded-2xl bg-muted/30">
+   732→              <CardContent className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+   733→                <span className="font-semibold text-foreground">Legend:</span>
+   734→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-primary/30 border border-primary/40" /> Physics Edu (PED)</span>
+   735→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-cyan-accent/30 border border-cyan-accent/40" /> General (SED)</span>
+   736→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-500/30 border border-emerald-500/40" /> Maths Edu (MED)</span>
+   737→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-500/30 border border-amber-500/40" /> Chem Edu (CED)</span>
+   738→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-rose-500/30 border border-rose-500/40" /> Bio Edu (BED)</span>
+   739→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-purple-500/30 border border-purple-500/40" /> Int Sci Edu (IED)</span>
+   740→              </CardContent>
+   741→            </Card>
+   742→          </TabsContent>
+   743→
+   744→          {/* RESULTS */}
+   745→          <TabsContent value="results" className="animate-fade-in">
+   746→            <div className="mb-5">
+   747→              <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Academic Results</h2>
+   748→              <p className="text-sm text-muted-foreground mt-0.5">
+   749→                Track your CGPA and review per-semester Science Education course grades.
+   750→              </p>
+   751→            </div>
+   752→            <ResultsPanel />
+   753→          </TabsContent>
+   754→        </Tabs>
+   755→      </section>
+   756→
+   757→      {/* ===================== COURSE RESOURCES DIALOG ===================== */}
+   758→      <Dialog open={!!dialogCourse} onOpenChange={(o) => !o && setDialogCourse(null)}>
+   759→        <DialogContent className="sm:max-w-2xl">
+   760→          <DialogHeader>
+   761→            <DialogTitle className="font-display flex items-center gap-2">
+   762→              <BookOpen className="h-5 w-5 text-primary" />
+   763→              {dialogCourse?.code} — Resources
+   764→            </DialogTitle>
+   765→            <DialogDescription>
+   766→              {dialogCourse?.title}{dialogCourse?.department ? ` • ${dialogCourse.department}` : ''} • {dialogCourse?.level} Level • {dialogCourse?.semester} Semester
+   767→            </DialogDescription>
+   768→          </DialogHeader>
+   769→
+   770→          {dialogCourse?.googleDriveUrl && (
+   771→            <div className="flex items-center gap-3 rounded-xl bg-cyan-accent/10 border border-cyan-accent/20 p-3 text-sm">
+   772→              <ExternalLink className="h-4 w-4 text-cyan-accent shrink-0" />
+   773→              <div className="flex-1 min-w-0">
+   774→                <div className="font-semibold text-foreground">Course Google Drive folder</div>
+   775→                <div className="text-xs text-muted-foreground">All official course materials are hosted on Google Drive.</div>
+   776→              </div>
+   777→              <Button
+   778→                size="sm"
+   779→                asChild
+   780→                className="rounded-full bg-cyan-accent text-cyan-accent-foreground hover:bg-cyan-accent/90 shrink-0"
+   781→              >
+   782→                <a href={dialogCourse.googleDriveUrl} target="_blank" rel="noopener noreferrer">
+   783→                  Open
+   784→                </a>
+   785→              </Button>
+   786→            </div>
+   787→          )}
+   788→
+   789→          {dialogLoading ? (
+   790→            <div className="space-y-2 py-4">
+   791→              {Array.from({ length: 3 }).map((_, i) => (
+   792→                <div key={i} className="flex items-center gap-3 p-3 rounded-xl border">
+   793→                  <Skeleton className="h-10 w-10 rounded-lg" />
+   794→                  <div className="flex-1 space-y-1.5">
+   795→                    <Skeleton className="h-4 w-3/4" />
+   796→                    <Skeleton className="h-3 w-1/2" />
+   797→                  </div>
+   798→                  <Skeleton className="h-8 w-24 rounded-full" />
+   799→                </div>
+   800→              ))}
+   801→            </div>
+   802→          ) : dialogResources.length === 0 ? (
+   803→            <div className="text-center py-8 text-sm text-muted-foreground">
+   804→              <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+   805→              No resources uploaded for this course yet.
+   806→              <div className="mt-3 flex flex-col sm:flex-row gap-2 justify-center">
+   807→                {dialogCourse?.googleDriveUrl && (
+   808→                  <Button size="sm" asChild className="rounded-full bg-cyan-accent text-cyan-accent-foreground hover:bg-cyan-accent/90">
+   809→                    <a href={dialogCourse.googleDriveUrl} target="_blank" rel="noopener noreferrer">
+   810→                      <ExternalLink className="h-4 w-4" />
+   811→                      Open Drive
+   812→                    </a>
+   813→                  </Button>
+   814→                )}
+   815→                <Button size="sm" variant="outline" onClick={() => { setDialogCourse(null); navigate('resources') }} className="rounded-full">
+   816→                  Browse all resources
+   817→                  <ChevronRight className="h-4 w-4" />
+   818→                </Button>
+   819→              </div>
+   820→            </div>
+   821→          ) : (
+   822→            <div className="space-y-2 max-h-[60vh] overflow-y-auto scrollbar-thin pr-1">
+   823→              {dialogResources.map((r) => {
+   824→                const Icon = resourceIcon(r.type)
+   825→                return (
+   826→                  <div
+   827→                    key={r.id}
+   828→                    className="flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/40 transition-colors"
+   829→                  >
+   830→                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+   831→                      <Icon className="h-5 w-5" />
+   832→                    </div>
+   833→                    <div className="flex-1 min-w-0">
+   834→                      <div className="font-medium text-sm leading-snug truncate">{r.title}</div>
+   835→                      {r.description && (
+   836→                        <div className="text-xs text-muted-foreground line-clamp-1">{r.description}</div>
+   837→                      )}
+   838→                      <Badge variant="outline" className="mt-1 rounded-full text-[10px] capitalize">
+   839→                        {r.type.replace('_', ' ')}
+   840→                      </Badge>
+   841→                    </div>
+   842→                    <Button
+   843→                      size="sm"
+   844→                      variant="outline"
+   845→                      onClick={() => toast.message('Downloading…', { description: r.title })}
+   846→                      className="rounded-full shrink-0"
+   847→                    >
+   848→                      <Download className="h-3.5 w-3.5" />
+   849→                      Get
+   850→                    </Button>
+   851→                  </div>
+   852→                )
+   853→              })}
+   854→            </div>
+   855→          )}
+   856→        </DialogContent>
+   857→      </Dialog>
+   858→    </div>
+   859→  )
+   860→}
+   861→
+   862→export default AcademicsView
+   863→

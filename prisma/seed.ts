@@ -49,7 +49,9 @@ async function main() {
   ]
 
   const students = [
-    // Verified — across all levels and cohorts
+    // Primary test account — the developer (Chukwunenye David Chimaeze)
+    { matricNumber: '230315011', fullName: 'Chukwunenye David Chimaeze', level: '300', programme: 'Physics Education', email: 'chimaeze@ulsesa.unilag.edu.ng', phone: '08117024699', isVerified: true },
+    // Other verified students — across all levels and cohorts
     { matricNumber: '230317091', fullName: 'Dawrld Olamide', level: '300', programme: 'Physics Education', email: 'dawrld@ulsesa.unilag.edu.ng', phone: '08012345678', isVerified: true },
     { matricNumber: '230317042', fullName: 'Adaeze Okoro', level: '300', programme: 'Biology Education', email: 'adaeze@ulsesa.unilag.edu.ng', phone: '08023456789', isVerified: true },
     { matricNumber: '230317088', fullName: 'Chidi Eze', level: '300', programme: 'Chemistry Education', email: 'chidi@ulsesa.unilag.edu.ng', phone: '08034567890', isVerified: true },
@@ -261,28 +263,18 @@ async function main() {
   }
   console.log('✅ Resources created')
 
-  // ===== COMMUNITY GROUPS (WhatsApp) =====
-  const groups = [
-    { title: 'ULSESA General Platform', description: 'The official WhatsApp platform for all ULSESA members. Announcements, updates, and general discussions.', category: 'general', whatsappLink: 'https://chat.whatsapp.com/ulsesa-general', memberCount: 450 },
-    { title: '100 Level ULSESA', description: 'WhatsApp group for all 100-level science education students across all departments.', category: 'level', whatsappLink: 'https://chat.whatsapp.com/ulsesa-100', memberCount: 120 },
-    { title: '200 Level ULSESA', description: 'WhatsApp group for all 200-level science education students.', category: 'level', whatsappLink: 'https://chat.whatsapp.com/ulsesa-200', memberCount: 110 },
-    { title: '300 Level ULSESA', description: 'WhatsApp group for all 300-level science education students.', category: 'level', whatsappLink: 'https://chat.whatsapp.com/ulsesa-300', memberCount: 105 },
-    { title: '400 Level ULSESA', description: 'WhatsApp group for all 400-level science education students. Teaching Practice discussions here.', category: 'level', whatsappLink: 'https://chat.whatsapp.com/ulsesa-400', memberCount: 95 },
-    { title: '500 Level ULSESA', description: 'WhatsApp group for all final-year science education students.', category: 'level', whatsappLink: 'https://chat.whatsapp.com/ulsesa-500', memberCount: 80 },
-    { title: 'Biology Education Department', description: 'Exclusive group for Biology Education students.', category: 'department', whatsappLink: 'https://chat.whatsapp.com/ulsesa-bio', memberCount: 130 },
-    { title: 'Chemistry Education Department', description: 'Exclusive group for Chemistry Education students.', category: 'department', whatsappLink: 'https://chat.whatsapp.com/ulsesa-chem', memberCount: 125 },
-    { title: 'Mathematics Education Department', description: 'Exclusive group for Mathematics Education students.', category: 'department', whatsappLink: 'https://chat.whatsapp.com/ulsesa-math', memberCount: 120 },
-    { title: 'Physics Education Department', description: 'Exclusive group for Physics Education students.', category: 'department', whatsappLink: 'https://chat.whatsapp.com/ulsesa-phys', memberCount: 110 },
-    { title: 'Integrated Science Education', description: 'Exclusive group for Integrated Science Education students.', category: 'department', whatsappLink: 'https://chat.whatsapp.com/ulsesa-intsci', memberCount: 90 },
-    { title: 'ULSESA Sports & Games', description: 'For sports enthusiasts — football, athletics, table tennis and more. Inter-departmental competitions.', category: 'sports', whatsappLink: 'https://chat.whatsapp.com/ulsesa-sports', memberCount: 200 },
-    { title: 'ULSESA Academic Hub', description: 'Study group, past questions, peer tutoring, and academic support across all departments.', category: 'academic', whatsappLink: 'https://chat.whatsapp.com/ulsesa-academic', memberCount: 280 },
-    { title: 'ULSESA Announcements Channel', description: 'Official announcements-only channel. No replies — just important updates.', category: 'announcement', whatsappLink: 'https://chat.whatsapp.com/ulsesa-announce', memberCount: 500 },
-  ]
-
-  for (const g of groups) {
-    await db.communityGroup.create({ data: g })
-  }
-  console.log(`✅ ${groups.length} WhatsApp community groups created`)
+  // ===== COMMUNITY (Single official ULSESA WhatsApp Community) =====
+  // The entire ULSESA department — all 5 cohorts — lives under one WhatsApp Community
+  await db.communityGroup.create({
+    data: {
+      title: 'ULSESA Official Community',
+      description: 'The one and only official ULSESA WhatsApp Community — the entire department under one roof. All 5 cohorts (Biology, Chemistry, Mathematics, Physics & Integrated Science Education) connect here. Join for announcements, discussions, and everything ULSESA.',
+      category: 'general',
+      whatsappLink: 'https://chat.whatsapp.com/ENV11x4Fs4wLi828he1wcp',
+      memberCount: 500,
+    },
+  })
+  console.log('✅ Official ULSESA WhatsApp Community created')
 
   // ===== ACTIVITIES =====
   const verifiedStudents = await db.student.findMany({ where: { isVerified: true } })
@@ -301,7 +293,7 @@ async function main() {
   console.log('\n🎉 ULSESA seed complete!')
   console.log('\n📋 Demo credentials:')
   console.log('  Admin:    username=admin  password=ulsesa-admin-2026')
-  console.log('  Student:  matric=230317091  password=student123  (verified, Physics Education, 300L)')
+  console.log('  Primary:  matric=230315011  password=student123  (Chukwunenye David Chimaeze — verified)')
   console.log('  Unverified: matric=240317005  password=student123  (needs admin approval)')
 }
 

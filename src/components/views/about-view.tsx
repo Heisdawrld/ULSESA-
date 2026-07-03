@@ -9,6 +9,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
+import { WhatsAppIcon } from '@/components/shared/whatsapp-icon'
+import {
+  supportWhatsAppUrl,
+  SUPPORT_MESSAGES,
+  SUPPORT_PHONE_DISPLAY,
+} from '@/lib/support'
 import {
   Sparkles,
   Target,
@@ -20,7 +26,6 @@ import {
   TrendingUp,
   GraduationCap,
   FlaskConical,
-  Phone,
   Mail,
   MapPin,
   Clock,
@@ -491,54 +496,69 @@ export function AboutView() {
         <Card className="rounded-2xl overflow-hidden">
           <CardHeader className="border-b pb-4">
             <CardTitle className="font-display flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-primary" />
+              <WhatsAppIcon className="h-5 w-5 text-[#25D366]" />
               Contact ULSESA
             </CardTitle>
             <CardDescription>
-              Reach out for enquiries, collaborations, or to get involved.
+              Reach out for enquiries, collaborations, or to get involved — WhatsApp is the fastest way.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid sm:grid-cols-3 gap-4">
-            <button
-              onClick={() => copyToClipboard('ulsesa01@gmail.com', 'Email')}
-              className="flex items-start gap-3 p-4 rounded-xl border hover:bg-muted/40 transition-colors text-left"
+          <CardContent className="space-y-4">
+            {/* Premium WhatsApp CTA */}
+            <a
+              href={supportWhatsAppUrl(SUPPORT_MESSAGES.question)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() =>
+                toast.message('Opening WhatsApp', {
+                  description: `Direct chat with David • ${SUPPORT_PHONE_DISPLAY}`,
+                })
+              }
+              className="group relative block overflow-hidden rounded-2xl p-[1.5px] bg-gradient-to-br from-[#25D366] via-[#1FB855] to-[#128C7E] shadow-lg shadow-[#25D366]/25 transition-transform hover:scale-[1.005] active:scale-[0.99]"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
-                <Mail className="h-5 w-5" />
+              <div className="flex items-center gap-4 rounded-[14px] bg-gradient-to-br from-[#25D366] to-[#1FB855] p-4 text-white">
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur ring-1 ring-white/30">
+                  <WhatsAppIcon className="h-7 w-7" />
+                  <span className="absolute -inset-1 rounded-2xl bg-[#25D366]/40 blur-md -z-10" aria-hidden />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-base font-bold font-display leading-tight">Chat on WhatsApp</div>
+                  <div className="text-xs text-white/85 mt-0.5 tabular-nums">
+                    Direct line to David • {SUPPORT_PHONE_DISPLAY}
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 shrink-0 opacity-90 transition-transform group-hover:translate-x-0.5" />
               </div>
-              <div className="min-w-0">
-                <div className="text-xs text-muted-foreground">Email</div>
-                <div className="text-sm font-medium truncate">ulsesa01@gmail.com</div>
-                <div className="text-[11px] text-primary mt-0.5">Tap to copy</div>
-              </div>
-            </button>
+            </a>
 
-            <button
-              onClick={() => copyToClipboard('+234 801 234 5678', 'Phone')}
-              className="flex items-start gap-3 p-4 rounded-xl border hover:bg-muted/40 transition-colors text-left"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent shrink-0">
-                <Phone className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs text-muted-foreground">Phone</div>
-                <div className="text-sm font-medium tabular-nums">+234 801 234 5678</div>
-                <div className="text-[11px] text-primary mt-0.5">Tap to copy</div>
-              </div>
-            </button>
+            {/* Secondary contact options */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <button
+                onClick={() => copyToClipboard('ulsesa01@gmail.com', 'Email')}
+                className="flex items-start gap-3 p-4 rounded-xl border hover:bg-muted/40 transition-colors text-left"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+                  <Mail className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">Email</div>
+                  <div className="text-sm font-medium truncate">ulsesa01@gmail.com</div>
+                  <div className="text-[11px] text-primary mt-0.5">Tap to copy</div>
+                </div>
+              </button>
 
-            <div className="flex items-start gap-3 p-4 rounded-xl border">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0">
-                <MapPin className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs text-muted-foreground">Location</div>
-                <div className="text-sm font-medium leading-snug">Department of Science Education</div>
-                <div className="text-xs text-muted-foreground">Faculty of Education, UNILAG, Akoka, Yaba, Lagos</div>
+              <div className="flex items-start gap-3 p-4 rounded-xl border">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-accent/15 text-cyan-accent dark:text-cyan-accent shrink-0">
+                  <MapPin className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">Location</div>
+                  <div className="text-sm font-medium leading-snug">Department of Science Education</div>
+                  <div className="text-xs text-muted-foreground">Faculty of Education, UNILAG, Akoka, Yaba, Lagos</div>
+                </div>
               </div>
             </div>
-          </CardContent>
-          <CardContent>
+
             <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-4 text-sm">
               <Clock className="h-4 w-4 text-primary shrink-0" />
               <div>
