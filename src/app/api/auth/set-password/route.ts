@@ -5,16 +5,13 @@ import {
   hashPassword,
   signStudentToken,
 } from '@/lib/auth/server-auth'
-import { clearOTP } from '@/lib/otp-store'
+import { isOTPVerified, clearOTP } from '@/lib/otp-store'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const matricNumber = (body?.matricNumber ?? '').toString().trim()
     const password = (body?.password ?? '').toString()
-    const idDocumentUrl = body?.idDocumentUrl
-      ? (body.idDocumentUrl as string).toString().trim()
-      : null
 
     if (!matricNumber || !password) {
       return NextResponse.json(
@@ -30,9 +27,26 @@ export async function POST(request: Request) {
       )
     }
 
+    // SECURITY: Verify that the OTP was successfully verified before allowing password creation.
+    // This prevents anyone from setting a password without proving email ownership.
+    if (!isOTPVerified(matricNumber)) {
+      return NextResponse.json(
+        {
+          error:
+            'Email verification required. Please verify your email with the code before setting a password.',
+        },
+        { status: 403 }
+      )
+    }
+
     const student = await db.student.findUnique({
       where: { matricNumber },
-      select: { id: true, matricNumber: true, fullName: true },
+      select: {
+        id: true,
+        matricNumber: true,
+        fullName: true,
+        password: true,
+      },
     })
 
     if (!student) {
@@ -42,14 +56,25 @@ export async function POST(request: Request) {
       )
     }
 
+    // SECURITY: Prevent re-claiming an account that already has a password
+    if (student.password) {
+      return NextResponse.json(
+        {
+          error:
+            'This account has already been claimed. Please sign in instead.',
+          alreadyClaimed: true,
+        },
+        { status: 400 }
+      )
+    }
+
     const passwordHash = await hashPassword(password)
 
     const updated = await db.student.update({
       where: { id: student.id },
       data: {
         password: passwordHash,
-        verificationStatus: 'submitted',
-        idDocumentUrl: idDocumentUrl ?? undefined,
+        verificationStatus: 'submitted', // pending admin approval
       },
       select: {
         id: true,
@@ -58,7 +83,6 @@ export async function POST(request: Request) {
         level: true,
         programme: true,
         email: true,
-        phone: true,
         isVerified: true,
         verificationStatus: true,
         hasVoted: true,
@@ -69,10 +93,11 @@ export async function POST(request: Request) {
       data: {
         studentId: student.id,
         action: 'submitted',
-        notes: 'Student submitted verification documents and set password.',
+        notes: 'Student verified email via OTP and set a password. Pending admin approval.',
       },
     })
 
+    // Clear the OTP entry now that the password is set
     clearOTP(matricNumber)
 
     const token = signStudentToken({
@@ -90,7 +115,12 @@ export async function POST(request: Request) {
       maxAge: 7 * 24 * 60 * 60,
     })
 
-    return NextResponse.json({ student: updated, token })
+    return NextResponse.json({
+      student: updated,
+      token,
+      message:
+        'Account claimed successfully! Your account is now pending admin approval. You can explore the portal, but voting will be unlocked once an admin verifies you.',
+    })
   } catch (error) {
     console.error('[auth/set-password] Error:', error)
     return NextResponse.json(

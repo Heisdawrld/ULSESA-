@@ -22,20 +22,35 @@ export async function POST(request: Request) {
         programme: true,
         matricNumber: true,
         email: true,
-        phone: true,
         verificationStatus: true,
         isVerified: true,
+        // NOTE: we do NOT return the password hash, but we check if one exists
       },
     })
 
     if (!student) {
       return NextResponse.json(
-        { error: 'No student found with that matric number. Please contact the department office.' },
+        {
+          error:
+            'No student found with that matric number. Only pre-registered ULSESA members can claim an account. If you believe this is an error, contact the department office.',
+        },
         { status: 404 }
       )
     }
 
-    return NextResponse.json({ student })
+    // Check whether the student has already claimed their account (has a password)
+    const fullStudent = await db.student.findUnique({
+      where: { matricNumber },
+      select: { password: true },
+    })
+    const hasPassword = Boolean(fullStudent?.password)
+
+    return NextResponse.json({
+      student: {
+        ...student,
+        hasPassword,
+      },
+    })
   } catch (error) {
     console.error('[auth/claim] Error:', error)
     return NextResponse.json(

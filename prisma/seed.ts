@@ -66,17 +66,20 @@ async function main() {
     { matricNumber: '210317022', fullName: 'Samuel Ike', level: '500', programme: 'Physics Education', email: 'samuel@ulsesa.unilag.edu.ng', phone: '08123456789', isVerified: true },
   ]
 
+  // Verified students already have passwords (they've claimed their accounts
+  // and been approved). Unverified students have NO password — they must
+  // go through the claiming flow (matric → email OTP → set password → admin approval).
   const studentPassword = await bcrypt.hash('student123', 10)
   for (const s of students) {
     await db.student.create({
       data: {
         ...s,
-        password: studentPassword,
+        password: s.isVerified ? studentPassword : null,
         verificationStatus: s.isVerified ? 'approved' : 'pending',
       },
     })
   }
-  console.log(`✅ ${students.length} students created across 5 cohorts`)
+  console.log(`✅ ${students.length} students created (${students.filter(s => s.isVerified).length} verified with passwords, ${students.filter(s => !s.isVerified).length} unverified needing to claim)`)
 
   // ===== ELECTION =====
   const now = new Date()
@@ -292,9 +295,10 @@ async function main() {
 
   console.log('\n🎉 ULSESA seed complete!')
   console.log('\n📋 Demo credentials:')
-  console.log('  Admin:    username=admin  password=ulsesa-admin-2026')
-  console.log('  Primary:  matric=230315011  password=student123  (Chukwunenye David Chimaeze — verified)')
-  console.log('  Unverified: matric=240317005  password=student123  (needs admin approval)')
+  console.log('  Admin:        username=admin  password=ulsesa-admin-2026')
+  console.log('  Verified:     matric=230315011  password=student123  (Chukwunenye David Chimaeze — can sign in)')
+  console.log('  Needs claiming: matric=240317005  (Emeka Nwosu — no password yet, go through Claim Account flow)')
+  console.log('  Needs claiming: matric=250317001  (David Okafor — no password yet)')
 }
 
 main()

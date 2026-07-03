@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { generateOTP } from '@/lib/auth/server-auth'
+import { storeOTP } from '@/lib/otp-store'
+import { sendOTPEmail, isEmailConfigured } from '@/lib/email'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const matricNumber = (body?.matricNumber ?? '').toString().trim()
-    const channel = body?.channel === 'phone' ? 'phone' : 'email'
 
     if (!matricNumber) {
       return NextResponse.json(
@@ -16,7 +18,13 @@ export async function POST(request: Request) {
 
     const student = await db.student.findUnique({
       where: { matricNumber },
-      select: { id: true, fullName: true, email: true, phone: true },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        password: true,
+        verificationStatus: true,
+      },
     })
 
     if (!student) {
@@ -26,38 +34,58 @@ export async function POST(request: Request) {
       )
     }
 
-    // Only return OTP if the channel has a destination on file
-    if (channel === 'email' && !student.email) {
+    // If the student already has a password, they've already claimed — tell them to login
+    if (student.password) {
       return NextResponse.json(
-        { error: 'No email on file for this student. Try phone instead.' },
-        { status: 400 }
-      )
-    }
-    if (channel === 'phone' && !student.phone) {
-      return NextResponse.json(
-        { error: 'No phone number on file for this student. Try email instead.' },
+        {
+          error:
+            'This account has already been claimed. Please sign in instead.',
+          alreadyClaimed: true,
+        },
         { status: 400 }
       )
     }
 
-    // Lazy import to avoid circular module init
-    const { generateOTP } = await import('@/lib/auth/server-auth')
-    const { storeOTP } = await import('@/lib/otp-store')
+    // The email MUST be on file — this is the identity lock.
+    // Students cannot use any random email; only the email the class reps collected.
+    if (!student.email) {
+      return NextResponse.json(
+        {
+          error:
+            'No email is on file for your account. Please contact the ULSESA admin to add your email before claiming.',
+        },
+        { status: 400 }
+      )
+    }
 
+    // Generate and store the OTP
     const otp = generateOTP()
-    storeOTP(matricNumber, otp, channel)
+    storeOTP(matricNumber, otp)
+
+    // Send the OTP email
+    const result = await sendOTPEmail(student.email, student.fullName, otp)
+
+    // Mask the email for the response (e.g., "chi***@gmail.com")
+    const [localPart, domain] = student.email.split('@')
+    const maskedEmail = domain
+      ? `${localPart.slice(0, 3)}***@${domain}`
+      : '***'
 
     return NextResponse.json({
-      message: 'OTP sent',
-      otp, // included for demo purposes (no real email/SMS gateway)
-      channel,
-      destination:
-        channel === 'email' ? student.email : student.phone,
+      message: result.sent
+        ? `Verification code sent to ${maskedEmail}`
+        : 'Verification code generated (demo mode)',
+      emailSent: result.sent,
+      maskedEmail,
+      // Only include the OTP in the response when in DEMO mode (SMTP not configured)
+      // In production with real SMTP, this field is omitted entirely.
+      ...(result.sent ? {} : { demoOtp: result.demoOtp }),
+      demoMode: !isEmailConfigured,
     })
   } catch (error) {
     console.error('[auth/send-otp] Error:', error)
     return NextResponse.json(
-      { error: 'Failed to send OTP' },
+      { error: 'Failed to send verification code' },
       { status: 500 }
     )
   }

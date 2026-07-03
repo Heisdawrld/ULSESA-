@@ -9,6 +9,8 @@ export interface StudentUser {
   programme: string
   email: string | null
   isVerified: boolean
+  verificationStatus: string // pending, submitted, approved, rejected
+  hasVoted?: boolean
 }
 
 export interface AdminUser {

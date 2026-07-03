@@ -1,0 +1,970 @@
+     1→'use client'
+     2→
+     3→import { useState, useRef, useEffect } from 'react'
+     4→import Image from 'next/image'
+     5→import { motion, AnimatePresence } from 'framer-motion'
+     6→import { useNav } from '@/lib/stores/nav-store'
+     7→import { useAuth, type StudentUser } from '@/lib/stores/auth-store'
+     8→import { api } from '@/lib/api-client'
+     9→import { toast } from 'sonner'
+    10→import { Button } from '@/components/ui/button'
+    11→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+    12→import { Input } from '@/components/ui/input'
+    13→import { Label } from '@/components/ui/label'
+    14→import { Badge } from '@/components/ui/badge'
+    15→import { Separator } from '@/components/ui/separator'
+    16→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    17→import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+    18→import {
+    19→  InputOTP,
+    20→  InputOTPGroup,
+    21→  InputOTPSlot,
+    22→  InputOTPSeparator,
+    23→} from '@/components/ui/input-otp'
+    24→import {
+    25→  ShieldCheck,
+    26→  Mail,
+    27→  Phone,
+    28→  KeyRound,
+    29→  Lock,
+    30→  ArrowRight,
+    31→  ArrowLeft,
+    32→  CheckCircle2,
+    33→  Upload,
+    34→  FileText,
+    35→  Loader2,
+    36→  Eye,
+    37→  EyeOff,
+    38→  Sparkles,
+    39→  UserCheck,
+    40→  IdCard,
+    41→  AlertCircle,
+    42→  Atom,
+    43→  Leaf,
+    44→  FlaskConical,
+    45→  Sigma,
+    46→  Microscope,
+    47→} from 'lucide-react'
+    48→
+    49→// ===================== Types =====================
+    50→
+    51→interface ClaimedStudent {
+    52→  id: string
+    53→  fullName: string
+    54→  level: string
+    55→  programme: string
+    56→  matricNumber: string
+    57→  email: string | null
+    58→  phone: string | null
+    59→  verificationStatus: string
+    60→  isVerified: boolean
+    61→}
+    62→
+    63→type Step = 0 | 1 | 2 | 3
+    64→type Channel = 'email' | 'phone'
+    65→
+    66→// ===================== Helpers =====================
+    67→
+    68→function maskEmail(email: string | null): string {
+    69→  if (!email) return 'No email on file'
+    70→  const [user, domain] = email.split('@')
+    71→  if (!domain) return email
+    72→  if (user.length <= 2) return `${user[0] ?? ''}***@${domain}`
+    73→  return `${user.slice(0, 2)}***@${domain}`
+    74→}
+    75→
+    76→function maskPhone(phone: string | null): string {
+    77→  if (!phone) return 'No phone on file'
+    78→  const digits = phone.replace(/\D/g, '')
+    79→  if (digits.length < 4) return phone
+    80→  return `***${digits.slice(-4)}`
+    81→}
+    82→
+    83→function toStudentUser(s: ClaimedStudent): StudentUser {
+    84→  return {
+    85→    id: s.id,
+    86→    matricNumber: s.matricNumber,
+    87→    fullName: s.fullName,
+    88→    level: s.level,
+    89→    programme: s.programme,
+    90→    email: s.email,
+    91→    isVerified: s.isVerified,
+    92→  }
+    93→}
+    94→
+    95→// ===================== Step Indicator =====================
+    96→
+    97→const stepDefs = [
+    98→  { n: 1, label: 'Identify', icon: UserCheck },
+    99→  { n: 2, label: 'Verify', icon: ShieldCheck },
+   100→  { n: 3, label: 'Secure', icon: Lock },
+   101→]
+   102→
+   103→function StepIndicator({ current }: { current: Step }) {
+   104→  // current step 0 = mode select (no progress), 1-3 = claim flow
+   105→  const activeIdx = current === 0 ? -1 : current - 1
+   106→  return (
+   107→    <div className="flex items-center justify-center gap-2 mb-6">
+   108→      {stepDefs.map((s, i) => {
+   109→        const done = activeIdx > i
+   110→        const active = activeIdx === i
+   111→        const Icon = s.icon
+   112→        return (
+   113→          <div key={s.n} className="flex items-center gap-2">
+   114→            <div
+   115→              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+   116→                active
+   117→                  ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/30'
+   118→                  : done
+   119→                    ? 'bg-primary/10 text-primary'
+   120→                    : 'bg-muted text-muted-foreground'
+   121→              }`}
+   122→            >
+   123→              <div
+   124→                className={`flex h-5 w-5 items-center justify-center rounded-full ${
+   125→                  active
+   126→                    ? 'bg-primary-foreground/20'
+   127→                    : done
+   128→                      ? 'bg-primary text-primary-foreground'
+   129→                      : 'bg-background border border-border'
+   130→                }`}
+   131→              >
+   132→                {done ? (
+   133→                  <CheckCircle2 className="h-3.5 w-3.5" />
+   134→                ) : (
+   135→                  <Icon className="h-3 w-3" />
+   136→                )}
+   137→              </div>
+   138→              <span className="hidden sm:inline">{s.label}</span>
+   139→            </div>
+   140→            {i < stepDefs.length - 1 && (
+   141→              <div
+   142→                className={`h-px w-6 sm:w-10 ${done ? 'bg-primary' : 'bg-border'}`}
+   143→              />
+   144→            )}
+   145→          </div>
+   146→        )
+   147→      })}
+   148→    </div>
+   149→  )
+   150→}
+   151→
+   152→// ===================== Brand panel (desktop) =====================
+   153→
+   154→const COHORTS = [
+   155→  { name: 'Biology Education', icon: Leaf },
+   156→  { name: 'Chemistry Education', icon: FlaskConical },
+   157→  { name: 'Mathematics Education', icon: Sigma },
+   158→  { name: 'Physics Education', icon: Atom },
+   159→  { name: 'Integrated Science Education', icon: Microscope },
+   160→]
+   161→
+   162→function BrandPanel() {
+   163→  return (
+   164→    <div className="hidden lg:flex flex-col justify-between rounded-l-[24px] bg-brand-gradient text-primary-foreground p-8 relative overflow-hidden">
+   165→      {/* Decorative grid */}
+   166→      <div
+   167→        className="absolute inset-0 opacity-20 pointer-events-none"
+   168→        style={{
+   169→          backgroundImage:
+   170→            'linear-gradient(to right, rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.2) 1px, transparent 1px)',
+   171→          backgroundSize: '36px 36px',
+   172→        }}
+   173→        aria-hidden
+   174→      />
+   175→      <div className="absolute -top-16 -right-10 h-56 w-56 rounded-full bg-cyan-accent/30 blur-3xl pointer-events-none" aria-hidden />
+   176→      <div className="absolute bottom-0 -left-10 h-40 w-40 rounded-full bg-white/10 blur-3xl pointer-events-none" aria-hidden />
+   177→
+   178→      <div className="relative">
+   179→        <div className="flex items-center gap-3 mb-10">
+   180→          <div className="relative h-11 w-11 rounded-xl overflow-hidden ring-2 ring-white/30 shadow-lg shrink-0">
+   181→            <Image
+   182→              src="/ulsesa-logo.jpg"
+   183→              alt="ULSESA Logo"
+   184→              fill
+   185→              className="object-cover"
+   186→              sizes="44px"
+   187→            />
+   188→          </div>
+   189→          <div>
+   190→            <p className="font-bold font-display leading-tight text-lg">ULSESA Portal</p>
+   191→            <p className="text-[11px] text-primary-foreground/70">Faculty of Education • UNILAG</p>
+   192→          </div>
+   193→        </div>
+   194→
+   195→        <h2 className="font-display text-3xl font-bold leading-tight">
+   196→          One Identity.
+   197→          <br />
+   198→          One Community.
+   199→          <br />
+   200→          <span className="text-gradient-cyan">One Platform.</span>
+   201→        </h2>
+   202→        <p className="mt-4 text-sm text-primary-foreground/80 max-w-xs">
+   203→          Shaping Tomorrow&apos;s Scientific Innovators — claim your verified account to vote, access resources, and join the ULSESA community securely.
+   204→        </p>
+   205→      </div>
+   206→
+   207→      {/* 5 Cohorts list */}
+   208→      <div className="relative mt-8">
+   209→        <p className="text-[10px] uppercase tracking-widest text-primary-foreground/60 mb-2.5 font-semibold">
+   210→          5 Cohorts • One Family
+   211→        </p>
+   212→        <div className="space-y-1.5">
+   213→          {COHORTS.map((c) => {
+   214→            const Icon = c.icon
+   215→            return (
+   216→              <div key={c.name} className="flex items-center gap-2.5 text-xs">
+   217→                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 backdrop-blur shrink-0">
+   218→                  <Icon className="h-3 w-3" strokeWidth={2} />
+   219→                </div>
+   220→                <span className="text-primary-foreground/90">{c.name}</span>
+   221→              </div>
+   222→            )
+   223→          })}
+   224→        </div>
+   225→      </div>
+   226→
+   227→      <div className="relative space-y-3 mt-8">
+   228→        {[
+   229→          { icon: ShieldCheck, text: 'Matric-verified identity' },
+   230→          { icon: Lock, text: 'Encrypted password & tokens' },
+   231→          { icon: CheckCircle2, text: 'Anonymous, fair elections' },
+   232→        ].map((f) => {
+   233→          const Icon = f.icon
+   234→          return (
+   235→            <div key={f.text} className="flex items-center gap-3 text-sm">
+   236→              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 backdrop-blur">
+   237→                <Icon className="h-4 w-4" strokeWidth={1.9} />
+   238→              </div>
+   239→              <span className="text-primary-foreground/90">{f.text}</span>
+   240→            </div>
+   241→          )
+   242→        })}
+   243→      </div>
+   244→    </div>
+   245→  )
+   246→}
+   247→
+   248→// ===================== Loading button helper =====================
+   249→
+   250→function LoadingButton({
+   251→  loading,
+   252→  children,
+   253→  ...props
+   254→}: React.ComponentProps<typeof Button> & { loading?: boolean }) {
+   255→  return (
+   256→    <Button disabled={loading || props.disabled} {...props}>
+   257→      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+   258→      {children}
+   259→    </Button>
+   260→  )
+   261→}
+   262→
+   263→// ===================== Main view =====================
+   264→
+   265→export function AuthView() {
+   266→  const { navigate } = useNav()
+   267→  const { setStudent } = useAuth()
+   268→
+   269→  const [mode, setMode] = useState<'claim' | 'signin'>('claim')
+   270→  const [step, setStep] = useState<Step>(0)
+   271→
+   272→  // Shared state
+   273→  const [matric, setMatric] = useState('')
+   274→  const [student, setStudentInfo] = useState<ClaimedStudent | null>(null)
+   275→  const [channel, setChannel] = useState<Channel>('email')
+   276→  const [otpSent, setOtpSent] = useState(false)
+   277→  const [otp, setOtp] = useState('')
+   278→  const [demoOtp, setDemoOtp] = useState<string | null>(null)
+   279→  const [idDocName, setIdDocName] = useState<string | null>(null)
+   280→  const [password, setPassword] = useState('')
+   281→  const [confirmPassword, setConfirmPassword] = useState('')
+   282→  const [showPwd, setShowPwd] = useState(false)
+   283→  const [showConfirmPwd, setShowConfirmPwd] = useState(false)
+   284→
+   285→  // Sign-in state
+   286→  const [signinMatric, setSigninMatric] = useState('')
+   287→  const [signinPwd, setSigninPwd] = useState('')
+   288→  const [showSigninPwd, setShowSigninPwd] = useState(false)
+   289→
+   290→  // Loading flags
+   291→  const [claiming, setClaiming] = useState(false)
+   292→  const [sendingOtp, setSendingOtp] = useState(false)
+   293→  const [verifying, setVerifying] = useState(false)
+   294→  const [completing, setCompleting] = useState(false)
+   295→  const [signingIn, setSigningIn] = useState(false)
+   296→
+   297→  const fileInputRef = useRef<HTMLInputElement>(null)
+   298→
+   299→  // If a session already exists, send user to dashboard
+   300→  useEffect(() => {
+   301→    if (useAuth.getState().isAuthenticated()) {
+   302→      navigate('dashboard')
+   303→    }
+   304→  }, [navigate])
+   305→
+   306→  function resetClaimFlow() {
+   307→    setStep(0)
+   308→    setMatric('')
+   309→    setStudentInfo(null)
+   310→    setChannel('email')
+   311→    setOtpSent(false)
+   312→    setOtp('')
+   313→    setDemoOtp(null)
+   314→    setIdDocName(null)
+   315→    setPassword('')
+   316→    setConfirmPassword('')
+   317→  }
+   318→
+   319→  // ---------- Step 1: Claim ----------
+   320→  async function handleClaim() {
+   321→    const trimmed = matric.trim()
+   322→    if (!trimmed) {
+   323→      toast.error('Enter your matric number')
+   324→      return
+   325→    }
+   326→    setClaiming(true)
+   327→    try {
+   328→      const res = await api.post<{ student: ClaimedStudent }>('/auth/claim', {
+   329→        matricNumber: trimmed,
+   330→      })
+   331→      setStudentInfo(res.student)
+   332→      toast.success(`Welcome, ${res.student.fullName.split(' ')[0]}!`)
+   333→      if (res.student.isVerified) {
+   334→        // Already verified → switch to sign in
+   335→        toast.info('Your account is already verified. Please sign in.')
+   336→        setMode('signin')
+   337→        setSigninMatric(res.student.matricNumber)
+   338→        resetClaimFlow()
+   339→      } else {
+   340→        // Go to step 1: confirm identity, then advance to step 2 (verify)
+   341→        setStep(1)
+   342→      }
+   343→    } catch (e) {
+   344→      toast.error(e instanceof Error ? e.message : 'Could not verify matric number')
+   345→    } finally {
+   346→      setClaiming(false)
+   347→    }
+   348→  }
+   349→
+   350→  // ---------- Step 2: Send OTP ----------
+   351→  async function handleSendOtp() {
+   352→    if (!student) return
+   353→    setSendingOtp(true)
+   354→    try {
+   355→      const res = await api.post<{ message: string; otp?: string }>('/auth/send-otp', {
+   356→        matricNumber: student.matricNumber,
+   357→        channel,
+   358→      })
+   359→      setOtpSent(true)
+   360→      setDemoOtp(res.otp ?? null)
+   361→      toast.success(`OTP sent to your ${channel}`)
+   362→    } catch (e) {
+   363→      toast.error(e instanceof Error ? e.message : 'Failed to send OTP')
+   364→    } finally {
+   365→      setSendingOtp(false)
+   366→    }
+   367→  }
+   368→
+   369→  // ---------- Step 2: Verify OTP ----------
+   370→  async function handleVerifyOtp() {
+   371→    if (!student) return
+   372→    if (otp.length < 4) {
+   373→      toast.error('Enter the full OTP code')
+   374→      return
+   375→    }
+   376→    setVerifying(true)
+   377→    try {
+   378→      await api.post('/auth/verify-otp', {
+   379→        matricNumber: student.matricNumber,
+   380→        otp,
+   381→      })
+   382→      toast.success('Identity verified!')
+   383→      setStep(3)
+   384→    } catch (e) {
+   385→      toast.error(e instanceof Error ? e.message : 'Invalid or expired OTP')
+   386→    } finally {
+   387→      setVerifying(false)
+   388→    }
+   389→  }
+   390→
+   391→  // ---------- Step 3: Set password ----------
+   392→  async function handleComplete() {
+   393→    if (!student) return
+   394→    if (password.length < 8) {
+   395→      toast.error('Password must be at least 8 characters')
+   396→      return
+   397→    }
+   398→    if (password !== confirmPassword) {
+   399→      toast.error('Passwords do not match')
+   400→      return
+   401→    }
+   402→    setCompleting(true)
+   403→    try {
+   404→      const res = await api.post<{ student: ClaimedStudent; token: string }>(
+   405→        '/auth/set-password',
+   406→        {
+   407→          matricNumber: student.matricNumber,
+   408→          password,
+   409→          idDocumentUrl: idDocName ?? undefined,
+   410→        }
+   411→      )
+   412→      setStudent(toStudentUser(res.student), res.token)
+   413→      toast.success('Account secured! Welcome to ULSESA.')
+   414→      navigate('dashboard')
+   415→    } catch (e) {
+   416→      toast.error(e instanceof Error ? e.message : 'Failed to complete registration')
+   417→    } finally {
+   418→      setCompleting(false)
+   419→    }
+   420→  }
+   421→
+   422→  // ---------- Sign in ----------
+   423→  async function handleSignIn() {
+   424→    const m = signinMatric.trim()
+   425→    if (!m || !signinPwd) {
+   426→      toast.error('Enter your matric number and password')
+   427→      return
+   428→    }
+   429→    setSigningIn(true)
+   430→    try {
+   431→      const res = await api.post<{ student: ClaimedStudent; token: string }>(
+   432→        '/auth/login',
+   433→        { matricNumber: m, password: signinPwd }
+   434→      )
+   435→      setStudent(toStudentUser(res.student), res.token)
+   436→      toast.success(`Welcome back, ${res.student.fullName.split(' ')[0]}!`)
+   437→      navigate('dashboard')
+   438→    } catch (e) {
+   439→      toast.error(e instanceof Error ? e.message : 'Invalid credentials')
+   440→    } finally {
+   441→      setSigningIn(false)
+   442→    }
+   443→  }
+   444→
+   445→  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+   446→    const f = e.target.files?.[0]
+   447→    if (f) {
+   448→      setIdDocName(f.name)
+   449→      toast.success(`ID document ready: ${f.name}`)
+   450→    }
+   451→  }
+   452→
+   453→  // ---------- Render ----------
+   454→  return (
+   455→    <div className="min-h-[calc(100vh-4rem)] relative overflow-hidden flex items-center justify-center px-4 py-10 md:py-16">
+   456→      {/* Background */}
+   457→      <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
+   458→      <div className="absolute -top-20 left-1/2 -translate-x-1/2 h-72 w-[60rem] rounded-full bg-primary/15 blur-3xl pointer-events-none" aria-hidden />
+   459→      <div className="absolute bottom-0 right-0 h-48 w-48 rounded-full bg-cyan-accent/15 blur-3xl pointer-events-none" aria-hidden />
+   460→
+   461→      <div className="relative w-full max-w-4xl">
+   462→        <div className="grid lg:grid-cols-2 rounded-[24px] overflow-hidden shadow-2xl shadow-primary/10 border border-border/60 bg-card">
+   463→          <BrandPanel />
+   464→
+   465→          {/* Right side: form */}
+   466→          <div className="p-6 md:p-8">
+   467→            <div className="lg:hidden flex items-center gap-2.5 mb-5">
+   468→              <div className="relative h-9 w-9 rounded-xl overflow-hidden ring-1 ring-primary/20 shrink-0">
+   469→                <Image
+   470→                  src="/ulsesa-logo.jpg"
+   471→                  alt="ULSESA Logo"
+   472→                  fill
+   473→                  className="object-cover"
+   474→                  sizes="36px"
+   475→                />
+   476→              </div>
+   477→              <div>
+   478→                <p className="font-bold font-display text-sm leading-tight">ULSESA Portal</p>
+   479→                <p className="text-[10px] text-muted-foreground">Faculty of Education • UNILAG</p>
+   480→              </div>
+   481→            </div>
+   482→
+   483→            {/* Mode select (Step 0) */}
+   484→            {step === 0 && (
+   485→              <div className="animate-fade-in">
+   486→                <h1 className="text-2xl font-bold font-display tracking-tight">Get started</h1>
+   487→                <p className="text-sm text-muted-foreground mt-1">
+   488→                  Claim your account if it&apos;s your first time, or sign in to continue.
+   489→                </p>
+   490→
+   491→                <Tabs value={mode} onValueChange={(v) => setMode(v as 'claim' | 'signin')} className="mt-6">
+   492→                  <TabsList className="grid w-full grid-cols-2">
+   493→                    <TabsTrigger value="claim">
+   494→                      <IdCard className="h-3.5 w-3.5 mr-1.5" />
+   495→                      Claim Account
+   496→                    </TabsTrigger>
+   497→                    <TabsTrigger value="signin">
+   498→                      <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+   499→                      Sign In
+   500→                    </TabsTrigger>
+   501→                  </TabsList>
+   502→
+   503→                  {/* Claim account */}
+   504→                  <TabsContent value="claim" className="mt-5 space-y-4">
+   505→                    <div className="space-y-2">
+   506→                      <Label htmlFor="matric">Matric Number</Label>
+   507→                      <Input
+   508→                        id="matric"
+   509→                        placeholder="e.g. 230317091"
+   510→                        inputMode="numeric"
+   511→                        value={matric}
+   512→                        onChange={(e) => setMatric(e.target.value)}
+   513→                        onKeyDown={(e) => e.key === 'Enter' && handleClaim()}
+   514→                        className="h-11"
+   515→                      />
+   516→                      <p className="text-xs text-muted-foreground">
+   517→                        Enter your 9-digit student matric number, e.g. <code className="font-mono text-cyan-accent-foreground dark:text-cyan-accent">230317091</code>.
+   518→                      </p>
+   519→                    </div>
+   520→                    <LoadingButton
+   521→                      loading={claiming}
+   522→                      onClick={handleClaim}
+   523→                      className="w-full h-11 rounded-full"
+   524→                    >
+   525→                      Continue
+   526→                      <ArrowRight className="h-4 w-4" />
+   527→                    </LoadingButton>
+   528→                    <div className="text-center text-xs text-muted-foreground">
+   529→                      New to ULSESA? Your account is pre-created — just claim it.
+   530→                    </div>
+   531→                  </TabsContent>
+   532→
+   533→                  {/* Sign in */}
+   534→                  <TabsContent value="signin" className="mt-5 space-y-4">
+   535→                    <div className="space-y-2">
+   536→                      <Label htmlFor="signin-matric">Matric Number</Label>
+   537→                      <Input
+   538→                        id="signin-matric"
+   539→                        placeholder="e.g. 230317091"
+   540→                        inputMode="numeric"
+   541→                        value={signinMatric}
+   542→                        onChange={(e) => setSigninMatric(e.target.value)}
+   543→                        className="h-11"
+   544→                      />
+   545→                      <p className="text-xs text-muted-foreground">
+   546→                        Enter your 9-digit matric, e.g. <code className="font-mono text-cyan-accent-foreground dark:text-cyan-accent">230317091</code>.
+   547→                      </p>
+   548→                    </div>
+   549→                    <div className="space-y-2">
+   550→                      <div className="flex items-center justify-between">
+   551→                        <Label htmlFor="signin-pwd">Password</Label>
+   552→                        <button
+   553→                          type="button"
+   554→                          onClick={() => toast.info('Contact the admin to reset your password.')}
+   555→                          className="text-xs text-primary hover:underline"
+   556→                        >
+   557→                          Forgot?
+   558→                        </button>
+   559→                      </div>
+   560→                      <div className="relative">
+   561→                        <Input
+   562→                          id="signin-pwd"
+   563→                          type={showSigninPwd ? 'text' : 'password'}
+   564→                          placeholder="••••••••"
+   565→                          value={signinPwd}
+   566→                          onChange={(e) => setSigninPwd(e.target.value)}
+   567→                          onKeyDown={(e) => e.key === 'Enter' && handleSignIn()}
+   568→                          className="h-11 pr-10"
+   569→                        />
+   570→                        <button
+   571→                          type="button"
+   572→                          onClick={() => setShowSigninPwd((v) => !v)}
+   573→                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   574→                        >
+   575→                          {showSigninPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   576→                        </button>
+   577→                      </div>
+   578→                    </div>
+   579→                    <LoadingButton
+   580→                      loading={signingIn}
+   581→                      onClick={handleSignIn}
+   582→                      className="w-full h-11 rounded-full"
+   583→                    >
+   584→                      Sign In
+   585→                      <ArrowRight className="h-4 w-4" />
+   586→                    </LoadingButton>
+   587→                    <div className="text-center text-xs text-muted-foreground">
+   588→                      Demo: <code className="font-mono">230317091</code> / <code className="font-mono">student123</code>
+   589→                    </div>
+   590→                  </TabsContent>
+   591→                </Tabs>
+   592→              </div>
+   593→            )}
+   594→
+   595→            {/* Steps 1-3: Claim flow */}
+   596→            {step > 0 && (
+   597→              <div>
+   598→                <StepIndicator current={step} />
+   599→
+   600→                <AnimatePresence mode="wait">
+   601→                  {/* Step 1 — Identify (confirmation of who was found) */}
+   602→                  {step === 1 && student && (
+   603→                    <motion.div
+   604→                      key="step1"
+   605→                      initial={{ opacity: 0, x: 20 }}
+   606→                      animate={{ opacity: 1, x: 0 }}
+   607→                      exit={{ opacity: 0, x: -20 }}
+   608→                      transition={{ duration: 0.25 }}
+   609→                      className="space-y-4"
+   610→                    >
+   611→                      <h2 className="text-xl font-bold font-display">Confirm your identity</h2>
+   612→                      <Card className="rounded-2xl bg-primary/5 border-primary/20">
+   613→                        <CardContent className="flex items-center gap-3 py-2">
+   614→                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold font-display">
+   615→                            {student.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+   616→                          </div>
+   617→                          <div className="min-w-0">
+   618→                            <p className="font-semibold truncate">{student.fullName}</p>
+   619→                            <p className="text-xs text-muted-foreground">
+   620→                              {student.programme} • {student.level} Level
+   621→                            </p>
+   622→                            <p className="text-xs text-muted-foreground font-mono">{student.matricNumber}</p>
+   623→                          </div>
+   624→                        </CardContent>
+   625→                      </Card>
+   626→                      <Button onClick={() => setStep(2)} className="w-full h-11 rounded-full">
+   627→                        Continue to verification
+   628→                        <ArrowRight className="h-4 w-4" />
+   629→                      </Button>
+   630→                    </motion.div>
+   631→                  )}
+   632→
+   633→                  {/* Step 2 — Verify identity */}
+   634→                  {step === 2 && student && (
+   635→                    <motion.div
+   636→                      key="step2"
+   637→                      initial={{ opacity: 0, x: 20 }}
+   638→                      animate={{ opacity: 1, x: 0 }}
+   639→                      exit={{ opacity: 0, x: -20 }}
+   640→                      transition={{ duration: 0.25 }}
+   641→                      className="space-y-4"
+   642→                    >
+   643→                      <div>
+   644→                        <h2 className="text-xl font-bold font-display">Verify your identity</h2>
+   645→                        <p className="text-sm text-muted-foreground">
+   646→                          Choose where to receive your one-time code.
+   647→                        </p>
+   648→                      </div>
+   649→
+   650→                      {/* Contact preview */}
+   651→                      <div className="grid grid-cols-2 gap-2">
+   652→                        <div className="rounded-xl border p-3 text-xs">
+   653→                          <div className="flex items-center gap-1.5 text-muted-foreground">
+   654→                            <Mail className="h-3 w-3" /> Email
+   655→                          </div>
+   656→                          <p className="font-medium mt-1 truncate">{maskEmail(student.email)}</p>
+   657→                        </div>
+   658→                        <div className="rounded-xl border p-3 text-xs">
+   659→                          <div className="flex items-center gap-1.5 text-muted-foreground">
+   660→                            <Phone className="h-3 w-3" /> Phone
+   661→                          </div>
+   662→                          <p className="font-medium mt-1">{maskPhone(student.phone)}</p>
+   663→                        </div>
+   664→                      </div>
+   665→
+   666→                      {/* Channel selection */}
+   667→                      <RadioGroup
+   668→                        value={channel}
+   669→                        onValueChange={(v) => setChannel(v as Channel)}
+   670→                        className="grid grid-cols-2 gap-2"
+   671→                      >
+   672→                        <Label
+   673→                          htmlFor="ch-email"
+   674→                          className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
+   675→                            channel === 'email' ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+   676→                          }`}
+   677→                        >
+   678→                          <RadioGroupItem id="ch-email" value="email" />
+   679→                          <Mail className="h-4 w-4" />
+   680→                          <div>
+   681→                            <p className="text-sm font-medium">Email</p>
+   682→                            <p className="text-[11px] text-muted-foreground">Recommended</p>
+   683→                          </div>
+   684→                        </Label>
+   685→                        <Label
+   686→                          htmlFor="ch-phone"
+   687→                          className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
+   688→                            channel === 'phone' ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+   689→                          }`}
+   690→                        >
+   691→                          <RadioGroupItem id="ch-phone" value="phone" />
+   692→                          <Phone className="h-4 w-4" />
+   693→                          <div>
+   694→                            <p className="text-sm font-medium">SMS</p>
+   695→                            <p className="text-[11px] text-muted-foreground">Carrier rates apply</p>
+   696→                          </div>
+   697→                        </Label>
+   698→                      </RadioGroup>
+   699→
+   700→                      {/* Send OTP button */}
+   701→                      {!otpSent && (
+   702→                        <LoadingButton
+   703→                          loading={sendingOtp}
+   704→                          onClick={handleSendOtp}
+   705→                          className="w-full h-11 rounded-full"
+   706→                        >
+   707→                          Send OTP to {channel === 'email' ? 'email' : 'phone'}
+   708→                          <ArrowRight className="h-4 w-4" />
+   709→                        </LoadingButton>
+   710→                      )}
+   711→
+   712→                      {/* OTP input */}
+   713→                      {otpSent && (
+   714→                        <motion.div
+   715→                          initial={{ opacity: 0, height: 0 }}
+   716→                          animate={{ opacity: 1, height: 'auto' }}
+   717→                          className="space-y-3"
+   718→                        >
+   719→                          {demoOtp && (
+   720→                            <div className="flex items-start gap-2 rounded-xl bg-cyan-accent/10 border border-cyan-accent/30 p-3 text-xs">
+   721→                              <Sparkles className="h-4 w-4 text-cyan-accent mt-0.5 shrink-0" />
+   722→                              <div>
+   723→                                <p className="font-semibold text-cyan-accent-foreground dark:text-cyan-accent">
+   724→                                  Demo mode
+   725→                                </p>
+   726→                                <p className="text-muted-foreground">
+   727→                                  Your OTP is{' '}
+   728→                                  <code className="font-mono font-bold text-foreground">{demoOtp}</code>
+   729→                                </p>
+   730→                              </div>
+   731→                            </div>
+   732→                          )}
+   733→
+   734→                          <Label>Enter OTP</Label>
+   735→                          <div className="flex justify-center">
+   736→                            <InputOTP
+   737→                              maxLength={6}
+   738→                              value={otp}
+   739→                              onChange={(v) => setOtp(v)}
+   740→                            >
+   741→                              <InputOTPGroup>
+   742→                                <InputOTPSlot index={0} className="h-11 w-11 text-base" />
+   743→                                <InputOTPSlot index={1} className="h-11 w-11 text-base" />
+   744→                                <InputOTPSlot index={2} className="h-11 w-11 text-base" />
+   745→                              </InputOTPGroup>
+   746→                              <InputOTPSeparator />
+   747→                              <InputOTPGroup>
+   748→                                <InputOTPSlot index={3} className="h-11 w-11 text-base" />
+   749→                                <InputOTPSlot index={4} className="h-11 w-11 text-base" />
+   750→                                <InputOTPSlot index={5} className="h-11 w-11 text-base" />
+   751→                              </InputOTPGroup>
+   752→                            </InputOTP>
+   753→                          </div>
+   754→
+   755→                          <div className="flex items-center justify-between text-xs">
+   756→                            <button
+   757→                              type="button"
+   758→                              onClick={handleSendOtp}
+   759→                              disabled={sendingOtp}
+   760→                              className="text-primary hover:underline disabled:opacity-50"
+   761→                            >
+   762→                              Resend code
+   763→                            </button>
+   764→                            <button
+   765→                              type="button"
+   766→                              onClick={() => {
+   767→                                setOtpSent(false)
+   768→                                setOtp('')
+   769→                                setDemoOtp(null)
+   770→                              }}
+   771→                              className="text-muted-foreground hover:underline"
+   772→                            >
+   773→                              Change channel
+   774→                            </button>
+   775→                          </div>
+   776→
+   777→                          <LoadingButton
+   778→                            loading={verifying}
+   779→                            onClick={handleVerifyOtp}
+   780→                            className="w-full h-11 rounded-full"
+   781→                          >
+   782→                            Verify code
+   783→                            <CheckCircle2 className="h-4 w-4" />
+   784→                          </LoadingButton>
+   785→                        </motion.div>
+   786→                      )}
+   787→
+   788→                      {/* ID upload */}
+   789→                      <Separator className="my-2" />
+   790→                      <div>
+   791→                        <Label className="mb-2">Upload Student ID (optional)</Label>
+   792→                        <input
+   793→                          ref={fileInputRef}
+   794→                          type="file"
+   795→                          accept="image/*,.pdf"
+   796→                          onChange={handleFileChange}
+   797→                          className="hidden"
+   798→                        />
+   799→                        <button
+   800→                          type="button"
+   801→                          onClick={() => fileInputRef.current?.click()}
+   802→                          className={`w-full flex items-center gap-3 rounded-xl border border-dashed p-4 text-left transition-colors hover:bg-accent ${
+   803→                            idDocName ? 'border-primary/40 bg-primary/5' : 'border-border'
+   804→                          }`}
+   805→                        >
+   806→                          <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${idDocName ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+   807→                            {idDocName ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}
+   808→                          </div>
+   809→                          <div className="min-w-0 flex-1">
+   810→                            {idDocName ? (
+   811→                              <>
+   812→                                <p className="text-sm font-medium truncate">{idDocName}</p>
+   813→                                <p className="text-[11px] text-muted-foreground">Tap to replace</p>
+   814→                              </>
+   815→                            ) : (
+   816→                              <>
+   817→                                <p className="text-sm font-medium">Upload ID card or schedule</p>
+   818→                                <p className="text-[11px] text-muted-foreground">PNG, JPG or PDF • speeds up verification</p>
+   819→                              </>
+   820→                            )}
+   821→                          </div>
+   822→                        </button>
+   823→                      </div>
+   824→
+   825→                      <Button
+   826→                        variant="ghost"
+   827→                        onClick={() => setStep(0)}
+   828→                        className="w-full"
+   829→                      >
+   830→                        <ArrowLeft className="h-4 w-4" />
+   831→                        Back
+   832→                      </Button>
+   833→                    </motion.div>
+   834→                  )}
+   835→
+   836→                  {/* Step 3 — Set password */}
+   837→                  {step === 3 && student && (
+   838→                    <motion.div
+   839→                      key="step3"
+   840→                      initial={{ opacity: 0, x: 20 }}
+   841→                      animate={{ opacity: 1, x: 0 }}
+   842→                      exit={{ opacity: 0, x: -20 }}
+   843→                      transition={{ duration: 0.25 }}
+   844→                      className="space-y-4"
+   845→                    >
+   846→                      <div>
+   847→                        <h2 className="text-xl font-bold font-display">Secure your account</h2>
+   848→                        <p className="text-sm text-muted-foreground">
+   849→                          Set a strong password to finish claiming your account.
+   850→                        </p>
+   851→                      </div>
+   852→
+   853→                      <div className="space-y-2">
+   854→                        <Label htmlFor="pwd">Password</Label>
+   855→                        <div className="relative">
+   856→                          <Input
+   857→                            id="pwd"
+   858→                            type={showPwd ? 'text' : 'password'}
+   859→                            placeholder="At least 8 characters"
+   860→                            value={password}
+   861→                            onChange={(e) => setPassword(e.target.value)}
+   862→                            className="h-11 pr-10"
+   863→                          />
+   864→                          <button
+   865→                            type="button"
+   866→                            onClick={() => setShowPwd((v) => !v)}
+   867→                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   868→                          >
+   869→                            {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   870→                          </button>
+   871→                        </div>
+   872→                      </div>
+   873→
+   874→                      <div className="space-y-2">
+   875→                        <Label htmlFor="confirm-pwd">Confirm password</Label>
+   876→                        <div className="relative">
+   877→                          <Input
+   878→                            id="confirm-pwd"
+   879→                            type={showConfirmPwd ? 'text' : 'password'}
+   880→                            placeholder="Re-enter your password"
+   881→                            value={confirmPassword}
+   882→                            onChange={(e) => setConfirmPassword(e.target.value)}
+   883→                            className="h-11 pr-10"
+   884→                          />
+   885→                          <button
+   886→                            type="button"
+   887→                            onClick={() => setShowConfirmPwd((v) => !v)}
+   888→                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   889→                          >
+   890→                            {showConfirmPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   891→                          </button>
+   892→                        </div>
+   893→                        {confirmPassword.length > 0 && (
+   894→                          <p className={`text-xs flex items-center gap-1 ${password === confirmPassword ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
+   895→                            {password === confirmPassword ? (
+   896→                              <>
+   897→                                <CheckCircle2 className="h-3 w-3" /> Passwords match
+   898→                              </>
+   899→                            ) : (
+   900→                              <>
+   901→                                <AlertCircle className="h-3 w-3" /> Passwords don&apos;t match
+   902→                              </>
+   903→                            )}
+   904→                          </p>
+   905→                        )}
+   906→                      </div>
+   907→
+   908→                      {/* Password strength meter */}
+   909→                      <div className="space-y-1.5">
+   910→                        <div className="flex gap-1">
+   911→                          {[0, 1, 2, 3].map((i) => {
+   912→                            const thresholds = [8, 10, 12, 14]
+   913→                            const colors = ['bg-destructive', 'bg-cyan-accent', 'bg-primary', 'bg-emerald-500']
+   914→                            const reached = password.length >= thresholds[i]
+   915→                            return (
+   916→                              <div
+   917→                                key={i}
+   918→                                className={`h-1.5 flex-1 rounded-full transition-colors ${
+   919→                                  reached ? colors[i] : 'bg-muted'
+   920→                                }`}
+   921→                              />
+   922→                            )
+   923→                          })}
+   924→                        </div>
+   925→                        <p className="text-[11px] text-muted-foreground">
+   926→                          Use 8+ characters with a mix of letters, numbers and symbols.
+   927→                        </p>
+   928→                      </div>
+   929→
+   930→                      <LoadingButton
+   931→                        loading={completing}
+   932→                        onClick={handleComplete}
+   933→                        className="w-full h-11 rounded-full"
+   934→                      >
+   935→                        Complete registration
+   936→                        <CheckCircle2 className="h-4 w-4" />
+   937→                      </LoadingButton>
+   938→
+   939→                      <Button
+   940→                        variant="ghost"
+   941→                        onClick={() => setStep(2)}
+   942→                        className="w-full"
+   943→                      >
+   944→                        <ArrowLeft className="h-4 w-4" />
+   945→                        Back
+   946→                      </Button>
+   947→                    </motion.div>
+   948→                  )}
+   949→                </AnimatePresence>
+   950→              </div>
+   951→            )}
+   952→
+   953→            <Separator className="my-6" />
+   954→            <p className="text-center text-[11px] text-muted-foreground">
+   955→              By continuing you agree to the ULSESA terms & privacy policy.
+   956→              <br />
+   957→              Need help?{' '}
+   958→              <button onClick={() => navigate('help')} className="text-primary hover:underline">
+   959→                Visit help center
+   960→              </button>
+   961→            </p>
+   962→          </div>
+   963→        </div>
+   964→      </div>
+   965→    </div>
+   966→  )
+   967→}
+   968→
+   969→export default AuthView
+   970→

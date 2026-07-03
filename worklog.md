@@ -529,3 +529,77 @@ Stage Summary:
 - Quick-help cards in HelpView: "Contact Support" now opens WhatsApp directly (WhatsApp-green card with WhatsApp icon, "Chat" CTA); "Password Reset" now opens WhatsApp with the forgot-password pre-filled message.
 - WhatsApp brand color #25D366 (with #1FB855 / #128C7E gradient siblings) used consistently for fills, borders, glows, and dark-mode text; light-mode text uses #1FB855. ULSESA brand primary (purple) and cyan-accent preserved elsewhere.
 - Lint clean, TypeScript clean for `src/`, no broken references, no `'use client'` regressions, mobile-friendly anchor-based CTAs (Android-primary).
+
+---
+Task ID: A1
+Agent: rebuild-auth-view
+Task: Rebuild AuthView — secure claiming flow (matric → fetch details → email OTP → verify → set password)
+
+Work Log:
+- Full rebuild of `src/components/views/auth-view.tsx` (1204 lines, was 969). Removed all legacy code: channel picker (email/phone radio), ID document upload, `channel` field in send-otp payload, on-screen OTP in production.
+- Read updated API routes (`/api/auth/claim|send-otp|verify-otp|set-password|login`) and the OTP store (`/lib/otp-store.ts`) to confirm the new contracts: send-otp returns `{message, emailSent, maskedEmail, demoOtp?, demoMode}` (demoOtp only when SMTP not configured); set-password returns 403 if OTP not verified, 400 with `alreadyClaimed:true` if account already claimed; login returns `notice` for pending (submitted) students, 403 for rejected.
+- **New flow — Claim Account (4 internal steps, 3 indicator steps):**
+  - Step 1 (indicator "Matric"): Single numeric input (`inputMode="numeric"`, regex strips non-digits), helper text "Enter the matric number you were registered with". POST `/auth/claim` → on `hasPassword:true` shows inline amber "already claimed" card with "Go to Sign In" button (no step advance); on 404 surfaces the API error via toast; otherwise fetches student + masks email client-side via `maskEmail()` (`local.slice(0,3) + '***@' + domain`) and advances to step 2.
+  - Step 2 (indicator "Verify"): Review card showing Full name / Matric / Cohort (`{level} Level · {programme}`) / Email-on-file (masked). Cyan-accent info note: "A verification code will be sent to the email above. This is the email your class representative collected — it cannot be changed. If this email is wrong, contact ULSESA support." (support link → `supportWhatsAppUrl(SUPPORT_MESSAGES.account)`). "Send Verification Code" button POST `/auth/send-otp` with `{matricNumber}` only (no channel). Response updates `maskedEmail`/`demoMode`/`demoOtp`/`emailSent` and advances to step 3. Already-claimed error (regex `/already been claimed/i`) → toast + switch to Sign In tab.
+  - Step 3 (indicator "Verify"): Masked-email reminder ("Code sent to chi***@gmail.com"). **Demo OTP banner** (amber-500 border/bg, "Demo Mode · SMTP not configured" uppercase label, mono-spaced 6-digit code with `tracking-[0.25em]`, disclaimer "In production this code is delivered only via email") — only shown when `demoMode && demoOtp`. Green "Check your email" banner when `emailSent && !demoMode`. 6-slot `InputOTP` (two groups of 3 separated by a `·` span, slots `size-12 text-lg`). "Resend code" button (calls send-otp again, resets otp). "Verify" → POST `/auth/verify-otp` with `{matricNumber, otp}`; on error → toast "Invalid or expired code. Try again or resend."
+  - Step 4 (indicator "Secure"): Password + Confirm inputs with show/hide toggles (Eye/EyeOff icon buttons, `aria-label`). Min-6-char enforcement. Live match indicator (emerald CheckCircle2 "Passwords match" or destructive AlertCircle "Passwords do not match"). Pending-approval info note. "Complete Registration" → POST `/auth/set-password` with `{matricNumber, password}` (no idDocumentUrl). On success: `setStudent(student, token)`, `toast.success('Account claimed! Pending admin approval.')`, `toast.info(message, {duration:6000})` for the API's longer message, `navigate('dashboard')`. Error mapping: `/email verification required/i` → "Email verification required. Please go back and verify."; `/already been claimed/i` → "Already claimed — sign in instead." + switch to Sign In; else generic toast.
+- **Sign In flow:** Matric (numeric) + password inputs. "Forgot password?" link → `supportWhatsAppUrl(SUPPORT_MESSAGES.password)` in new tab. "Sign In" → POST `/auth/login`. On success: `setStudent`, and if `notice` present (pending students) → `toast.info(notice, {duration:6000})`, else `toast.success('Welcome back, {firstName}!')`, then `navigate('dashboard')`. Error mapping: `/rejected/i` → `toast.error('Your verification was rejected. Contact support.', {action:{label:'WhatsApp', onClick: open support URL}})`; `/Invalid matric/i` → `toast.error("Invalid matric or password. If you haven't claimed your account, tap Claim Account.", {action:{label:'Claim', onClick: switchToClaim}})`; else generic.
+- **Design / layout:**
+  - Two-column card (`lg:grid-cols-[1fr_1.1fr]`, `rounded-3xl border-border/60 bg-card shadow-2xl shadow-primary/10`) centered in `min-h-[calc(100vh-4rem)]` (fits below the 64px sticky navbar). Outer has `bg-grid opacity-60` + primary/cyan blur glows. Mobile shows a compact logo header inside the form panel.
+  - **BrandPanel** (desktop, hidden `lg:flex`, `bg-brand-gradient`): ULSESA logo in `rounded-2xl ring-2 ring-white/30`; "ULSESA Portal" + "University of Lagos · Science Education"; AnimatePresence-driven hero text that swaps "Claim your account" / "Welcome back" badge based on mode; "Shaping Tomorrow's **Scientific Innovators**" (Sora display, cyan-accent on the second line); 5-cohort icon grid (Physics/Atom, Biology/Leaf, Chemistry/FlaskConical, Mathematics/Sigma, Integrated Sci./Microscope) each in `rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur` with hover scale; bottom trust line "Secured by ULSESA · Only pre-registered members can claim".
+  - **StepIndicator**: 3 steps (Matric → Verify → Secure). Mapping: claimStep 1→1, 2→2, 3→2, 4→3 (`step === 4 ? 3 : step === 3 ? 2 : step`). Each step is a 9×9 circle (primary bg + 4-ring when active, primary bg when complete, muted bg when pending) with the step's icon (UserCheck/Mail/ShieldCheck) or a CheckCircle2 when complete, separated by 0.5-height connector bars that fill primary when complete.
+  - All step transitions wrapped in `AnimatePresence mode="wait"` with `initial={{opacity:0,x:16}} animate={{opacity:1,x:0}} exit={{opacity:0,x:-16}}` 250ms transitions for the slide-between-steps feel.
+  - Tabs (shadcn) for top-level mode selection: "Claim Account" (UserCheck icon) | "Sign In" (Lock icon) in a `h-11 grid-cols-2 rounded-xl bg-muted/70 backdrop-blur` list.
+  - All form cards use `glass-strong` + `rounded-3xl border-border/60 shadow-2xl shadow-primary/5`. Buttons are `h-12 rounded-xl text-base font-semibold` (mobile-tap-friendly). All notifications via `sonner` toast (no alert() / inline error text except the already-claimed amber card and password match indicator).
+  - Mobile-first: every step's action row is a flex with optional outline "Back" button + primary action button filling the rest; OTP input is centered and scales to `size-12` slots; padding is `p-6 sm:p-8`.
+- **Auth gate:** `useEffect` on mount checks `useAuth.getState().isAuthenticated()` and `navigate('dashboard')` if already logged in (prevents showing the auth page to authenticated students).
+- Imports cleaned: removed `CardContent/CardHeader/CardTitle/CardDescription` (using bare `glass-strong` div instead of `Card`), `Badge`, `Separator`, `RadioGroup*`, `InputOTPSeparator` (using a `·` span), `Phone`, `Upload`, `FileText`, `IdCard`, `useRef`, `GraduationCap` — all unused after the rebuild. Added: `useEffect`, `type ReactNode`, `Info`, `Microscope`, `Sigma`, `Leaf`, `FlaskConical`, `Atom`, `supportWhatsAppUrl`, `SUPPORT_MESSAGES`.
+- TypeScript types: `ClaimStudent`, `SendOtpResponse`, `SetPasswordResponse`, `LoginResponse`, `ClaimStep = 1|2|3|4`, `Mode = 'claim'|'signin'`. All API calls typed via `api.post<T>(...)`. Error handling uses `err instanceof Error ? err.message : '<fallback>'` plus regex matching on the API's error string for branching (`/already been claimed/i`, `/email verification required/i`, `/rejected/i`, `/Invalid matric/i`) since the api-client throws `Error` with only the message text.
+
+Verification:
+- `bun run lint` → exit 0, 0 errors, 0 warnings.
+- `bunx tsc --noEmit` → 0 errors in `src/` (only 4 pre-existing unrelated errors in `examples/websocket/`, `skills/stock-analysis-skill/`, `skills/image-edit/` — none in `src/`).
+- `bunx next build` → all 28 routes generated successfully (171.3ms static generation).
+- Grep audit: 0 `channel`, 0 `idDoc`, 0 `IdCard`, 0 `upload`, 0 `RadioGroup`, 0 `Separator` references in the rebuilt file.
+
+Stage Summary:
+- Files modified (1): `src/components/views/auth-view.tsx` (full rebuild, 1204 lines).
+- The claiming flow is now secure-by-design: email is locked to the database (no channel picker), no ID upload, OTP shown on screen only in demo mode (amber banner with the demoOtp from the API response, otherwise delivered via real SMTP email). Students cannot pick a random email — they can only verify ownership of the email their class rep collected.
+- Step indicator collapses 4 internal claim steps into 3 visual steps (Matric → Verify → Secure) per the spec ("combine review+send into step 2"). The Verify indicator step spans both the "Review & Send" and "Enter Code" sub-steps.
+- Sign In handles all 4 login outcomes: approved (success toast + navigate), submitted/pending (info toast with the API's `notice` + navigate, voting still blocked server-side via `isVerified` check in the vote API), rejected (error toast with WhatsApp action button), invalid credentials (error toast with "Claim" action button to switch tabs).
+- Forgot-password link and "Need help?" / "contact ULSESA support" links all route to `supportWhatsAppUrl(SUPPORT_MESSAGES.password|account)` opening `https://wa.me/2348117024699?text=...` in a new tab.
+- Premium ULSESA brand throughout: `bg-brand-gradient` BrandPanel with `bg-grid` overlay, white-text hero with cyan-accent highlight on "Scientific Innovators", 5-cohort icon grid (Physics/Biology/Chemistry/Mathematics/Integrated Sci.), `font-display` (Sora) on all headings, `glass-strong` form card, `shadow-primary/10` shadows, `bg-grid` background with primary/cyan blur glows, `animate-slide-up` entrance on the main card, `AnimatePresence` slide transitions between steps.
+- Lint clean, TypeScript clean (src/), Next.js build succeeds (28 routes).
+
+---
+Task ID: A2
+Agent: main-orchestrator
+Task: Critical security review + fix claiming flow + email infrastructure
+
+Work Log:
+- Conducted thorough code review of all auth API routes — found 6 critical issues
+- CRITICAL FIX 1: OTP verification state tracking — rewrote otp-store.ts to track `verified` state separately. verifyOTP() now marks as verified (doesn't clear). set-password checks isOTPVerified() before proceeding. CLOSED a hole where anyone could set a password without email verification.
+- CRITICAL FIX 2: Login now allows pending-approval students (status='submitted') to log in — they see their dashboard with "pending approval" status, but the vote API independently blocks them (isVerified check). Previously these students were completely locked out (403).
+- CRITICAL FIX 3: Send-OTP now uses ONLY the database email (no channel selection). The email is the identity lock — students can't use any random email to claim someone else's account.
+- CRITICAL FIX 4: Installed nodemailer, created src/lib/email.ts with sendOTPEmail(). Uses SMTP env vars (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD). Falls back to demo mode (returns OTP in response) only when SMTP not configured. Branded HTML email template with ULSESA purple.
+- CRITICAL FIX 5: set-password now checks (a) OTP was verified, (b) account isn't already claimed. Removed idDocumentUrl requirement.
+- CRITICAL FIX 6: Claim route now returns hasPassword flag so frontend can redirect already-claimed accounts to login.
+- Updated auth-store.ts: StudentUser interface now includes verificationStatus and hasVoted.
+- Rewrote all 5 auth API routes: claim, send-otp, verify-otp, set-password, login.
+- Updated seed: unverified students now have NO password (null) — they must go through the claiming flow. Verified students have passwords + approved status.
+- Dispatched agent to rebuild AuthView with the correct flow: matric → fetch details (name/matric/cohort/masked email from DB) → send OTP to DB email → verify code → set password → pending admin approval.
+- Agent Browser end-to-end verification:
+  - Claim flow: entered matric 240317005 (Emeka Nwosu, unclaimed) → saw details with masked email eme***@ulsesa.unilag.edu.ng → sent code → demo mode banner showed OTP 321487 → verified → set password → logged in, redirected to dashboard "Emeka 👋" ✅
+  - Security test 1: set-password WITHOUT OTP → 403 "Email verification required" ✅
+  - Security test 2: set-password on already-claimed account → blocked ✅
+  - Login test: pending student (submitted) can log in with notice "pending admin approval" ✅
+  - Vote test: pending student CANNOT vote → 403 "account must be verified" ✅
+  - Lint: 0 errors ✅
+
+Stage Summary:
+- Security: OTP verification now enforced server-side. Email-locked claiming. No account hijacking possible.
+- Email: nodemailer infrastructure ready (just needs SMTP_USER + SMTP_PASSWORD in .env for production)
+- Claiming flow: matric → DB details (masked email) → OTP to DB email → verify → set password → pending approval → can login but can't vote until admin approves
+- Login: approved + submitted students can login; rejected blocked; pending (no password) blocked
+- Demo mode: when SMTP not configured, OTP shown in amber banner for development. In production, OTP only delivered via email.
+- Ready for real deployment once SMTP credentials + student email list are added
