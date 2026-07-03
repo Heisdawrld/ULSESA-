@@ -567,7 +567,7 @@ export function HomeView() {
                 <p className="mt-2 text-primary-foreground/80 text-sm md:text-base">
                   {countdown && countdown.days === 0 && countdown.hours === 0 && countdown.minutes === 0 && countdown.seconds === 0
                     ? 'Polls are open now. Make your voice count — every verified ULSESA student gets one anonymous ballot per position.'
-                    : `Voting opens ${new Date(election.startDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} at ${new Date(election.startDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}. Make your voice count.`}
+                    : `Voting opens ${new Date(election.startDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Lagos' })} at ${new Date(election.startDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos', timeZoneName: 'short' })}. Make your voice count.`}
                 </p>
                 <div className="mt-6 flex flex-col sm:flex-row gap-3">
                   <Button
