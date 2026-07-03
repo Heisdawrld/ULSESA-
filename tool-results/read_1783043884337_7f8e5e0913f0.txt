@@ -1,0 +1,603 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState, useMemo } from 'react'
+     4→import { motion } from 'framer-motion'
+     5→import { toast } from 'sonner'
+     6→import { api } from '@/lib/api-client'
+     7→import { Button } from '@/components/ui/button'
+     8→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     9→import { Badge } from '@/components/ui/badge'
+    10→import { Skeleton } from '@/components/ui/skeleton'
+    11→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    12→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    13→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+    14→import { cn } from '@/lib/utils'
+    15→import {
+    16→  Book,
+    17→  Calculator,
+    18→  HandHeart,
+    19→  Package,
+    20→  Phone,
+    21→  Mail,
+    22→  MessageCircle,
+    23→  Sparkles,
+    24→  ShoppingCart,
+    25→  Users2,
+    26→  GraduationCap,
+    27→  HeartHandshake,
+    28→  FlaskConical,
+    29→  UserCircle,
+    30→  ArrowRight,
+    31→  PlusCircle,
+    32→  Tag,
+    33→  CheckCircle2,
+    34→} from 'lucide-react'
+    35→
+    36→// ===================== Types =====================
+    37→
+    38→interface MarketplaceItem {
+    39→  id: string
+    40→  title: string
+    41→  description?: string
+    42→  price?: number | null
+    43→  category: string // book | equipment | service | other
+    44→  sellerName: string
+    45→  sellerContact?: string | null
+    46→  status: string
+    47→}
+    48→
+    49→// ===================== Helpers =====================
+    50→
+    51→const CATEGORIES = [
+    52→  { key: 'all', label: 'All', icon: Package },
+    53→  { key: 'book', label: 'Books', icon: Book },
+    54→  { key: 'equipment', label: 'Equipment', icon: Calculator },
+    55→  { key: 'service', label: 'Services', icon: HandHeart },
+    56→  { key: 'other', label: 'Other', icon: Package },
+    57→] as const
+    58→
+    59→function categoryIcon(category: string) {
+    60→  switch (category) {
+    61→    case 'book':
+    62→      return Book
+    63→    case 'equipment':
+    64→      return Calculator
+    65→    case 'service':
+    66→      return HandHeart
+    67→    default:
+    68→      return Package
+    69→  }
+    70→}
+    71→
+    72→function categoryTint(category: string) {
+    73→  switch (category) {
+    74→    case 'book':
+    75→      return 'from-blue-500/15 to-blue-500/5 text-blue-600 dark:text-blue-400'
+    76→    case 'equipment':
+    77→      return 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400'
+    78→    case 'service':
+    79→      return 'from-gold/20 to-gold/5 text-gold-foreground dark:text-gold'
+    80→    default:
+    81→      return 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400'
+    82→  }
+    83→}
+    84→
+    85→function categoryBadgeClass(category: string) {
+    86→  switch (category) {
+    87→    case 'book':
+    88→      return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+    89→    case 'equipment':
+    90→      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+    91→    case 'service':
+    92→      return 'bg-gold/15 text-gold-foreground dark:text-gold border-gold/30'
+    93→    default:
+    94→      return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'
+    95→  }
+    96→}
+    97→
+    98→function formatNaira(amount?: number | null) {
+    99→  if (amount == null) return 'Free'
+   100→  return '₦' + amount.toLocaleString('en-NG')
+   101→}
+   102→
+   103→function initials(name: string) {
+   104→  return name
+   105→    .split(' ')
+   106→    .map((n) => n[0])
+   107→    .slice(0, 2)
+   108→    .join('')
+   109→    .toUpperCase()
+   110→}
+   111→
+   112→// ===================== Static data =====================
+   113→
+   114→const SERVICES = [
+   115→  {
+   116→    icon: GraduationCap,
+   117→    title: 'Peer Tutoring',
+   118→    desc: 'Get matched with senior students offering free tutoring in challenging courses like Quantum Mechanics and Mathematical Methods.',
+   119→    tint: 'from-primary/15 to-primary/5 text-primary',
+   120→    cta: 'Request a tutor',
+   121→  },
+   122→  {
+   123→    icon: HeartHandshake,
+   124→    title: 'Mentorship Program',
+   125→    desc: 'Connect with alumni and faculty mentors for guidance on careers, research opportunities, and postgraduate studies.',
+   126→    tint: 'from-gold/20 to-gold/5 text-gold-foreground dark:text-gold',
+   127→    cta: 'Find a mentor',
+   128→  },
+   129→  {
+   130→    icon: Users2,
+   131→    title: 'Study Groups',
+   132→    desc: 'Join or form study groups by course or level. Collaborate, share notes, and prepare for exams together.',
+   133→    tint: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400',
+   134→    cta: 'Browse groups',
+   135→  },
+   136→  {
+   137→    icon: FlaskConical,
+   138→    title: 'Lab Partners',
+   139→    desc: 'Find reliable lab partners for experiments and projects. Coordinated by the Lab Coordinator office.',
+   140→    tint: 'from-purple-500/15 to-purple-500/5 text-purple-600 dark:text-purple-400',
+   141→    cta: 'Get matched',
+   142→  },
+   143→]
+   144→
+   145→const DISCUSSIONS = [
+   146→  { id: '1', title: 'Best approach to Lagrangian mechanics problems?', author: 'Dawrld Olamide', replies: 14, lastActivity: '2h ago', tag: 'PHS 213' },
+   147→  { id: '2', title: 'Quantum Mechanics study group — who\'s in?', author: 'Sarah Adeyemi', replies: 23, lastActivity: '5h ago', tag: 'PHS 301' },
+   148→  { id: '3', title: 'Anyone selling Griffiths Electrodynamics 4th ed?', author: 'Emeka Nwosu', replies: 7, lastActivity: '1d ago', tag: 'Marketplace' },
+   149→  { id: '4', title: 'Thermal Physics past question patterns?', author: 'Fatima Ibrahim', replies: 11, lastActivity: '2d ago', tag: 'PHS 305' },
+   150→  { id: '5', title: 'Career talk: Physics → Data Science transition', author: 'Tunde Bello', replies: 31, lastActivity: '3d ago', tag: 'Careers' },
+   151→]
+   152→
+   153→// ===================== Sub-components =====================
+   154→
+   155→function CategoryPills({ active, onChange }: { active: string; onChange: (v: string) => void }) {
+   156→  return (
+   157→    <div className="flex flex-wrap items-center gap-2">
+   158→      {CATEGORIES.map((c) => {
+   159→        const Icon = c.icon
+   160→        const isActive = active === c.key
+   161→        return (
+   162→          <Button
+   163→            key={c.key}
+   164→            size="sm"
+   165→            variant={isActive ? 'default' : 'outline'}
+   166→            onClick={() => onChange(c.key)}
+   167→            className={cn('rounded-full h-9 px-4', !isActive && 'hover:bg-muted')}
+   168→          >
+   169→            <Icon className="h-4 w-4" />
+   170→            {c.label}
+   171→          </Button>
+   172→        )
+   173→      })}
+   174→    </div>
+   175→  )
+   176→}
+   177→
+   178→function ItemCard({ item, index, onContact }: { item: MarketplaceItem; index: number; onContact: (i: MarketplaceItem) => void }) {
+   179→  const Icon = categoryIcon(item.category)
+   180→  const tint = categoryTint(item.category)
+   181→  return (
+   182→    <motion.div
+   183→      initial={{ opacity: 0, y: 16 }}
+   184→      animate={{ opacity: 1, y: 0 }}
+   185→      transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.4) }}
+   186→    >
+   187→      <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300 group flex flex-col">
+   188→        <CardContent className="flex flex-col gap-3 h-full">
+   189→          <div className="flex items-start justify-between gap-2">
+   190→            <div className={cn('inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br', tint)}>
+   191→              <Icon className="h-5 w-5" />
+   192→            </div>
+   193→            <Badge variant="outline" className={cn('rounded-full text-[11px] font-semibold capitalize', categoryBadgeClass(item.category))}>
+   194→              <Tag className="h-3 w-3 mr-1" />
+   195→              {item.category}
+   196→            </Badge>
+   197→          </div>
+   198→
+   199→          <h3 className="font-semibold text-base leading-snug group-hover:text-primary transition-colors line-clamp-2">
+   200→            {item.title}
+   201→          </h3>
+   202→          {item.description && (
+   203→            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 flex-1">
+   204→              {item.description}
+   205→            </p>
+   206→          )}
+   207→
+   208→          <div className="flex items-center justify-between pt-1">
+   209→            <span className="text-lg font-bold text-primary tabular-nums">
+   210→              {formatNaira(item.price)}
+   211→            </span>
+   212→            <Badge variant="outline" className="rounded-full text-[11px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+   213→              <CheckCircle2 className="h-3 w-3 mr-1" />
+   214→              Available
+   215→            </Badge>
+   216→          </div>
+   217→
+   218→          <div className="flex items-center gap-2 pt-2 border-t border-border/60">
+   219→            <Avatar className="h-7 w-7">
+   220→              <AvatarFallback className="text-[10px] font-semibold bg-primary/10 text-primary">
+   221→                {initials(item.sellerName)}
+   222→              </AvatarFallback>
+   223→            </Avatar>
+   224→            <div className="flex-1 min-w-0">
+   225→              <div className="text-xs font-medium truncate">{item.sellerName}</div>
+   226→              <div className="text-[10px] text-muted-foreground">Seller</div>
+   227→            </div>
+   228→            <Button
+   229→              size="sm"
+   230→              onClick={() => onContact(item)}
+   231→              className="rounded-full h-8 px-3"
+   232→            >
+   233→              <MessageCircle className="h-3.5 w-3.5" />
+   234→              Contact
+   235→            </Button>
+   236→          </div>
+   237→        </CardContent>
+   238→      </Card>
+   239→    </motion.div>
+   240→  )
+   241→}
+   242→
+   243→function ItemSkeleton() {
+   244→  return (
+   245→    <Card className="rounded-2xl">
+   246→      <CardContent className="flex flex-col gap-3 h-full">
+   247→        <div className="flex items-center justify-between">
+   248→          <Skeleton className="h-11 w-11 rounded-xl" />
+   249→          <Skeleton className="h-5 w-16 rounded-full" />
+   250→        </div>
+   251→        <Skeleton className="h-5 w-4/5" />
+   252→        <Skeleton className="h-3 w-full" />
+   253→        <Skeleton className="h-3 w-3/4" />
+   254→        <div className="flex items-center justify-between pt-2">
+   255→          <Skeleton className="h-6 w-20" />
+   256→          <Skeleton className="h-5 w-16 rounded-full" />
+   257→        </div>
+   258→        <div className="flex items-center gap-2 pt-2 border-t border-border/60">
+   259→          <Skeleton className="h-7 w-7 rounded-full" />
+   260→          <Skeleton className="h-3 w-20" />
+   261→          <Skeleton className="h-8 w-20 rounded-full ml-auto" />
+   262→        </div>
+   263→      </CardContent>
+   264→    </Card>
+   265→  )
+   266→}
+   267→
+   268→// ===================== Main view =====================
+   269→
+   270→export function CommunityView() {
+   271→  const [items, setItems] = useState<MarketplaceItem[]>([])
+   272→  const [loading, setLoading] = useState(true)
+   273→  const [error, setError] = useState<string | null>(null)
+   274→  const [activeCat, setActiveCat] = useState<string>('all')
+   275→  const [contactItem, setContactItem] = useState<MarketplaceItem | null>(null)
+   276→
+   277→  useEffect(() => {
+   278→    let mounted = true
+   279→    api
+   280→      .get<{ items: MarketplaceItem[] }>('/community')
+   281→      .then((res) => {
+   282→        if (!mounted) return
+   283→        setItems(res.items || [])
+   284→        setError(null)
+   285→      })
+   286→      .catch((e: unknown) => {
+   287→        if (!mounted) return
+   288→        setError(e instanceof Error ? e.message : 'Failed to load marketplace items')
+   289→        setItems([])
+   290→      })
+   291→      .finally(() => mounted && setLoading(false))
+   292→    return () => {
+   293→      mounted = false
+   294→    }
+   295→  }, [])
+   296→
+   297→  const filtered = useMemo(() => {
+   298→    if (activeCat === 'all') return items
+   299→    return items.filter((i) => i.category === activeCat)
+   300→  }, [items, activeCat])
+   301→
+   302→  function handleContact(item: MarketplaceItem) {
+   303→    setContactItem(item)
+   304→  }
+   305→
+   306→  function copyContact(value: string, label: string) {
+   307→    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+   308→      navigator.clipboard.writeText(value).then(() => {
+   309→        toast.success(`${label} copied`, { description: value })
+   310→      }).catch(() => {
+   311→        toast.message(`${label}: ${value}`)
+   312→      })
+   313→    } else {
+   314→      toast.message(`${label}: ${value}`)
+   315→    }
+   316→  }
+   317→
+   318→  return (
+   319→    <div className="animate-fade-in">
+   320→      {/* ===================== HERO ===================== */}
+   321→      <section className="relative overflow-hidden border-b border-border/40">
+   322→        <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
+   323→        <div className="absolute -top-20 left-1/2 -translate-x-1/2 h-64 w-[50rem] rounded-full bg-gold/20 blur-3xl pointer-events-none" aria-hidden />
+   324→        <div className="absolute top-16 right-16 h-32 w-32 rounded-full bg-primary/20 blur-3xl pointer-events-none" aria-hidden />
+   325→
+   326→        <div className="container mx-auto px-4 lg:px-6 relative py-12 md:py-16">
+   327→          <motion.div
+   328→            initial={{ opacity: 0, y: 20 }}
+   329→            animate={{ opacity: 1, y: 0 }}
+   330→            transition={{ duration: 0.5 }}
+   331→            className="max-w-3xl"
+   332→          >
+   333→            <Badge variant="outline" className="mb-4 rounded-full bg-background/70 backdrop-blur px-3 py-1 border-gold/30">
+   334→              <Sparkles className="h-3.5 w-3.5 text-gold mr-1.5" />
+   335→              Community Hub
+   336→            </Badge>
+   337→            <h1 className="font-display font-extrabold tracking-tight text-3xl sm:text-4xl md:text-5xl leading-tight">
+   338→              Buy, sell & <span className="text-gradient-gold">connect</span> with peers
+   339→            </h1>
+   340→            <p className="mt-3 text-sm md:text-base text-muted-foreground max-w-2xl">
+   341→              A trusted marketplace for physics students — find textbooks, lab equipment, tutoring, and student-led services from verified members of the department.
+   342→            </p>
+   343→          </motion.div>
+   344→        </div>
+   345→      </section>
+   346→
+   347→      {/* ===================== TABS ===================== */}
+   348→      <section className="container mx-auto px-4 lg:px-6 py-8 md:py-12">
+   349→        <Tabs defaultValue="marketplace" className="gap-6">
+   350→          <TabsList className="bg-muted/60 rounded-full p-1 h-auto flex flex-wrap">
+   351→            <TabsTrigger value="marketplace" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   352→              <ShoppingCart className="h-4 w-4" />
+   353→              Marketplace
+   354→            </TabsTrigger>
+   355→            <TabsTrigger value="services" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   356→              <HandHeart className="h-4 w-4" />
+   357→              Student Services
+   358→            </TabsTrigger>
+   359→            <TabsTrigger value="discussions" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   360→              <MessageCircle className="h-4 w-4" />
+   361→              Discussions
+   362→            </TabsTrigger>
+   363→          </TabsList>
+   364→
+   365→          {/* MARKETPLACE */}
+   366→          <TabsContent value="marketplace" className="space-y-6 animate-fade-in">
+   367→            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   368→              <div>
+   369→                <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Marketplace</h2>
+   370→                <p className="text-sm text-muted-foreground mt-0.5">
+   371→                  {loading ? 'Loading items…' : `${filtered.length} item${filtered.length === 1 ? '' : 's'} available`}
+   372→                </p>
+   373→              </div>
+   374→              <Button
+   375→                variant="outline"
+   376→                size="sm"
+   377→                onClick={() => toast.message('Coming soon', { description: 'Listing items will be available after election season.' })}
+   378→                className="rounded-full w-fit"
+   379→              >
+   380→                <PlusCircle className="h-4 w-4" />
+   381→                List an Item
+   382→              </Button>
+   383→            </div>
+   384→
+   385→            <CategoryPills active={activeCat} onChange={setActiveCat} />
+   386→
+   387→            {loading ? (
+   388→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   389→                {Array.from({ length: 6 }).map((_, i) => (
+   390→                  <ItemSkeleton key={i} />
+   391→                ))}
+   392→              </div>
+   393→            ) : error ? (
+   394→              <Card className="rounded-2xl border-dashed">
+   395→                <CardContent className="py-12 text-center text-sm text-muted-foreground">
+   396→                  <ShoppingCart className="h-9 w-9 mx-auto mb-3 opacity-40" />
+   397→                  Couldn&apos;t load marketplace items right now.
+   398→                  <div className="text-xs mt-1 opacity-70">{error}</div>
+   399→                </CardContent>
+   400→              </Card>
+   401→            ) : filtered.length === 0 ? (
+   402→              <Card className="rounded-2xl border-dashed">
+   403→                <CardContent className="py-12 text-center text-sm text-muted-foreground">
+   404→                  <Package className="h-9 w-9 mx-auto mb-3 opacity-40" />
+   405→                  No items in this category yet.
+   406→                  <div className="mt-1 text-xs">Be the first to list one!</div>
+   407→                </CardContent>
+   408→              </Card>
+   409→            ) : (
+   410→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   411→                {filtered.map((item, i) => (
+   412→                  <ItemCard key={item.id} item={item} index={i} onContact={handleContact} />
+   413→                ))}
+   414→              </div>
+   415→            )}
+   416→          </TabsContent>
+   417→
+   418→          {/* STUDENT SERVICES */}
+   419→          <TabsContent value="services" className="space-y-6 animate-fade-in">
+   420→            <div>
+   421→              <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Student Services</h2>
+   422→              <p className="text-sm text-muted-foreground mt-0.5">
+   423→                Programs and peer-support initiatives offered by the department and student body.
+   424→              </p>
+   425→            </div>
+   426→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   427→              {SERVICES.map((s, i) => {
+   428→                const Icon = s.icon
+   429→                return (
+   430→                  <motion.div
+   431→                    key={s.title}
+   432→                    initial={{ opacity: 0, y: 16 }}
+   433→                    animate={{ opacity: 1, y: 0 }}
+   434→                    transition={{ duration: 0.4, delay: i * 0.08 }}
+   435→                  >
+   436→                    <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300">
+   437→                      <CardContent className="flex flex-col sm:flex-row gap-4 h-full">
+   438→                        <div className={cn('inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br shrink-0', s.tint)}>
+   439→                          <Icon className="h-7 w-7" />
+   440→                        </div>
+   441→                        <div className="flex-1 flex flex-col">
+   442→                          <h3 className="font-semibold text-lg leading-snug">{s.title}</h3>
+   443→                          <p className="text-sm text-muted-foreground leading-relaxed mt-1 flex-1">
+   444→                            {s.desc}
+   445→                          </p>
+   446→                          <Button
+   447→                            size="sm"
+   448→                            variant="outline"
+   449→                            onClick={() => toast.message('Coming soon', { description: `${s.title} sign-ups open after election season.` })}
+   450→                            className="rounded-full w-fit mt-3"
+   451→                          >
+   452→                            {s.cta}
+   453→                            <ArrowRight className="h-3.5 w-3.5" />
+   454→                          </Button>
+   455→                        </div>
+   456→                      </CardContent>
+   457→                    </Card>
+   458→                  </motion.div>
+   459→                )
+   460→              })}
+   461→            </div>
+   462→          </TabsContent>
+   463→
+   464→          {/* DISCUSSIONS */}
+   465→          <TabsContent value="discussions" className="space-y-6 animate-fade-in">
+   466→            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   467→              <div>
+   468→                <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Discussions</h2>
+   469→                <p className="text-sm text-muted-foreground mt-0.5">
+   470→                  Join the conversation — {DISCUSSIONS.length} active topics.
+   471→                </p>
+   472→              </div>
+   473→              <Button
+   474→                size="sm"
+   475→                onClick={() => toast.message('Coming soon', { description: 'Discussion posting will be enabled shortly.' })}
+   476→                className="rounded-full w-fit"
+   477→              >
+   478→                <PlusCircle className="h-4 w-4" />
+   479→                Start Discussion
+   480→              </Button>
+   481→            </div>
+   482→
+   483→            <Card className="rounded-2xl overflow-hidden">
+   484→              <CardContent className="p-0 divide-y divide-border/60">
+   485→                {DISCUSSIONS.map((d, i) => (
+   486→                  <motion.button
+   487→                    key={d.id}
+   488→                    initial={{ opacity: 0, x: -8 }}
+   489→                    animate={{ opacity: 1, x: 0 }}
+   490→                    transition={{ duration: 0.3, delay: i * 0.05 }}
+   491→                    onClick={() => toast.message('Coming soon', { description: 'Threaded discussions will be available shortly.' })}
+   492→                    className="w-full text-left flex items-center gap-4 p-4 hover:bg-muted/40 transition-colors group"
+   493→                  >
+   494→                    <Avatar className="h-10 w-10 shrink-0">
+   495→                      <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+   496→                        {initials(d.author)}
+   497→                      </AvatarFallback>
+   498→                    </Avatar>
+   499→                    <div className="flex-1 min-w-0">
+   500→                      <div className="flex items-center gap-2 flex-wrap">
+   501→                        <Badge variant="outline" className="rounded-full text-[10px] font-mono">
+   502→                          {d.tag}
+   503→                        </Badge>
+   504→                        <span className="text-[11px] text-muted-foreground">{d.lastActivity}</span>
+   505→                      </div>
+   506→                      <div className="font-semibold text-sm leading-snug mt-1 group-hover:text-primary transition-colors line-clamp-1">
+   507→                        {d.title}
+   508→                      </div>
+   509→                      <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+   510→                        <UserCircle className="h-3 w-3" />
+   511→                        {d.author}
+   512→                      </div>
+   513→                    </div>
+   514→                    <div className="hidden sm:flex flex-col items-center gap-0.5 px-3 shrink-0">
+   515→                      <MessageCircle className="h-4 w-4 text-muted-foreground" />
+   516→                      <span className="text-xs font-semibold tabular-nums">{d.replies}</span>
+   517→                      <span className="text-[10px] text-muted-foreground">replies</span>
+   518→                    </div>
+   519→                  </motion.button>
+   520→                ))}
+   521→              </CardContent>
+   522→            </Card>
+   523→          </TabsContent>
+   524→        </Tabs>
+   525→      </section>
+   526→
+   527→      {/* ===================== CONTACT DIALOG ===================== */}
+   528→      <Dialog open={!!contactItem} onOpenChange={(o) => !o && setContactItem(null)}>
+   529→        <DialogContent className="sm:max-w-md">
+   530→          <DialogHeader>
+   531→            <DialogTitle className="font-display flex items-center gap-2">
+   532→              <MessageCircle className="h-5 w-5 text-primary" />
+   533→              Contact Seller
+   534→            </DialogTitle>
+   535→            <DialogDescription>
+   536→              Reach out to <span className="font-semibold text-foreground">{contactItem?.sellerName}</span> about this listing.
+   537→            </DialogDescription>
+   538→          </DialogHeader>
+   539→
+   540→          {contactItem && (
+   541→            <div className="space-y-4">
+   542→              <div className="rounded-xl bg-muted/40 p-4">
+   543→                <div className="text-xs text-muted-foreground">Item</div>
+   544→                <div className="font-semibold text-sm mt-0.5">{contactItem.title}</div>
+   545→                <div className="text-lg font-bold text-primary mt-1">{formatNaira(contactItem.price)}</div>
+   546→              </div>
+   547→
+   548→              <div className="flex items-center gap-3">
+   549→                <Avatar className="h-12 w-12">
+   550→                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+   551→                    {initials(contactItem.sellerName)}
+   552→                  </AvatarFallback>
+   553→                </Avatar>
+   554→                <div>
+   555→                  <div className="font-semibold text-sm">{contactItem.sellerName}</div>
+   556→                  <div className="text-xs text-muted-foreground">Verified Department Member</div>
+   557→                </div>
+   558→              </div>
+   559→
+   560→              <div className="space-y-2">
+   561→                {contactItem.sellerContact && (
+   562→                  <button
+   563→                    onClick={() => copyContact(contactItem.sellerContact || '', 'Phone number')}
+   564→                    className="w-full flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/40 transition-colors text-left"
+   565→                  >
+   566→                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+   567→                      <Phone className="h-4 w-4" />
+   568→                    </div>
+   569→                    <div className="flex-1 min-w-0">
+   570→                      <div className="text-[11px] text-muted-foreground">Phone</div>
+   571→                      <div className="text-sm font-medium tabular-nums">{contactItem.sellerContact}</div>
+   572→                    </div>
+   573→                    <span className="text-xs text-primary font-medium">Copy</span>
+   574→                  </button>
+   575→                )}
+   576→                <button
+   577→                  onClick={() => toast.message('Coming soon', { description: 'In-app messaging will be available shortly.' })}
+   578→                  className="w-full flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/40 transition-colors text-left"
+   579→                >
+   580→                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+   581→                    <Mail className="h-4 w-4" />
+   582→                  </div>
+   583→                  <div className="flex-1">
+   584→                    <div className="text-[11px] text-muted-foreground">In-app message</div>
+   585→                    <div className="text-sm font-medium">Send a message</div>
+   586→                  </div>
+   587→                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
+   588→                </button>
+   589→              </div>
+   590→
+   591→              <div className="rounded-lg bg-gold/10 border border-gold/20 p-3 text-xs text-muted-foreground">
+   592→                <strong className="text-gold-foreground dark:text-gold">Safety tip:</strong> Always meet in public campus locations and verify item condition before payment.
+   593→              </div>
+   594→            </div>
+   595→          )}
+   596→        </DialogContent>
+   597→      </Dialog>
+   598→    </div>
+   599→  )
+   600→}
+   601→
+   602→export default CommunityView
+   603→

@@ -1,0 +1,1685 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useEffect, useState, useCallback, useMemo } from 'react'
+     4→     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→     5→import { toast } from 'sonner'
+     6→     6→import {
+     7→     7→  Vote,
+     8→     8→  Shield,
+     9→     9→  Users,
+    10→    10→  Eye,
+    11→    11→  FileCheck,
+    12→    12→  Clock,
+    13→    13→  ChevronRight,
+    14→    14→  CheckCircle,
+    15→    15→  AlertCircle,
+    16→    16→  Loader2,
+    17→    17→  BarChart3,
+    18→    18→  Crown,
+    19→    19→  Lock,
+    20→    20→  User,
+    21→    21→  Sparkles,
+    22→    22→  Trophy,
+    23→    23→  RefreshCw,
+    24→    24→  Quote,
+    25→    25→  PartyPopper,
+    26→    26→  TrendingUp,
+    27→    27→} from 'lucide-react'
+    28→    28→
+    29→    29→import { useNav } from '@/lib/stores/nav-store'
+    30→    30→import { useAuth } from '@/lib/stores/auth-store'
+    31→    31→import { api } from '@/lib/api-client'
+    32→    32→import {
+    33→    33→  Card,
+    34→    34→  CardContent,
+    35→    35→  CardHeader,
+    36→    36→  CardTitle,
+    37→    37→  CardDescription,
+    38→    38→} from '@/components/ui/card'
+    39→    39→import { Button } from '@/components/ui/button'
+    40→    40→import { Badge } from '@/components/ui/badge'
+    41→    41→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    42→    42→import { Skeleton } from '@/components/ui/skeleton'
+    43→    43→import { Progress } from '@/components/ui/progress'
+    44→    44→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    45→    45→import {
+    46→    46→  Dialog,
+    47→    47→  DialogContent,
+    48→    48→  DialogHeader,
+    49→    49→  DialogTitle,
+    50→    50→  DialogDescription,
+    51→    51→} from '@/components/ui/dialog'
+    52→    52→import {
+    53→    53→  AlertDialog,
+    54→    54→  AlertDialogContent,
+    55→    55→  AlertDialogHeader,
+    56→    56→  AlertDialogTitle,
+    57→    57→  AlertDialogDescription,
+    58→    58→  AlertDialogFooter,
+    59→    59→  AlertDialogCancel,
+    60→    60→  AlertDialogAction,
+    61→    61→} from '@/components/ui/alert-dialog'
+    62→    62→import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+    63→    63→import { Label } from '@/components/ui/label'
+    64→    64→import { cn } from '@/lib/utils'
+    65→    65→
+    66→    66→// ============ Types ============
+    67→    67→interface Candidate {
+    68→    68→  id: string
+    69→    69→  name: string
+    70→    70→  manifesto: string | null
+    71→    71→  level: string | null
+    72→    72→  programme: string | null
+    73→    73→  bio: string | null
+    74→    74→  voteCount: number
+    75→    75→}
+    76→    76→
+    77→    77→interface Position {
+    78→    78→  id: string
+    79→    79→  title: string
+    80→    80→  description: string | null
+    81→    81→  order: number
+    82→    82→  candidates: Candidate[]
+    83→    83→}
+    84→    84→
+    85→    85→interface ElectionData {
+    86→    86→  election: {
+    87→    87→    id: string
+    88→    88→    title: string
+    89→    89→    description: string | null
+    90→    90→    status: string // 'upcoming' | 'active' | 'ended' | 'cancelled'
+    91→    91→    startDate: string
+    92→    92→    endDate: string
+    93→    93→  }
+    94→    94→  positions: Position[]
+    95→    95→  hasVoted: Record<string, boolean>
+    96→    96→}
+    97→    97→
+    98→    98→interface ResultsCandidate {
+    99→    99→  name: string
+   100→   100→  voteCount: number
+   101→   101→}
+   102→   102→interface ResultsPosition {
+   103→   103→  id: string
+   104→   104→  title: string
+   105→   105→  candidates: ResultsCandidate[]
+   106→   106→}
+   107→   107→interface ResultsData {
+   108→   108→  positions: ResultsPosition[]
+   109→   109→  totalVotes: number
+   110→   110→  totalEligible: number
+   111→   111→  turnout: number
+   112→   112→}
+   113→   113→
+   114→   114→type Subview = 'home' | 'candidates' | 'vote' | 'results'
+   115→   115→
+   116→   116→// ============ Helpers ============
+   117→   117→function getInitials(name: string) {
+   118→   118→  return name
+   119→   119→    .split(' ')
+   120→   120→    .map((n) => n[0])
+   121→   121→    .filter(Boolean)
+   122→   122→    .slice(0, 2)
+   123→   123→    .join('')
+   124→   124→    .toUpperCase()
+   125→   125→}
+   126→   126→
+   127→   127→const AVATAR_GRADIENTS = [
+   128→   128→  'from-primary to-primary/70',
+   129→   129→  'from-emerald-500 to-emerald-700',
+   130→   130→  'from-gold to-amber-600',
+   131→   131→  'from-purple-500 to-purple-700',
+   132→   132→  'from-rose-500 to-rose-700',
+   133→   133→  'from-cyan-500 to-cyan-700',
+   134→   134→]
+   135→   135→function getAvatarGradient(name: string) {
+   136→   136→  const idx = name.charCodeAt(0) % AVATAR_GRADIENTS.length
+   137→   137→  return AVATAR_GRADIENTS[idx]
+   138→   138→}
+   139→   139→
+   140→   140→function pad(n: number) {
+   141→   141→  return n.toString().padStart(2, '0')
+   142→   142→}
+   143→   143→
+   144→   144→interface Countdown {
+   145→   145→  hours: number
+   146→   146→  minutes: number
+   147→   147→  seconds: number
+   148→   148→  total: number
+   149→   149→  isPast: boolean
+   150→   150→}
+   151→   151→
+   152→   152→function computeRemaining(targetDate: string | null): Countdown {
+   153→   153→  if (!targetDate) return { hours: 0, minutes: 0, seconds: 0, total: 0, isPast: true }
+   154→   154→  const diff = new Date(targetDate).getTime() - Date.now()
+   155→   155→  if (diff <= 0) return { hours: 0, minutes: 0, seconds: 0, total: 0, isPast: true }
+   156→   156→  const totalSeconds = Math.floor(diff / 1000)
+   157→   157→  return {
+   158→   158→    hours: Math.floor(totalSeconds / 3600),
+   159→   159→    minutes: Math.floor((totalSeconds % 3600) / 60),
+   160→   160→    seconds: totalSeconds % 60,
+   161→   161→    total: diff,
+   162→   162→    isPast: false,
+   163→   163→  }
+   164→   164→}
+   165→   165→
+   166→   166→function useCountdown(targetDate: string | null): Countdown {
+   167→   167→  const [remaining, setRemaining] = useState<Countdown>(() => computeRemaining(targetDate))
+   168→   168→  useEffect(() => {
+   169→   169→    setRemaining(computeRemaining(targetDate))
+   170→   170→    if (!targetDate) return
+   171→   171→    const id = setInterval(() => setRemaining(computeRemaining(targetDate)), 1000)
+   172→   172→    return () => clearInterval(id)
+   173→   173→  }, [targetDate])
+   174→   174→  return remaining
+   175→   175→}
+   176→   176→
+   177→   177→function getStatusLabel(status: string): string {
+   178→   178→  switch (status) {
+   179→   179→    case 'upcoming':
+   180→   180→      return 'Voting Starts Soon'
+   181→   181→    case 'active':
+   182→   182→      return 'Voting Open'
+   183→   183→    case 'ended':
+   184→   184→      return 'Voting Ended'
+   185→   185→    case 'cancelled':
+   186→   186→      return 'Cancelled'
+   187→   187→    default:
+   188→   188→      return status
+   189→   189→  }
+   190→   190→}
+   191→   191→
+   192→   192→const TRANSPARENCY_FEATURES = [
+   193→   193→  {
+   194→   194→    icon: Lock,
+   195→   195→    title: 'Anonymous Ballots',
+   196→   196→    desc: 'Your identity is never linked to your vote',
+   197→   197→  },
+   198→   198→  {
+   199→   199→    icon: FileCheck,
+   200→   200→    title: 'Audit Trail',
+   201→   201→    desc: 'Every vote is recorded on a tamper-proof log',
+   202→   202→  },
+   203→   203→  {
+   204→   204→    icon: Users,
+   205→   205→    title: 'Public Turnout',
+   206→   206→    desc: 'Live turnout visible to all students',
+   207→   207→  },
+   208→   208→  {
+   209→   209→    icon: Shield,
+   210→   210→    title: 'Verified Voters Only',
+   211→   211→    desc: 'Only department-verified students can vote',
+   212→   212→  },
+   213→   213→]
+   214→   214→
+   215→   215→// ============ Main Component ============
+   216→   216→export function ElectionsView() {
+   217→   217→  const { navigate } = useNav()
+   218→   218→  const { student } = useAuth()
+   219→   219→  const [subview, setSubview] = useState<Subview>('home')
+   220→   220→
+   221→   221→  // ---- Not signed in ----
+   222→   222→  if (!student) {
+   223→   223→    return (
+   224→   224→      <div className="container mx-auto px-4 lg:px-6 py-12 lg:py-20">
+   225→   225→        <motion.div
+   226→   226→          initial={{ opacity: 0, y: 20 }}
+   227→   227→          animate={{ opacity: 1, y: 0 }}
+   228→   228→          className="max-w-md mx-auto"
+   229→   229→        >
+   230→   230→          <Card className="rounded-2xl border-border/60 text-center overflow-hidden">
+   231→   231→            <div className="bg-gradient-to-br from-primary to-primary/80 p-8 text-primary-foreground">
+   232→   232→              <div className="mx-auto w-16 h-16 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center mb-4">
+   233→   233→                <Vote className="h-8 w-8" />
+   234→   234→              </div>
+   235→   235→              <h2 className="text-2xl font-bold font-display">Election Portal</h2>
+   236→   236→              <p className="text-sm text-primary-foreground/80 mt-2">
+   237→   237→                Sign in to view candidates and cast your vote
+   238→   238→              </p>
+   239→   239→            </div>
+   240→   240→            <CardContent className="pt-6 space-y-3">
+   241→   241→              <p className="text-sm text-muted-foreground">
+   242→   242→                Only verified UNILAG Physics students can participate in the election.
+   243→   243→              </p>
+   244→   244→              <Button
+   245→   245→                onClick={() => navigate('auth')}
+   246→   246→                className="w-full rounded-full bg-primary hover:bg-primary/90 text-primary-foreground"
+   247→   247→              >
+   248→   248→                Sign In to Vote
+   249→   249→              </Button>
+   250→   250→              <Button
+   251→   251→                variant="ghost"
+   252→   252→                onClick={() => navigate('home')}
+   253→   253→                className="w-full text-muted-foreground"
+   254→   254→              >
+   255→   255→                Back to Home
+   256→   256→              </Button>
+   257→   257→            </CardContent>
+   258→   258→          </Card>
+   259→   259→        </motion.div>
+   260→   260→      </div>
+   261→   261→    )
+   262→   262→  }
+   263→   263→
+   264→   264→  // ---- Not verified ----
+   265→   265→  if (!student.isVerified) {
+   266→   266→    return (
+   267→   267→      <div className="container mx-auto px-4 lg:px-6 py-12 lg:py-20">
+   268→   268→        <motion.div
+   269→   269→          initial={{ opacity: 0, y: 20 }}
+   270→   270→          animate={{ opacity: 1, y: 0 }}
+   271→   271→          className="max-w-md mx-auto"
+   272→   272→        >
+   273→   273→          <Card className="rounded-2xl border-gold/40 bg-gold/5 text-center overflow-hidden">
+   274→   274→            <div className="bg-gradient-to-br from-gold/20 to-gold/5 p-8 border-b border-gold/20">
+   275→   275→              <div className="mx-auto w-16 h-16 rounded-2xl bg-gold/15 text-gold flex items-center justify-center mb-4">
+   276→   276→                <Shield className="h-8 w-8" />
+   277→   277→              </div>
+   278→   278→              <h2 className="text-2xl font-bold font-display">Verification Required</h2>
+   279→   279→              <p className="text-sm text-muted-foreground mt-2">
+   280→   280→                Only verified students can vote in the election
+   281→   281→              </p>
+   282→   282→            </div>
+   283→   283→            <CardContent className="pt-6 space-y-3">
+   284→   284→              <p className="text-sm text-muted-foreground">
+   285→   285→                Your account is currently pending verification by department administrators. Once
+   286→   286→                approved, you&apos;ll be able to view candidates and cast your vote.
+   287→   287→              </p>
+   288→   288→              <Button
+   289→   289→                onClick={() => navigate('dashboard')}
+   290→   290→                className="w-full rounded-full bg-primary hover:bg-primary/90 text-primary-foreground"
+   291→   291→              >
+   292→   292→                Check Verification Status
+   293→   293→              </Button>
+   294→   294→              <Button
+   295→   295→                variant="ghost"
+   296→   296→                onClick={() => navigate('home')}
+   297→   297→                className="w-full text-muted-foreground"
+   298→   298→              >
+   299→   299→                Back to Home
+   300→   300→              </Button>
+   301→   301→            </CardContent>
+   302→   302→          </Card>
+   303→   303→        </motion.div>
+   304→   304→      </div>
+   305→   305→    )
+   306→   306→  }
+   307→   307→
+   308→   308→  // ---- Verified student: show election module ----
+   309→   309→  return (
+   310→   310→    <div className="container mx-auto px-4 lg:px-6 py-6 lg:py-8 animate-fade-in">
+   311→   311→      <SubViewNav subview={subview} setSubview={setSubview} />
+   312→   312→      <AnimatePresence mode="wait">
+   313→   313→        <motion.div
+   314→   314→          key={subview}
+   315→   315→          initial={{ opacity: 0, y: 10 }}
+   316→   316→          animate={{ opacity: 1, y: 0 }}
+   317→   317→          exit={{ opacity: 0, y: -10 }}
+   318→   318→          transition={{ duration: 0.2 }}
+   319→   319→          className="mt-6"
+   320→   320→        >
+   321→   321→          {subview === 'home' && <ElectionHome onNavigate={setSubview} />}
+   322→   322→          {subview === 'candidates' && <CandidatesView />}
+   323→   323→          {subview === 'vote' && <VoteFlow />}
+   324→   324→          {subview === 'results' && <ResultsView />}
+   325→   325→        </motion.div>
+   326→   326→      </AnimatePresence>
+   327→   327→    </div>
+   328→   328→  )
+   329→   329→}
+   330→   330→
+   331→   331→// ============ Sub-View Navigation ============
+   332→   332→function SubViewNav({
+   333→   333→  subview,
+   334→   334→  setSubview,
+   335→   335→}: {
+   336→   336→  subview: Subview
+   337→   337→  setSubview: (v: Subview) => void
+   338→   338→}) {
+   339→   339→  const items: { id: Subview; label: string; icon: typeof Sparkles }[] = [
+   340→   340→    { id: 'home', label: 'Overview', icon: Sparkles },
+   341→   341→    { id: 'candidates', label: 'Candidates', icon: Users },
+   342→   342→    { id: 'vote', label: 'Vote', icon: Vote },
+   343→   343→    { id: 'results', label: 'Results', icon: BarChart3 },
+   344→   344→  ]
+   345→   345→  return (
+   346→   346→    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin pb-1 -mb-1">
+   347→   347→      {items.map((item) => {
+   348→   348→        const Icon = item.icon
+   349→   349→        const active = subview === item.id
+   350→   350→        return (
+   351→   351→          <button
+   352→   352→            key={item.id}
+   353→   353→            onClick={() => setSubview(item.id)}
+   354→   354→            className={cn(
+   355→   355→              'flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all',
+   356→   356→              active
+   357→   357→                ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20'
+   358→   358→                : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+   359→   359→            )}
+   360→   360→          >
+   361→   361→            <Icon className="h-3.5 w-3.5" />
+   362→   362→            {item.label}
+   363→   363→          </button>
+   364→   364→        )
+   365→   365→      })}
+   366→   366→    </div>
+   367→   367→  )
+   368→   368→}
+   369→   369→
+   370→   370→// ============ Home Sub-View ============
+   371→   371→function ElectionHome({ onNavigate }: { onNavigate: (v: Subview) => void }) {
+   372→   372→  const [data, setData] = useState<ElectionData | null>(null)
+   373→   373→  const [loading, setLoading] = useState(true)
+   374→   374→  const [error, setError] = useState<string | null>(null)
+   375→   375→
+   376→   376→  const fetchData = useCallback(async () => {
+   377→   377→    setLoading(true)
+   378→   378→    setError(null)
+   379→   379→    try {
+   380→   380→      const res = await api.get<ElectionData>('/elections')
+   381→   381→      setData(res)
+   382→   382→    } catch (e) {
+   383→   383→      setError(e instanceof Error ? e.message : 'Failed to load election')
+   384→   384→    } finally {
+   385→   385→      setLoading(false)
+   386→   386→    }
+   387→   387→  }, [])
+   388→   388→
+   389→   389→  useEffect(() => {
+   390→   390→    fetchData()
+   391→   391→  }, [fetchData])
+   392→   392→
+   393→   393→  // Compute countdown target before any early return so hooks stay unconditional
+   394→   394→  const targetDate = data
+   395→   395→    ? data.election.status === 'upcoming'
+   396→   396→      ? data.election.startDate
+   397→   397→      : data.election.endDate
+   398→   398→    : null
+   399→   399→  const countdown = useCountdown(targetDate)
+   400→   400→
+   401→   401→  if (loading) return <HomeSkeleton />
+   402→   402→  if (error || !data) {
+   403→   403→    return (
+   404→   404→      <Card className="rounded-2xl border-border/60">
+   405→   405→        <CardContent className="py-10 text-center">
+   406→   406→          <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+   407→   407→          <p className="text-sm text-muted-foreground">
+   408→   408→            {error || 'Election data unavailable'}
+   409→   409→          </p>
+   410→   410→          <Button
+   411→   411→            variant="outline"
+   412→   412→            size="sm"
+   413→   413→            onClick={fetchData}
+   414→   414→            className="mt-3 rounded-full"
+   415→   415→          >
+   416→   416→            <RefreshCw className="h-3.5 w-3.5" />
+   417→   417→            Retry
+   418→   418→          </Button>
+   419→   419→        </CardContent>
+   420→   420→      </Card>
+   421→   421→    )
+   422→   422→  }
+   423→   423→
+   424→   424→  const { election, positions, hasVoted } = data
+   425→   425→  const hasVotedAny = Object.values(hasVoted).some(Boolean)
+   426→   426→  const allVoted =
+   427→   427→    positions.length > 0 && positions.every((p) => hasVoted[p.id])
+   428→   428→  const isActive = election.status === 'active'
+   429→   429→  const isEnded = election.status === 'ended'
+   430→   430→  const isUpcoming = election.status === 'upcoming'
+   431→   431→  const statusLabel = getStatusLabel(election.status)
+   432→   432→
+   433→   433→  return (
+   434→   434→    <div className="space-y-6">
+   435→   435→      {/* Hero Card */}
+   436→   436→      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+   437→   437→        <Card className="rounded-2xl border-0 overflow-hidden text-primary-foreground">
+   438→   438→          <div className="relative bg-gradient-to-br from-primary to-primary/80 p-6 sm:p-8">
+   439→   439→            <div className="absolute inset-0 bg-grid opacity-20" />
+   440→   440→            <div className="relative space-y-5">
+   441→   441→              <div className="flex items-start justify-between gap-3 flex-wrap">
+   442→   442→                <div className="space-y-2 min-w-0">
+   443→   443→                  <div className="flex items-center gap-2 flex-wrap">
+   444→   444→                    <Badge
+   445→   445→                      className={cn(
+   446→   446→                        'border-0 backdrop-blur',
+   447→   447→                        isActive && 'bg-green-500/25 text-green-100',
+   448→   448→                        isUpcoming && 'bg-gold/25 text-gold',
+   449→   449→                        isEnded && 'bg-white/15 text-white'
+   450→   450→                      )}
+   451→   451→                    >
+   452→   452→                      <span
+   453→   453→                        className={cn(
+   454→   454→                          'h-1.5 w-1.5 rounded-full',
+   455→   455→                          isActive && 'bg-green-300 animate-pulse',
+   456→   456→                          isUpcoming && 'bg-gold',
+   457→   457→                          isEnded && 'bg-white/70'
+   458→   458→                        )}
+   459→   459→                      />
+   460→   460→                      {statusLabel}
+   461→   461→                    </Badge>
+   462→   462→                    {hasVotedAny && (
+   463→   463→                      <Badge className="bg-green-500/20 text-green-100 border-0 backdrop-blur">
+   464→   464→                        <CheckCircle className="h-3 w-3" /> You&apos;ve Voted
+   465→   465→                      </Badge>
+   466→   466→                    )}
+   467→   467→                  </div>
+   468→   468→                  <h1 className="text-2xl sm:text-4xl font-bold font-display leading-tight">
+   469→   469→                    {election.title}
+   470→   470→                  </h1>
+   471→   471→                  <p className="text-sm text-primary-foreground/80">
+   472→   472→                    Transparent • Secure • Anonymous
+   473→   473→                  </p>
+   474→   474→                </div>
+   475→   475→                <div className="h-14 w-14 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center shrink-0">
+   476→   476→                  <Vote className="h-7 w-7" />
+   477→   477→                </div>
+   478→   478→              </div>
+   479→   479→
+   480→   480→              {/* Countdown Timer */}
+   481→   481→              {!isEnded && (
+   482→   482→                <div className="bg-white/10 backdrop-blur rounded-2xl p-4 border border-white/10">
+   483→   483→                  <div className="flex items-center gap-2 mb-3">
+   484→   484→                    <Clock className="h-3.5 w-3.5 text-primary-foreground/80" />
+   485→   485→                    <p className="text-xs font-medium text-primary-foreground/80">
+   486→   486→                      {isUpcoming ? 'Voting starts in' : 'Voting closes in'}
+   487→   487→                    </p>
+   488→   488→                  </div>
+   489→   489→                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
+   490→   490→                    {[
+   491→   491→                      { label: 'Hours', value: countdown.hours },
+   492→   492→                      { label: 'Minutes', value: countdown.minutes },
+   493→   493→                      { label: 'Seconds', value: countdown.seconds },
+   494→   494→                    ].map((unit) => (
+   495→   495→                      <div
+   496→   496→                        key={unit.label}
+   497→   497→                        className="bg-black/20 rounded-xl p-3 text-center"
+   498→   498→                      >
+   499→   499→                        <p className="text-2xl sm:text-3xl font-bold font-mono tabular-nums">
+   500→   500→                          {pad(unit.value)}
+   501→   501→                        </p>
+   502→   502→                        <p className="text-[10px] uppercase tracking-wide text-primary-foreground/70">
+   503→   503→                          {unit.label}
+   504→   504→                        </p>
+   505→   505→                      </div>
+   506→   506→                    ))}
+   507→   507→                  </div>
+   508→   508→                </div>
+   509→   509→              )}
+   510→   510→
+   511→   511→              {isEnded && (
+   512→   512→                <div className="bg-white/10 backdrop-blur rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+   513→   513→                  <Trophy className="h-5 w-5 text-gold shrink-0" />
+   514→   514→                  <p className="text-sm text-primary-foreground/90">
+   515→   515→                    Voting has ended. Results are now being tallied and published.
+   516→   516→                  </p>
+   517→   517→                </div>
+   518→   518→              )}
+   519→   519→
+   520→   520→              {/* CTA Buttons */}
+   521→   521→              <div className="flex flex-wrap gap-2">
+   522→   522→                {isActive && !allVoted && (
+   523→   523→                  <Button
+   524→   524→                    onClick={() => onNavigate('vote')}
+   525→   525→                    className="bg-gold text-gold-foreground hover:bg-gold/90 rounded-full shadow-lg shadow-gold/20"
+   526→   526→                    size="lg"
+   527→   527→                  >
+   528→   528→                    <Vote className="h-4 w-4" />
+   529→   529→                    {hasVotedAny ? 'Continue Voting' : 'Proceed to Vote'}
+   530→   530→                    <ChevronRight className="h-4 w-4" />
+   531→   531→                  </Button>
+   532→   532→                )}
+   533→   533→                {allVoted && (
+   534→   534→                  <Button
+   535→   535→                    onClick={() => onNavigate('results')}
+   536→   536→                    className="bg-gold text-gold-foreground hover:bg-gold/90 rounded-full shadow-lg shadow-gold/20"
+   537→   537→                    size="lg"
+   538→   538→                  >
+   539→   539→                    <BarChart3 className="h-4 w-4" />
+   540→   540→                    View Results
+   541→   541→                  </Button>
+   542→   542→                )}
+   543→   543→                <Button
+   544→   544→                  onClick={() => onNavigate('candidates')}
+   545→   545→                  variant="secondary"
+   546→   546→                  className="bg-white/10 backdrop-blur text-primary-foreground hover:bg-white/20 rounded-full border border-white/20"
+   547→   547→                  size="lg"
+   548→   548→                >
+   549→   549→                  <Users className="h-4 w-4" />
+   550→   550→                  View Candidates
+   551→   551→                </Button>
+   552→   552→                {isEnded && (
+   553→   553→                  <Button
+   554→   554→                    onClick={() => onNavigate('results')}
+   555→   555→                    variant="secondary"
+   556→   556→                    className="bg-white/10 backdrop-blur text-primary-foreground hover:bg-white/20 rounded-full border border-white/20"
+   557→   557→                    size="lg"
+   558→   558→                  >
+   559→   559→                    <BarChart3 className="h-4 w-4" />
+   560→   560→                    View Results
+   561→   561→                  </Button>
+   562→   562→                )}
+   563→   563→              </div>
+   564→   564→
+   565→   565→              {election.description && (
+   566→   566→                <p className="text-xs text-primary-foreground/70 leading-relaxed max-w-2xl">
+   567→   567→                  {election.description}
+   568→   568→                </p>
+   569→   569→              )}
+   570→   570→            </div>
+   571→   571→          </div>
+   572→   572→        </Card>
+   573→   573→      </motion.div>
+   574→   574→
+   575→   575→      {/* Transparency Features */}
+   576→   576→      <div>
+   577→   577→        <h2 className="text-sm font-semibold text-muted-foreground mb-3 px-1">
+   578→   578→          Built for Transparency
+   579→   579→        </h2>
+   580→   580→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+   581→   581→          {TRANSPARENCY_FEATURES.map((feature, i) => {
+   582→   582→            const Icon = feature.icon
+   583→   583→            return (
+   584→   584→              <motion.div
+   585→   585→                key={feature.title}
+   586→   586→                initial={{ opacity: 0, y: 12 }}
+   587→   587→                animate={{ opacity: 1, y: 0 }}
+   588→   588→                transition={{ delay: 0.05 * i }}
+   589→   589→              >
+   590→   590→                <Card className="rounded-2xl border-border/60 h-full">
+   591→   591→                  <CardContent className="pt-5 pb-5">
+   592→   592→                    <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-3">
+   593→   593→                      <Icon className="h-5 w-5" />
+   594→   594→                    </div>
+   595→   595→                    <h3 className="text-sm font-semibold mb-1">{feature.title}</h3>
+   596→   596→                    <p className="text-xs text-muted-foreground leading-relaxed">
+   597→   597→                      {feature.desc}
+   598→   598→                    </p>
+   599→   599→                  </CardContent>
+   600→   600→                </Card>
+   601→   601→              </motion.div>
+   602→   602→            )
+   603→   603→          })}
+   604→   604→        </div>
+   605→   605→      </div>
+   606→   606→
+   607→   607→      {/* Positions summary */}
+   608→   608→      <Card className="rounded-2xl border-border/60">
+   609→   609→        <CardHeader>
+   610→   610→          <CardTitle className="text-base flex items-center gap-2">
+   611→   611→            <Users className="h-4 w-4 text-primary" />
+   612→   612→            Positions Up for Election
+   613→   613→          </CardTitle>
+   614→   614→          <CardDescription>
+   615→   615→            {positions.length} positions • {positions.reduce((sum, p) => sum + p.candidates.length, 0)} candidates
+   616→   616→          </CardDescription>
+   617→   617→        </CardHeader>
+   618→   618→        <CardContent>
+   619→   619→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+   620→   620→            {positions
+   621→   621→              .sort((a, b) => a.order - b.order)
+   622→   622→              .map((p) => {
+   623→   623→                const voted = !!hasVoted[p.id]
+   624→   624→                return (
+   625→   625→                  <button
+   626→   626→                    key={p.id}
+   627→   627→                    onClick={() => onNavigate('candidates')}
+   628→   628→                    className="flex items-center justify-between p-3 rounded-xl bg-accent/40 hover:bg-accent transition-colors text-left"
+   629→   629→                  >
+   630→   630→                    <div className="min-w-0">
+   631→   631→                      <p className="text-sm font-medium truncate">{p.title}</p>
+   632→   632→                      <p className="text-xs text-muted-foreground">
+   633→   633→                        {p.candidates.length} candidate{p.candidates.length !== 1 ? 's' : ''}
+   634→   634→                      </p>
+   635→   635→                    </div>
+   636→   636→                    {voted ? (
+   637→   637→                      <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-0 shrink-0">
+   638→   638→                        <CheckCircle className="h-3 w-3" /> Voted
+   639→   639→                      </Badge>
+   640→   640→                    ) : (
+   641→   641→                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+   642→   642→                    )}
+   643→   643→                  </button>
+   644→   644→                )
+   645→   645→              })}
+   646→   646→          </div>
+   647→   647→        </CardContent>
+   648→   648→      </Card>
+   649→   649→    </div>
+   650→   650→  )
+   651→   651→}
+   652→   652→
+   653→   653→// ============ Candidates Sub-View ============
+   654→   654→function CandidatesView() {
+   655→   655→  const [data, setData] = useState<ElectionData | null>(null)
+   656→   656→  const [loading, setLoading] = useState(true)
+   657→   657→  const [error, setError] = useState<string | null>(null)
+   658→   658→  const [activePositionId, setActivePositionId] = useState<string>('')
+   659→   659→  const [manifestoCandidate, setManifestoCandidate] = useState<Candidate | null>(null)
+   660→   660→  const [voteCandidate, setVoteCandidate] = useState<{
+   661→   661→    candidate: Candidate
+   662→   662→    position: Position
+   663→   663→  } | null>(null)
+   664→   664→  const [submitting, setSubmitting] = useState(false)
+   665→   665→
+   666→   666→  const fetchData = useCallback(async () => {
+   667→   667→    setLoading(true)
+   668→   668→    setError(null)
+   669→   669→    try {
+   670→   670→      const res = await api.get<ElectionData>('/elections')
+   671→   671→      setData(res)
+   672→   672→      setActivePositionId((prev) => {
+   673→   673→        if (prev && res.positions.find((p) => p.id === prev)) return prev
+   674→   674→        const sorted = [...res.positions].sort((a, b) => a.order - b.order)
+   675→   675→        return sorted[0]?.id || ''
+   676→   676→      })
+   677→   677→    } catch (e) {
+   678→   678→      setError(e instanceof Error ? e.message : 'Failed to load candidates')
+   679→   679→    } finally {
+   680→   680→      setLoading(false)
+   681→   681→    }
+   682→   682→  }, [])
+   683→   683→
+   684→   684→  useEffect(() => {
+   685→   685→    fetchData()
+   686→   686→  }, [fetchData])
+   687→   687→
+   688→   688→  const handleConfirmVote = async () => {
+   689→   689→    if (!voteCandidate) return
+   690→   690→    setSubmitting(true)
+   691→   691→    try {
+   692→   692→      await api.post('/elections/vote', {
+   693→   693→        candidateId: voteCandidate.candidate.id,
+   694→   694→        positionId: voteCandidate.position.id,
+   695→   695→      })
+   696→   696→      toast.success('Vote cast successfully!', {
+   697→   697→        description: `You voted for ${voteCandidate.candidate.name} as ${voteCandidate.position.title}.`,
+   698→   698→      })
+   699→   699→      setVoteCandidate(null)
+   700→   700→      await fetchData()
+   701→   701→    } catch (e) {
+   702→   702→      toast.error('Failed to cast vote', {
+   703→   703→        description: e instanceof Error ? e.message : 'Please try again',
+   704→   704→      })
+   705→   705→    } finally {
+   706→   706→      setSubmitting(false)
+   707→   707→    }
+   708→   708→  }
+   709→   709→
+   710→   710→  if (loading) return <CandidatesSkeleton />
+   711→   711→  if (error || !data) {
+   712→   712→    return (
+   713→   713→      <Card className="rounded-2xl border-border/60">
+   714→   714→        <CardContent className="py-10 text-center">
+   715→   715→          <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+   716→   716→          <p className="text-sm text-muted-foreground">
+   717→   717→            {error || 'Could not load candidates'}
+   718→   718→          </p>
+   719→   719→          <Button
+   720→   720→            variant="outline"
+   721→   721→            size="sm"
+   722→   722→            onClick={fetchData}
+   723→   723→            className="mt-3 rounded-full"
+   724→   724→          >
+   725→   725→            <RefreshCw className="h-3.5 w-3.5" />
+   726→   726→            Retry
+   727→   727→          </Button>
+   728→   728→        </CardContent>
+   729→   729→      </Card>
+   730→   730→    )
+   731→   731→  }
+   732→   732→
+   733→   733→  const { election, positions, hasVoted } = data
+   734→   734→  const sortedPositions = [...positions].sort((a, b) => a.order - b.order)
+   735→   735→  const activePosition =
+   736→   736→    sortedPositions.find((p) => p.id === activePositionId) || sortedPositions[0]
+   737→   737→  const isActive = election.status === 'active'
+   738→   738→
+   739→   739→  return (
+   740→   740→    <div className="space-y-6">
+   741→   741→      {/* Header */}
+   742→   742→      <div className="flex items-center justify-between gap-3 flex-wrap">
+   743→   743→        <div>
+   744→   744→          <h1 className="text-xl sm:text-2xl font-bold font-display">Meet the Candidates</h1>
+   745→   745→          <p className="text-sm text-muted-foreground">
+   746→   746→            Review manifestos and cast your vote for each position
+   747→   747→          </p>
+   748→   748→        </div>
+   749→   749→        <Badge
+   750→   750→          className={cn(
+   751→   751→            'border-0',
+   752→   752→            isActive ? 'bg-green-500/15 text-green-600 dark:text-green-400' : 'bg-muted text-muted-foreground'
+   753→   753→          )}
+   754→   754→        >
+   755→   755→          {getStatusLabel(election.status)}
+   756→   756→        </Badge>
+   757→   757→      </div>
+   758→   758→
+   759→   759→      {/* Position Tabs */}
+   760→   760→      <Tabs
+   761→   761→        value={activePosition?.id}
+   762→   762→        onValueChange={setActivePositionId}
+   763→   763→        className="w-full"
+   764→   764→      >
+   765→   765→        <TabsList className="w-full flex-wrap h-auto p-1 gap-1 bg-accent/60">
+   766→   766→          {sortedPositions.map((p) => {
+   767→   767→            const voted = !!hasVoted[p.id]
+   768→   768→            return (
+   769→   769→              <TabsTrigger
+   770→   770→                key={p.id}
+   771→   771→                value={p.id}
+   772→   772→                className="flex-1 min-w-fit gap-1.5 data-[state=active]:bg-background"
+   773→   773→              >
+   774→   774→                <span className="truncate max-w-[140px]">{p.title}</span>
+   775→   775→                {voted && <CheckCircle className="h-3 w-3 text-green-500" />}
+   776→   776→              </TabsTrigger>
+   777→   777→            )
+   778→   778→          })}
+   779→   779→        </TabsList>
+   780→   780→
+   781→   781→        {sortedPositions.map((position) => (
+   782→   782→          <TabsContent key={position.id} value={position.id} className="mt-4">
+   783→   783→            <PositionCandidates
+   784→   784→              position={position}
+   785→   785→              hasVoted={!!hasVoted[position.id]}
+   786→   786→              isActive={isActive}
+   787→   787→              onViewManifesto={setManifestoCandidate}
+   788→   788→              onVote={(candidate) => setVoteCandidate({ candidate, position })}
+   789→   789→            />
+   790→   790→          </TabsContent>
+   791→   791→        ))}
+   792→   792→      </Tabs>
+   793→   793→
+   794→   794→      {/* Manifesto Dialog */}
+   795→   795→      <Dialog
+   796→   796→        open={!!manifestoCandidate}
+   797→   797→        onOpenChange={(open) => !open && setManifestoCandidate(null)}
+   798→   798→      >
+   799→   799→        <DialogContent className="sm:max-w-lg">
+   800→   800→          <DialogHeader>
+   801→   801→            <DialogTitle className="flex items-center gap-2">
+   802→   802→              <Quote className="h-4 w-4 text-primary" />
+   803→   803→              Manifesto
+   804→   804→            </DialogTitle>
+   805→   805→            <DialogDescription>
+   806→   806→              {manifestoCandidate?.name} — Full manifesto
+   807→   807→            </DialogDescription>
+   808→   808→          </DialogHeader>
+   809→   809→          <div className="space-y-3">
+   810→   810→            <p className="text-sm leading-relaxed whitespace-pre-line">
+   811→   811→              {manifestoCandidate?.manifesto || 'No manifesto provided.'}
+   812→   812→            </p>
+   813→   813→          </div>
+   814→   814→        </DialogContent>
+   815→   815→      </Dialog>
+   816→   816→
+   817→   817→      {/* Vote Confirmation Dialog */}
+   818→   818→      <AlertDialog
+   819→   819→        open={!!voteCandidate}
+   820→   820→        onOpenChange={(open) => !open && !submitting && setVoteCandidate(null)}
+   821→   821→      >
+   822→   822→        <AlertDialogContent>
+   823→   823→          <AlertDialogHeader>
+   824→   824→            <AlertDialogTitle className="flex items-center gap-2">
+   825→   825→              <Vote className="h-5 w-5 text-primary" />
+   826→   826→              Confirm Your Vote
+   827→   827→            </AlertDialogTitle>
+   828→   828→            <AlertDialogDescription className="text-left">
+   829→   829→              You are about to vote for{' '}
+   830→   830→              <span className="font-semibold text-foreground">
+   831→   831→                {voteCandidate?.candidate.name}
+   832→   832→              </span>{' '}
+   833→   833→              as{' '}
+   834→   834→              <span className="font-semibold text-foreground">
+   835→   835→                {voteCandidate?.position.title}
+   836→   836→              </span>
+   837→   837→              . This action cannot be undone.
+   838→   838→            </AlertDialogDescription>
+   839→   839→          </AlertDialogHeader>
+   840→   840→          <div className="rounded-xl bg-accent/50 p-3 text-xs text-muted-foreground flex items-start gap-2">
+   841→   841→            <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+   842→   842→            <p>
+   843→   843→              Your vote is anonymous. Your identity will not be linked to this vote in any
+   844→   844→              public records or results.
+   845→   845→            </p>
+   846→   846→          </div>
+   847→   847→          <AlertDialogFooter>
+   848→   848→            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+   849→   849→            <AlertDialogAction
+   850→   850→              onClick={handleConfirmVote}
+   851→   851→              disabled={submitting}
+   852→   852→              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+   853→   853→            >
+   854→   854→              {submitting ? (
+   855→   855→                <>
+   856→   856→                  <Loader2 className="h-4 w-4 animate-spin" />
+   857→   857→                  Casting Vote...
+   858→   858→                </>
+   859→   859→              ) : (
+   860→   860→                <>
+   861→   861→                  <CheckCircle className="h-4 w-4" />
+   862→   862→                  Confirm Vote
+   863→   863→                </>
+   864→   864→              )}
+   865→   865→            </AlertDialogAction>
+   866→   866→          </AlertDialogFooter>
+   867→   867→        </AlertDialogContent>
+   868→   868→      </AlertDialog>
+   869→   869→    </div>
+   870→   870→  )
+   871→   871→}
+   872→   872→
+   873→   873→function PositionCandidates({
+   874→   874→  position,
+   875→   875→  hasVoted,
+   876→   876→  isActive,
+   877→   877→  onViewManifesto,
+   878→   878→  onVote,
+   879→   879→}: {
+   880→   880→  position: Position
+   881→   881→  hasVoted: boolean
+   882→   882→  isActive: boolean
+   883→   883→  onViewManifesto: (c: Candidate) => void
+   884→   884→  onVote: (c: Candidate) => void
+   885→   885→}) {
+   886→   886→  return (
+   887→   887→    <div className="space-y-4">
+   888→   888→      <Card className="rounded-2xl border-border/60">
+   889→   889→        <CardHeader className="pb-3">
+   890→   890→          <div className="flex items-start justify-between gap-3">
+   891→   891→            <div className="min-w-0">
+   892→   892→              <CardTitle className="text-lg font-display">{position.title}</CardTitle>
+   893→   893→              {position.description && (
+   894→   894→                <CardDescription className="mt-1">{position.description}</CardDescription>
+   895→   895→              )}
+   896→   896→            </div>
+   897→   897→            {hasVoted && (
+   898→   898→              <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-0 shrink-0">
+   899→   899→                <CheckCircle className="h-3 w-3" /> Voted
+   900→   900→              </Badge>
+   901→   901→            )}
+   902→   902→          </div>
+   903→   903→        </CardHeader>
+   904→   904→      </Card>
+   905→   905→
+   906→   906→      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   907→   907→        {position.candidates.map((candidate, i) => (
+   908→   908→          <motion.div
+   909→   909→            key={candidate.id}
+   910→   910→            initial={{ opacity: 0, y: 16 }}
+   911→   911→            animate={{ opacity: 1, y: 0 }}
+   912→   912→            transition={{ delay: 0.05 * i }}
+   913→   913→          >
+   914→   914→            <CandidateCard
+   915→   915→              candidate={candidate}
+   916→   916→              positionTitle={position.title}
+   917→   917→              hasVoted={hasVoted}
+   918→   918→              isActive={isActive}
+   919→   919→              onViewManifesto={() => onViewManifesto(candidate)}
+   920→   920→              onVote={() => onVote(candidate)}
+   921→   921→            />
+   922→   922→          </motion.div>
+   923→   923→        ))}
+   924→   924→      </div>
+   925→   925→    </div>
+   926→   926→  )
+   927→   927→}
+   928→   928→
+   929→   929→function CandidateCard({
+   930→   930→  candidate,
+   931→   931→  positionTitle,
+   932→   932→  hasVoted,
+   933→   933→  isActive,
+   934→   934→  onViewManifesto,
+   935→   935→  onVote,
+   936→   936→}: {
+   937→   937→  candidate: Candidate
+   938→   938→  positionTitle: string
+   939→   939→  hasVoted: boolean
+   940→   940→  isActive: boolean
+   941→   941→  onViewManifesto: () => void
+   942→   942→  onVote: () => void
+   943→   943→}) {
+   944→   944→  const manifestoSnippet = candidate.manifesto
+   945→   945→    ? candidate.manifesto.length > 120
+   946→   946→      ? candidate.manifesto.slice(0, 120) + '...'
+   947→   947→      : candidate.manifesto
+   948→   948→    : null
+   949→   949→
+   950→   950→  return (
+   951→   951→    <Card className="rounded-2xl border-border/60 h-full overflow-hidden hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all">
+   952→   952→      <CardContent className="pt-5 space-y-4">
+   953→   953→        {/* Header: Avatar + name */}
+   954→   954→        <div className="flex items-start gap-3">
+   955→   955→          <Avatar className="h-14 w-14 border border-border shrink-0">
+   956→   956→            <AvatarFallback
+   957→   957→              className={cn(
+   958→   958→                'bg-gradient-to-br text-white font-semibold',
+   959→   959→                getAvatarGradient(candidate.name)
+   960→   960→              )}
+   961→   961→            >
+   962→   962→              {getInitials(candidate.name)}
+   963→   963→            </AvatarFallback>
+   964→   964→          </Avatar>
+   965→   965→          <div className="min-w-0 flex-1">
+   966→   966→            <h3 className="font-semibold text-base leading-tight truncate">{candidate.name}</h3>
+   967→   967→            <p className="text-xs text-muted-foreground mt-0.5">{positionTitle}</p>
+   968→   968→            <Badge
+   969→   969→              variant="outline"
+   970→   970→              className="mt-1.5 bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20 text-[10px]"
+   971→   971→            >
+   972→   972→              <Shield className="h-2.5 w-2.5" /> Verified Candidate
+   973→   973→            </Badge>
+   974→   974→          </div>
+   975→   975→        </div>
+   976→   976→
+   977→   977→        {/* Level & programme */}
+   978→   978→        {(candidate.level || candidate.programme) && (
+   979→   979→          <div className="flex flex-wrap gap-2">
+   980→   980→            {candidate.level && (
+   981→   981→              <span className="text-[11px] px-2 py-0.5 rounded-md bg-accent/60 text-foreground font-medium">
+   982→   982→                {candidate.level} Level
+   983→   983→              </span>
+   984→   984→            )}
+   985→   985→            {candidate.programme && (
+   986→   986→              <span className="text-[11px] px-2 py-0.5 rounded-md bg-accent/60 text-foreground font-medium">
+   987→   987→                {candidate.programme}
+   988→   988→              </span>
+   989→   989→            )}
+   990→   990→          </div>
+   991→   991→        )}
+   992→   992→
+   993→   993→        {/* Bio */}
+   994→   994→        {candidate.bio && (
+   995→   995→          <p className="text-xs text-muted-foreground leading-relaxed">{candidate.bio}</p>
+   996→   996→        )}
+   997→   997→
+   998→   998→        {/* Manifesto snippet */}
+   999→   999→        {manifestoSnippet && (
+  1000→  1000→          <div className="rounded-xl bg-accent/40 p-3 border-l-2 border-primary/40">
+  1001→  1001→            <Quote className="h-3 w-3 text-primary/60 mb-1.5" />
+  1002→  1002→            <p className="text-xs italic text-foreground/80 leading-relaxed">
+  1003→  1003→              &ldquo;{manifestoSnippet}&rdquo;
+  1004→  1004→            </p>
+  1005→  1005→          </div>
+  1006→  1006→        )}
+  1007→  1007→
+  1008→  1008→        {/* Actions */}
+  1009→  1009→        <div className="flex gap-2 pt-1">
+  1010→  1010→          <Button
+  1011→  1011→            variant="outline"
+  1012→  1012→            size="sm"
+  1013→  1013→            onClick={onViewManifesto}
+  1014→  1014→            className="flex-1 rounded-full"
+  1015→  1015→          >
+  1016→  1016→            <Eye className="h-3.5 w-3.5" />
+  1017→  1017→            View Manifesto
+  1018→  1018→          </Button>
+  1019→  1019→          {isActive && !hasVoted && (
+  1020→  1020→            <Button
+  1021→  1021→              size="sm"
+  1022→  1022→              onClick={onVote}
+  1023→  1023→              className="flex-1 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground"
+  1024→  1024→            >
+  1025→  1025→              <Vote className="h-3.5 w-3.5" />
+  1026→  1026→              Vote
+  1027→  1027→            </Button>
+  1028→  1028→          )}
+  1029→  1029→          {hasVoted && (
+  1030→  1030→            <Button
+  1031→  1031→              size="sm"
+  1032→  1032→              variant="secondary"
+  1033→  1033→              disabled
+  1034→  1034→              className="flex-1 rounded-full bg-green-500/15 text-green-600 dark:text-green-400"
+  1035→  1035→            >
+  1036→  1036→              <CheckCircle className="h-3.5 w-3.5" />
+  1037→  1037→              Voted
+  1038→  1038→            </Button>
+  1039→  1039→          )}
+  1040→  1040→        </div>
+  1041→  1041→      </CardContent>
+  1042→  1042→    </Card>
+  1043→  1043→  )
+  1044→  1044→}
+  1045→  1045→
+  1046→  1046→// ============ Vote Flow Sub-View (guided) ============
+  1047→  1047→function VoteFlow() {
+  1048→  1048→  const [data, setData] = useState<ElectionData | null>(null)
+  1049→  1049→  const [loading, setLoading] = useState(true)
+  1050→  1050→  const [error, setError] = useState<string | null>(null)
+  1051→  1051→  const [selections, setSelections] = useState<Record<string, string>>({})
+  1052→  1052→  const [voteTarget, setVoteTarget] = useState<{
+  1053→  1053→    candidateId: string
+  1054→  1054→    positionId: string
+  1055→  1055→    candidateName: string
+  1056→  1056→    positionTitle: string
+  1057→  1057→  } | null>(null)
+  1058→  1058→  const [submitting, setSubmitting] = useState(false)
+  1059→  1059→
+  1060→  1060→  const fetchData = useCallback(async () => {
+  1061→  1061→    setLoading(true)
+  1062→  1062→    setError(null)
+  1063→  1063→    try {
+  1064→  1064→      const res = await api.get<ElectionData>('/elections')
+  1065→  1065→      setData(res)
+  1066→  1066→    } catch (e) {
+  1067→  1067→      setError(e instanceof Error ? e.message : 'Failed to load election')
+  1068→  1068→    } finally {
+  1069→  1069→      setLoading(false)
+  1070→  1070→    }
+  1071→  1071→  }, [])
+  1072→  1072→
+  1073→  1073→  useEffect(() => {
+  1074→  1074→    fetchData()
+  1075→  1075→  }, [fetchData])
+  1076→  1076→
+  1077→  1077→  const handleConfirmVote = async () => {
+  1078→  1078→    if (!voteTarget) return
+  1079→  1079→    setSubmitting(true)
+  1080→  1080→    try {
+  1081→  1081→      await api.post('/elections/vote', {
+  1082→  1082→        candidateId: voteTarget.candidateId,
+  1083→  1083→        positionId: voteTarget.positionId,
+  1084→  1084→      })
+  1085→  1085→      toast.success('Vote cast successfully!', {
+  1086→  1086→        description: `You voted for ${voteTarget.candidateName} as ${voteTarget.positionTitle}.`,
+  1087→  1087→      })
+  1088→  1088→      setVoteTarget(null)
+  1089→  1089→      // Clear selection for this position
+  1090→  1090→      setSelections((prev) => {
+  1091→  1091→        const next = { ...prev }
+  1092→  1092→        delete next[voteTarget.positionId]
+  1093→  1093→        return next
+  1094→  1094→      })
+  1095→  1095→      await fetchData()
+  1096→  1096→    } catch (e) {
+  1097→  1097→      toast.error('Failed to cast vote', {
+  1098→  1098→        description: e instanceof Error ? e.message : 'Please try again',
+  1099→  1099→      })
+  1100→  1100→    } finally {
+  1101→  1101→      setSubmitting(false)
+  1102→  1102→    }
+  1103→  1103→  }
+  1104→  1104→
+  1105→  1105→  if (loading) return <VoteFlowSkeleton />
+  1106→  1106→  if (error || !data) {
+  1107→  1107→    return (
+  1108→  1108→      <Card className="rounded-2xl border-border/60">
+  1109→  1109→        <CardContent className="py-10 text-center">
+  1110→  1110→          <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+  1111→  1111→          <p className="text-sm text-muted-foreground">{error || 'Could not load election'}</p>
+  1112→  1112→          <Button
+  1113→  1113→            variant="outline"
+  1114→  1114→            size="sm"
+  1115→  1115→            onClick={fetchData}
+  1116→  1116→            className="mt-3 rounded-full"
+  1117→  1117→          >
+  1118→  1118→            <RefreshCw className="h-3.5 w-3.5" />
+  1119→  1119→            Retry
+  1120→  1120→          </Button>
+  1121→  1121→        </CardContent>
+  1122→  1122→      </Card>
+  1123→  1123→    )
+  1124→  1124→  }
+  1125→  1125→
+  1126→  1126→  const { election, positions, hasVoted } = data
+  1127→  1127→  const sortedPositions = [...positions].sort((a, b) => a.order - b.order)
+  1128→  1128→  const isActive = election.status === 'active'
+  1129→  1129→  const totalVoted = sortedPositions.filter((p) => hasVoted[p.id]).length
+  1130→  1130→  const totalPositions = sortedPositions.length
+  1131→  1131→
+  1132→  1132→  if (!isActive) {
+  1133→  1133→    return (
+  1134→  1134→      <Card className="rounded-2xl border-border/60">
+  1135→  1135→        <CardContent className="py-10 text-center">
+  1136→  1136→          <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+  1137→  1137→          <p className="text-base font-semibold">Voting is not open</p>
+  1138→  1138→          <p className="text-sm text-muted-foreground mt-1">
+  1139→  1139→            {getStatusLabel(election.status)}. Please check back later.
+  1140→  1140→          </p>
+  1141→  1141→        </CardContent>
+  1142→  1142→      </Card>
+  1143→  1143→    )
+  1144→  1144→  }
+  1145→  1145→
+  1146→  1146→  if (totalVoted === totalPositions) {
+  1147→  1147→    return (
+  1148→  1148→      <Card className="rounded-2xl border-green-500/30 bg-green-500/5">
+  1149→  1149→        <CardContent className="py-10 text-center space-y-3">
+  1150→  1150→          <div className="mx-auto w-16 h-16 rounded-2xl bg-green-500/15 text-green-500 flex items-center justify-center">
+  1151→  1151→            <PartyPopper className="h-8 w-8" />
+  1152→  1152→          </div>
+  1153→  1153→          <div>
+  1154→  1154→            <p className="text-lg font-bold font-display">All Votes Cast!</p>
+  1155→  1155→            <p className="text-sm text-muted-foreground mt-1">
+  1156→  1156→              You&apos;ve voted in all {totalPositions} positions. Thank you for participating!
+  1157→  1157→            </p>
+  1158→  1158→          </div>
+  1159→  1159→        </CardContent>
+  1160→  1160→      </Card>
+  1161→  1161→    )
+  1162→  1162→  }
+  1163→  1163→
+  1164→  1164→  return (
+  1165→  1165→    <div className="space-y-6">
+  1166→  1166→      {/* Header */}
+  1167→  1167→      <div className="flex items-start justify-between gap-3 flex-wrap">
+  1168→  1168→        <div>
+  1169→  1169→          <h1 className="text-xl sm:text-2xl font-bold font-display">Cast Your Vote</h1>
+  1170→  1170→          <p className="text-sm text-muted-foreground">
+  1171→  1171→            Select a candidate for each position and confirm your choice
+  1172→  1172→          </p>
+  1173→  1173→        </div>
+  1174→  1174→        <Badge className="bg-primary/10 text-primary border-0">
+  1175→  1175→          {totalVoted} / {totalPositions} voted
+  1176→  1176→        </Badge>
+  1177→  1177→      </div>
+  1178→  1178→
+  1179→  1179→      {/* Progress */}
+  1180→  1180→      <Card className="rounded-2xl border-border/60">
+  1181→  1181→        <CardContent className="pt-5">
+  1182→  1182→          <Progress value={(totalVoted / totalPositions) * 100} className="h-2" />
+  1183→  1183→          <p className="text-xs text-muted-foreground mt-2">
+  1184→  1184→            {totalPositions - totalVoted} position{totalPositions - totalVoted !== 1 ? 's' : ''} remaining
+  1185→  1185→          </p>
+  1186→  1186→        </CardContent>
+  1187→  1187→      </Card>
+  1188→  1188→
+  1189→  1189→      {/* Positions */}
+  1190→  1190→      {sortedPositions.map((position) => {
+  1191→  1191→        const voted = !!hasVoted[position.id]
+  1192→  1192→        const selected = selections[position.id]
+  1193→  1193→        return (
+  1194→  1194→          <motion.div
+  1195→  1195→            key={position.id}
+  1196→  1196→            initial={{ opacity: 0, y: 12 }}
+  1197→  1197→            animate={{ opacity: 1, y: 0 }}
+  1198→  1198→          >
+  1199→  1199→            <Card
+  1200→  1200→              className={cn(
+  1201→  1201→                'rounded-2xl border-border/60 overflow-hidden',
+  1202→  1202→                voted && 'border-green-500/30 bg-green-500/5'
+  1203→  1203→              )}
+  1204→  1204→            >
+  1205→  1205→              <CardHeader className="pb-3">
+  1206→  1206→                <div className="flex items-start justify-between gap-3">
+  1207→  1207→                  <div className="min-w-0">
+  1208→  1208→                    <CardTitle className="text-base flex items-center gap-2">
+  1209→  1209→                      <span className="text-xs font-mono text-muted-foreground">
+  1210→  1210→                        {String(position.order).padStart(2, '0')}
+  1211→  1211→                      </span>
+  1212→  1212→                      {position.title}
+  1213→  1213→                    </CardTitle>
+  1214→  1214→                    {position.description && (
+  1215→  1215→                      <CardDescription className="mt-1">{position.description}</CardDescription>
+  1216→  1216→                    )}
+  1217→  1217→                  </div>
+  1218→  1218→                  {voted && (
+  1219→  1219→                    <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border-0 shrink-0">
+  1220→  1220→                      <CheckCircle className="h-3 w-3" /> Voted
+  1221→  1221→                    </Badge>
+  1222→  1222→                  )}
+  1223→  1223→                </div>
+  1224→  1224→              </CardHeader>
+  1225→  1225→              <CardContent className="space-y-3">
+  1226→  1226→                {voted ? (
+  1227→  1227→                  <div className="rounded-xl bg-green-500/10 p-3 flex items-center gap-2 text-sm">
+  1228→  1228→                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+  1229→  1229→                    <span className="text-green-700 dark:text-green-300">
+  1230→  1230→                      You have voted for this position. Your vote cannot be changed.
+  1231→  1231→                    </span>
+  1232→  1232→                  </div>
+  1233→  1233→                ) : (
+  1234→  1234→                  <>
+  1235→  1235→                    <RadioGroup
+  1236→  1236→                      value={selected || ''}
+  1237→  1237→                      onValueChange={(v) =>
+  1238→  1238→                        setSelections((prev) => ({ ...prev, [position.id]: v }))
+  1239→  1239→                      }
+  1240→  1240→                    >
+  1241→  1241→                      {position.candidates.map((candidate) => (
+  1242→  1242→                        <Label
+  1243→  1243→                          key={candidate.id}
+  1244→  1244→                          htmlFor={`${position.id}-${candidate.id}`}
+  1245→  1245→                          className={cn(
+  1246→  1246→                            'flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all',
+  1247→  1247→                            selected === candidate.id
+  1248→  1248→                              ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+  1249→  1249→                              : 'border-border hover:border-primary/40 hover:bg-accent/40'
+  1250→  1250→                          )}
+  1251→  1251→                        >
+  1252→  1252→                          <RadioGroupItem
+  1253→  1253→                            value={candidate.id}
+  1254→  1254→                            id={`${position.id}-${candidate.id}`}
+  1255→  1255→                            className="mt-0.5"
+  1256→  1256→                          />
+  1257→  1257→                          <Avatar className="h-10 w-10 border border-border shrink-0">
+  1258→  1258→                            <AvatarFallback
+  1259→  1259→                              className={cn(
+  1260→  1260→                                'bg-gradient-to-br text-white text-xs font-semibold',
+  1261→  1261→                                getAvatarGradient(candidate.name)
+  1262→  1262→                              )}
+  1263→  1263→                            >
+  1264→  1264→                              {getInitials(candidate.name)}
+  1265→  1265→                            </AvatarFallback>
+  1266→  1266→                          </Avatar>
+  1267→  1267→                          <div className="min-w-0 flex-1">
+  1268→  1268→                            <p className="text-sm font-semibold leading-tight">
+  1269→  1269→                              {candidate.name}
+  1270→  1270→                            </p>
+  1271→  1271→                            {(candidate.level || candidate.programme) && (
+  1272→  1272→                              <p className="text-xs text-muted-foreground mt-0.5">
+  1273→  1273→                                {[candidate.level && `${candidate.level} Level`, candidate.programme]
+  1274→  1274→                                  .filter(Boolean)
+  1275→  1275→                                  .join(' • ')}
+  1276→  1276→                              </p>
+  1277→  1277→                            )}
+  1278→  1278→                            {candidate.bio && (
+  1279→  1279→                              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+  1280→  1280→                                {candidate.bio}
+  1281→  1281→                              </p>
+  1282→  1282→                            )}
+  1283→  1283→                          </div>
+  1284→  1284→                        </Label>
+  1285→  1285→                      ))}
+  1286→  1286→                    </RadioGroup>
+  1287→  1287→                    <Button
+  1288→  1288→                      disabled={!selected || submitting}
+  1289→  1289→                      onClick={() => {
+  1290→  1290→                        const c = position.candidates.find((c) => c.id === selected)
+  1291→  1291→                        if (!c) return
+  1292→  1292→                        setVoteTarget({
+  1293→  1293→                          candidateId: c.id,
+  1294→  1294→                          positionId: position.id,
+  1295→  1295→                          candidateName: c.name,
+  1296→  1296→                          positionTitle: position.title,
+  1297→  1297→                        })
+  1298→  1298→                      }}
+  1299→  1299→                      className="w-full rounded-full bg-primary hover:bg-primary/90 text-primary-foreground"
+  1300→  1300→                    >
+  1301→  1301→                      <Vote className="h-4 w-4" />
+  1302→  1302→                      Cast Vote for {position.title}
+  1303→  1303→                    </Button>
+  1304→  1304→                  </>
+  1305→  1305→                )}
+  1306→  1306→              </CardContent>
+  1307→  1307→            </Card>
+  1308→  1308→          </motion.div>
+  1309→  1309→        )
+  1310→  1310→      })}
+  1311→  1311→
+  1312→  1312→      {/* Vote Confirmation */}
+  1313→  1313→      <AlertDialog
+  1314→  1314→        open={!!voteTarget}
+  1315→  1315→        onOpenChange={(open) => !open && !submitting && setVoteTarget(null)}
+  1316→  1316→      >
+  1317→  1317→        <AlertDialogContent>
+  1318→  1318→          <AlertDialogHeader>
+  1319→  1319→            <AlertDialogTitle className="flex items-center gap-2">
+  1320→  1320→              <Vote className="h-5 w-5 text-primary" />
+  1321→  1321→              Confirm Your Vote
+  1322→  1322→            </AlertDialogTitle>
+  1323→  1323→            <AlertDialogDescription className="text-left">
+  1324→  1324→              You are about to vote for{' '}
+  1325→  1325→              <span className="font-semibold text-foreground">
+  1326→  1326→                {voteTarget?.candidateName}
+  1327→  1327→              </span>{' '}
+  1328→  1328→              as{' '}
+  1329→  1329→              <span className="font-semibold text-foreground">
+  1330→  1330→                {voteTarget?.positionTitle}
+  1331→  1331→              </span>
+  1332→  1332→              . This action cannot be undone.
+  1333→  1333→            </AlertDialogDescription>
+  1334→  1334→          </AlertDialogHeader>
+  1335→  1335→          <div className="rounded-xl bg-accent/50 p-3 text-xs text-muted-foreground flex items-start gap-2">
+  1336→  1336→            <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+  1337→  1337→            <p>
+  1338→  1338→              Your vote is anonymous. Your identity will not be linked to this vote in any
+  1339→  1339→              public records or results.
+  1340→  1340→            </p>
+  1341→  1341→          </div>
+  1342→  1342→          <AlertDialogFooter>
+  1343→  1343→            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+  1344→  1344→            <AlertDialogAction
+  1345→  1345→              onClick={handleConfirmVote}
+  1346→  1346→              disabled={submitting}
+  1347→  1347→              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+  1348→  1348→            >
+  1349→  1349→              {submitting ? (
+  1350→  1350→                <>
+  1351→  1351→                  <Loader2 className="h-4 w-4 animate-spin" />
+  1352→  1352→                  Casting Vote...
+  1353→  1353→                </>
+  1354→  1354→              ) : (
+  1355→  1355→                <>
+  1356→  1356→                  <CheckCircle className="h-4 w-4" />
+  1357→  1357→                  Confirm Vote
+  1358→  1358→                </>
+  1359→  1359→              )}
+  1360→  1360→            </AlertDialogAction>
+  1361→  1361→          </AlertDialogFooter>
+  1362→  1362→        </AlertDialogContent>
+  1363→  1363→      </AlertDialog>
+  1364→  1364→    </div>
+  1365→  1365→  )
+  1366→  1366→}
+  1367→  1367→
+  1368→  1368→// ============ Results Sub-View ============
+  1369→  1369→function ResultsView() {
+  1370→  1370→  const [data, setData] = useState<ResultsData | null>(null)
+  1371→  1371→  const [loading, setLoading] = useState(true)
+  1372→  1372→  const [error, setError] = useState<string | null>(null)
+  1373→  1373→
+  1374→  1374→  const fetchData = useCallback(async () => {
+  1375→  1375→    setLoading(true)
+  1376→  1376→    setError(null)
+  1377→  1377→    try {
+  1378→  1378→      const res = await api.get<ResultsData>('/elections/results')
+  1379→  1379→      setData(res)
+  1380→  1380→    } catch (e) {
+  1381→  1381→      setError(e instanceof Error ? e.message : 'Failed to load results')
+  1382→  1382→    } finally {
+  1383→  1383→      setLoading(false)
+  1384→  1384→    }
+  1385→  1385→  }, [])
+  1386→  1386→
+  1387→  1387→  useEffect(() => {
+  1388→  1388→    fetchData()
+  1389→  1389→  }, [fetchData])
+  1390→  1390→
+  1391→  1391→  if (loading) return <ResultsSkeleton />
+  1392→  1392→  if (error || !data) {
+  1393→  1393→    return (
+  1394→  1394→      <Card className="rounded-2xl border-border/60">
+  1395→  1395→        <CardContent className="py-10 text-center">
+  1396→  1396→          <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+  1397→  1397→          <p className="text-sm text-muted-foreground">
+  1398→  1398→            {error || 'Results are not yet available'}
+  1399→  1399→          </p>
+  1400→  1400→          <Button
+  1401→  1401→            variant="outline"
+  1402→  1402→            size="sm"
+  1403→  1403→            onClick={fetchData}
+  1404→  1404→            className="mt-3 rounded-full"
+  1405→  1405→          >
+  1406→  1406→            <RefreshCw className="h-3.5 w-3.5" />
+  1407→  1407→            Retry
+  1408→  1408→          </Button>
+  1409→  1409→        </CardContent>
+  1410→  1410→      </Card>
+  1411→  1411→    )
+  1412→  1412→  }
+  1413→  1413→
+  1414→  1414→  const { positions, totalVotes, totalEligible, turnout } = data
+  1415→  1415→
+  1416→  1416→  return (
+  1417→  1417→    <div className="space-y-6">
+  1418→  1418→      {/* Transparency Banner */}
+  1419→  1419→      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+  1420→  1420→        <Card className="rounded-2xl border-primary/30 bg-primary/5 overflow-hidden">
+  1421→  1421→          <CardContent className="pt-5 flex items-center gap-3">
+  1422→  1422→            <div className="h-10 w-10 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
+  1423→  1423→              <BarChart3 className="h-5 w-5" />
+  1424→  1424→            </div>
+  1425→  1425→            <div className="min-w-0">
+  1426→  1426→              <p className="text-sm font-semibold flex items-center gap-2">
+  1427→  1427→                Live Results
+  1428→  1428→                <span className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
+  1429→  1429→                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+  1430→  1430→                  Real-time
+  1431→  1431→                </span>
+  1432→  1432→              </p>
+  1433→  1433→              <p className="text-xs text-muted-foreground">
+  1434→  1434→                Updated automatically as votes are cast
+  1435→  1435→              </p>
+  1436→  1436→            </div>
+  1437→  1437→          </CardContent>
+  1438→  1438→        </Card>
+  1439→  1439→      </motion.div>
+  1440→  1440→
+  1441→  1441→      {/* Overall Stats */}
+  1442→  1442→      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1443→  1443→        {[
+  1444→  1444→          {
+  1445→  1445→            label: 'Total Votes Cast',
+  1446→  1446→            value: totalVotes.toLocaleString(),
+  1447→  1447→            icon: Vote,
+  1448→  1448→            color: 'text-primary',
+  1449→  1449→            bg: 'bg-primary/10',
+  1450→  1450→          },
+  1451→  1451→          {
+  1452→  1452→            label: 'Eligible Voters',
+  1453→  1453→            value: totalEligible.toLocaleString(),
+  1454→  1454→            icon: Users,
+  1455→  1455→            color: 'text-blue-500',
+  1456→  1456→            bg: 'bg-blue-500/10',
+  1457→  1457→          },
+  1458→  1458→          {
+  1459→  1459→            label: 'Turnout',
+  1460→  1460→            value: `${turnout.toFixed(1)}%`,
+  1461→  1461→            icon: TrendingUp,
+  1462→  1462→            color: 'text-gold',
+  1463→  1463→            bg: 'bg-gold/10',
+  1464→  1464→          },
+  1465→  1465→        ].map((stat, i) => {
+  1466→  1466→          const Icon = stat.icon
+  1467→  1467→          return (
+  1468→  1468→            <motion.div
+  1469→  1469→              key={stat.label}
+  1470→  1470→              initial={{ opacity: 0, y: 12 }}
+  1471→  1471→              animate={{ opacity: 1, y: 0 }}
+  1472→  1472→              transition={{ delay: 0.05 * i }}
+  1473→  1473→            >
+  1474→  1474→              <Card className="rounded-2xl border-border/60">
+  1475→  1475→                <CardContent className="pt-5">
+  1476→  1476→                  <div className="flex items-center justify-between gap-2">
+  1477→  1477→                    <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center', stat.bg)}>
+  1478→  1478→                      <Icon className={cn('h-4 w-4', stat.color)} />
+  1479→  1479→                    </div>
+  1480→  1480→                  </div>
+  1481→  1481→                  <p className="text-2xl font-bold font-display mt-3">{stat.value}</p>
+  1482→  1482→                  <p className="text-xs text-muted-foreground">{stat.label}</p>
+  1483→  1483→                </CardContent>
+  1484→  1484→              </Card>
+  1485→  1485→            </motion.div>
+  1486→  1486→          )
+  1487→  1487→        })}
+  1488→  1488→      </div>
+  1489→  1489→
+  1490→  1490→      {/* Per-position results */}
+  1491→  1491→      {positions.length === 0 ? (
+  1492→  1492→        <Card className="rounded-2xl border-border/60">
+  1493→  1493→          <CardContent className="py-10 text-center">
+  1494→  1494→            <BarChart3 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+  1495→  1495→            <p className="text-sm text-muted-foreground">No positions to display</p>
+  1496→  1496→          </CardContent>
+  1497→  1497→        </Card>
+  1498→  1498→      ) : (
+  1499→  1499→        <div className="space-y-4">
+  1500→  1500→          {positions.map((position, i) => (
+  1501→  1501→            <motion.div
+  1502→  1502→              key={position.id}
+  1503→  1503→              initial={{ opacity: 0, y: 12 }}
+  1504→  1504→              animate={{ opacity: 1, y: 0 }}
+  1505→  1505→              transition={{ delay: 0.05 * i }}
+  1506→  1506→            >
+  1507→  1507→              <PositionResults position={position} />
+  1508→  1508→            </motion.div>
+  1509→  1509→          ))}
+  1510→  1510→        </div>
+  1511→  1511→      )}
+  1512→  1512→
+  1513→  1513→      {/* Anonymity Note */}
+  1514→  1514→      <Card className="rounded-2xl border-border/60 bg-accent/30">
+  1515→  1515→        <CardContent className="pt-5 flex items-start gap-3">
+  1516→  1516→          <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+  1517→  1517→            <Lock className="h-4 w-4" />
+  1518→  1518→          </div>
+  1519→  1519→          <div>
+  1520→  1520→            <p className="text-sm font-semibold">Your vote is secret</p>
+  1521→  1521→            <p className="text-xs text-muted-foreground mt-1">
+  1522→  1522→              Results are anonymous. Individual voting choices are never linked to student
+  1523→  1523→              identities in any public record.
+  1524→  1524→            </p>
+  1525→  1525→          </div>
+  1526→  1526→        </CardContent>
+  1527→  1527→      </Card>
+  1528→  1528→    </div>
+  1529→  1529→  )
+  1530→  1530→}
+  1531→  1531→
+  1532→  1532→function PositionResults({ position }: { position: ResultsPosition }) {
+  1533→  1533→  const sorted = useMemo(
+  1534→  1534→    () => [...position.candidates].sort((a, b) => b.voteCount - a.voteCount),
+  1535→  1535→    [position.candidates]
+  1536→  1536→  )
+  1537→  1537→  const totalVotes = sorted.reduce((sum, c) => sum + c.voteCount, 0)
+  1538→  1538→  const leadingId = sorted[0]?.name
+  1539→  1539→  const hasVotes = totalVotes > 0
+  1540→  1540→
+  1541→  1541→  return (
+  1542→  1542→    <Card className="rounded-2xl border-border/60">
+  1543→  1543→      <CardHeader className="pb-3">
+  1544→  1544→        <CardTitle className="text-base flex items-center gap-2">
+  1545→  1545→          <Trophy className="h-4 w-4 text-gold" />
+  1546→  1546→          {position.title}
+  1547→  1547→        </CardTitle>
+  1548→  1548→        <CardDescription>
+  1549→  1549→          {totalVotes} vote{totalVotes !== 1 ? 's' : ''} cast
+  1550→  1550→        </CardDescription>
+  1551→  1551→      </CardHeader>
+  1552→  1552→      <CardContent className="space-y-3">
+  1553→  1553→        {sorted.length === 0 ? (
+  1554→  1554→          <p className="text-sm text-muted-foreground text-center py-4">
+  1555→  1555→            No candidates for this position
+  1556→  1556→          </p>
+  1557→  1557→        ) : (
+  1558→  1558→          sorted.map((candidate, idx) => {
+  1559→  1559→            const pct = hasVotes ? (candidate.voteCount / totalVotes) * 100 : 0
+  1560→  1560→            const isLeading = candidate.name === leadingId && hasVotes && candidate.voteCount > 0
+  1561→  1561→            return (
+  1562→  1562→              <div
+  1563→  1563→                key={candidate.name}
+  1564→  1564→                className={cn(
+  1565→  1565→                  'rounded-xl p-3 border transition-all',
+  1566→  1566→                  isLeading
+  1567→  1567→                    ? 'border-gold/40 bg-gold/5'
+  1568→  1568→                    : 'border-border bg-card'
+  1569→  1569→                )}
+  1570→  1570→              >
+  1571→  1571→                <div className="flex items-center justify-between gap-2 mb-2">
+  1572→  1572→                  <div className="flex items-center gap-2 min-w-0">
+  1573→  1573→                    {isLeading ? (
+  1574→  1574→                      <Crown className="h-4 w-4 text-gold shrink-0" />
+  1575→  1575→                    ) : (
+  1576→  1576→                      <span className="text-xs font-mono text-muted-foreground w-4 text-center shrink-0">
+  1577→  1577→                        {idx + 1}
+  1578→  1578→                      </span>
+  1579→  1579→                    )}
+  1580→  1580→                    <span
+  1581→  1581→                      className={cn(
+  1582→  1582→                        'text-sm font-medium truncate',
+  1583→  1583→                        isLeading && 'text-gold-foreground'
+  1584→  1584→                      )}
+  1585→  1585→                    >
+  1586→  1586→                      {candidate.name}
+  1587→  1587→                    </span>
+  1588→  1588→                    {isLeading && (
+  1589→  1589→                      <Badge className="bg-gold/20 text-gold border-0 text-[10px] shrink-0">
+  1590→  1590→                        Leading
+  1591→  1591→                      </Badge>
+  1592→  1592→                    )}
+  1593→  1593→                  </div>
+  1594→  1594→                  <div className="flex items-center gap-2 shrink-0">
+  1595→  1595→                    <span className="text-xs font-semibold tabular-nums">
+  1596→  1596→                      {pct.toFixed(1)}%
+  1597→  1597→                    </span>
+  1598→  1598→                    <span className="text-xs text-muted-foreground tabular-nums">
+  1599→  1599→                      {candidate.voteCount}
+  1600→  1600→                    </span>
+  1601→  1601→                  </div>
+  1602→  1602→                </div>
+  1603→  1603→                <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+  1604→  1604→                  <motion.div
+  1605→  1605→                    initial={{ width: 0 }}
+  1606→  1606→                    animate={{ width: `${pct}%` }}
+  1607→  1607→                    transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
+  1608→  1608→                    className={cn(
+  1609→  1609→                      'h-full rounded-full',
+  1610→  1610→                      isLeading
+  1611→  1611→                        ? 'bg-gradient-to-r from-gold to-amber-500'
+  1612→  1612→                        : 'bg-gradient-to-r from-primary to-primary/70'
+  1613→  1613→                    )}
+  1614→  1614→                  />
+  1615→  1615→                </div>
+  1616→  1616→              </div>
+  1617→  1617→            )
+  1618→  1618→          })
+  1619→  1619→        )}
+  1620→  1620→      </CardContent>
+  1621→  1621→    </Card>
+  1622→  1622→  )
+  1623→  1623→}
+  1624→  1624→
+  1625→  1625→// ============ Skeletons ============
+  1626→  1626→function HomeSkeleton() {
+  1627→  1627→  return (
+  1628→  1628→    <div className="space-y-6">
+  1629→  1629→      <Skeleton className="h-72 rounded-2xl" />
+  1630→  1630→      <div>
+  1631→  1631→        <Skeleton className="h-4 w-32 mb-3" />
+  1632→  1632→        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1633→  1633→          {[1, 2, 3, 4].map((i) => (
+  1634→  1634→            <Skeleton key={i} className="h-28 rounded-2xl" />
+  1635→  1635→          ))}
+  1636→  1636→        </div>
+  1637→  1637→      </div>
+  1638→  1638→      <Skeleton className="h-48 rounded-2xl" />
+  1639→  1639→    </div>
+  1640→  1640→  )
+  1641→  1641→}
+  1642→  1642→
+  1643→  1643→function CandidatesSkeleton() {
+  1644→  1644→  return (
+  1645→  1645→    <div className="space-y-6">
+  1646→  1646→      <Skeleton className="h-16 rounded-2xl" />
+  1647→  1647→      <Skeleton className="h-10 rounded-full" />
+  1648→  1648→      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  1649→  1649→        {[1, 2, 3, 4].map((i) => (
+  1650→  1650→          <Skeleton key={i} className="h-64 rounded-2xl" />
+  1651→  1651→        ))}
+  1652→  1652→      </div>
+  1653→  1653→    </div>
+  1654→  1654→  )
+  1655→  1655→}
+  1656→  1656→
+  1657→  1657→function VoteFlowSkeleton() {
+  1658→  1658→  return (
+  1659→  1659→    <div className="space-y-6">
+  1660→  1660→      <Skeleton className="h-16 rounded-2xl" />
+  1661→  1661→      <Skeleton className="h-20 rounded-2xl" />
+  1662→  1662→      {[1, 2, 3].map((i) => (
+  1663→  1663→        <Skeleton key={i} className="h-48 rounded-2xl" />
+  1664→  1664→      ))}
+  1665→  1665→    </div>
+  1666→  1666→  )
+  1667→  1667→}
+  1668→  1668→
+  1669→  1669→function ResultsSkeleton() {
+  1670→  1670→  return (
+  1671→  1671→    <div className="space-y-6">
+  1672→  1672→      <Skeleton className="h-20 rounded-2xl" />
+  1673→  1673→      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1674→  1674→        {[1, 2, 3].map((i) => (
+  1675→  1675→          <Skeleton key={i} className="h-28 rounded-2xl" />
+  1676→  1676→        ))}
+  1677→  1677→      </div>
+  1678→  1678→      {[1, 2, 3].map((i) => (
+  1679→  1679→        <Skeleton key={i} className="h-56 rounded-2xl" />
+  1680→  1680→      ))}
+  1681→  1681→    </div>
+  1682→  1682→  )
+  1683→  1683→}
+  1684→  1684→
+  1685→  1685→

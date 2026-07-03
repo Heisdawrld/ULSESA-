@@ -1,0 +1,717 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useEffect, useState, useMemo } from 'react'
+     4→     4→import { motion } from 'framer-motion'
+     5→     5→import { toast } from 'sonner'
+     6→     6→import { useNav } from '@/lib/stores/nav-store'
+     7→     7→import { api } from '@/lib/api-client'
+     8→     8→import { Button } from '@/components/ui/button'
+     9→     9→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+    10→    10→import { Badge } from '@/components/ui/badge'
+    11→    11→import { Skeleton } from '@/components/ui/skeleton'
+    12→    12→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    13→    13→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+    14→    14→import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
+    15→    15→import { Progress } from '@/components/ui/progress'
+    16→    16→import { cn } from '@/lib/utils'
+    17→    17→import {
+    18→    18→  BookOpen,
+    19→    19→  CalendarDays,
+    20→    20→  GraduationCap,
+    21→    21→  ArrowRight,
+    22→    22→  Sparkles,
+    23→    23→  Download,
+    24→    24→  FileText,
+    25→    25→  FileQuestion,
+    26→    26→  Book,
+    27→    27→  Presentation,
+    28→    28→  Video,
+    29→    29→  Clock,
+    30→    30→  MapPin,
+    31→    31→  Award,
+    32→    32→  TrendingUp,
+    33→    33→  ChevronRight,
+    34→    34→  Layers,
+    35→    35→} from 'lucide-react'
+    36→    36→
+    37→    37→// ===================== Types =====================
+    38→    38→
+    39→    39→interface Course {
+    40→    40→  id: string
+    41→    41→  code: string
+    42→    42→  title: string
+    43→    43→  level: string
+    44→    44→  semester: string
+    45→    45→  description?: string
+    46→    46→}
+    47→    47→
+    48→    48→interface Resource {
+    49→    49→  id: string
+    50→    50→  title: string
+    51→    51→  type: string
+    52→    52→  url: string
+    53→    53→  description?: string
+    54→    54→  course?: { code: string; title: string } | null
+    55→    55→}
+    56→    56→
+    57→    57→// ===================== Static demo data =====================
+    58→    58→
+    59→    59→const LEVELS = ['100', '200', '300', '400', '500'] as const
+    60→    60→
+    61→    61→const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
+    62→    62→const TIME_SLOTS = [
+    63→    63→  '08:00 — 09:00',
+    64→    64→  '09:00 — 10:00',
+    65→    65→  '10:00 — 11:00',
+    66→    66→  '11:00 — 12:00',
+    67→    67→  '12:00 — 13:00',
+    68→    68→  '13:00 — 14:00',
+    69→    69→  '14:00 — 15:00',
+    70→    70→  '15:00 — 16:00',
+    71→    71→] as const
+    72→    72→
+    73→    73→type ClassBlock = {
+    74→    74→  day: number
+    75→    75→  slot: number
+    76→    76→  code: string
+    77→    77→  title: string
+    78→    78→  venue: string
+    79→    79→  tint: string
+    80→    80→}
+    81→    81→
+    82→    82→const TIMETABLE: ClassBlock[] = [
+    83→    83→  { day: 0, slot: 0, code: 'PHS 301', title: 'Quantum Mechanics I', venue: 'PLT 1', tint: 'bg-primary/15 text-primary border-primary/30' },
+    84→    84→  { day: 0, slot: 2, code: 'PHS 305', title: 'Thermal Physics', venue: 'PLT 2', tint: 'bg-gold/15 text-gold-foreground dark:text-gold border-gold/30' },
+    85→    85→  { day: 0, slot: 5, code: 'PHS 311', title: 'Math Methods I', venue: 'Lab 3', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+    86→    86→
+    87→    87→  { day: 1, slot: 1, code: 'PHS 301', title: 'Quantum Mechanics I', venue: 'PLT 1', tint: 'bg-primary/15 text-primary border-primary/30' },
+    88→    88→  { day: 1, slot: 3, code: 'PHS 305', title: 'Thermal Physics', venue: 'PLT 2', tint: 'bg-gold/15 text-gold-foreground dark:text-gold border-gold/30' },
+    89→    89→  { day: 1, slot: 6, code: 'PHS 311', title: 'Math Methods I', venue: 'Lab 3', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+    90→    90→
+    91→    91→  { day: 2, slot: 0, code: 'PHS 305', title: 'Thermal Physics (Lab)', venue: 'Physics Lab 1', tint: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30' },
+    92→    92→  { day: 2, slot: 1, code: 'PHS 305', title: 'Thermal Physics (Lab)', venue: 'Physics Lab 1', tint: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30' },
+    93→    93→  { day: 2, slot: 4, code: 'PHS 301', title: 'Quantum Tutorial', venue: 'PLT 1', tint: 'bg-primary/15 text-primary border-primary/30' },
+    94→    94→
+    95→    95→  { day: 3, slot: 1, code: 'PHS 311', title: 'Math Methods I', venue: 'Lab 3', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+    96→    96→  { day: 3, slot: 3, code: 'PHS 301', title: 'Quantum Mechanics I', venue: 'PLT 1', tint: 'bg-primary/15 text-primary border-primary/30' },
+    97→    97→  { day: 3, slot: 5, code: 'PHS 305', title: 'Thermal Physics', venue: 'PLT 2', tint: 'bg-gold/15 text-gold-foreground dark:text-gold border-gold/30' },
+    98→    98→
+    99→    99→  { day: 4, slot: 0, code: 'PHS 311', title: 'Math Methods Tutorial', venue: 'Lab 3', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+   100→   100→  { day: 4, slot: 2, code: 'PHS 301', title: 'Quantum Mechanics I', venue: 'PLT 1', tint: 'bg-primary/15 text-primary border-primary/30' },
+   101→   101→  { day: 4, slot: 4, code: 'Seminar', title: 'Department Seminar', venue: 'Main Hall', tint: 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30' },
+   102→   102→]
+   103→   103→
+   104→   104→const SEMESTERS = ['First Semester 2025/2026', 'Second Semester 2024/2025'] as const
+   105→   105→
+   106→   106→interface ResultRow {
+   107→   107→  code: string
+   108→   108→  title: string
+   109→   109→  unit: number
+   110→   110→  grade: string
+   111→   111→  score: number
+   112→   112→}
+   113→   113→
+   114→   114→const RESULTS: Record<string, ResultRow[]> = {
+   115→   115→  'First Semester 2025/2026': [
+   116→   116→    { code: 'PHS 301', title: 'Quantum Mechanics I', unit: 3, grade: 'A', score: 78 },
+   117→   117→    { code: 'PHS 305', title: 'Thermal Physics', unit: 3, grade: 'B', score: 68 },
+   118→   118→    { code: 'PHS 311', title: 'Mathematical Methods I', unit: 3, grade: 'A', score: 74 },
+   119→   119→    { code: 'PHS 307', title: 'Optics II', unit: 2, grade: 'B', score: 65 },
+   120→   120→    { code: 'GST 301', title: 'Entrepreneurship', unit: 2, grade: 'A', score: 72 },
+   121→   121→    { code: 'PHS 399', title: 'Lab Practice III', unit: 2, grade: 'A', score: 80 },
+   122→   122→  ],
+   123→   123→  'Second Semester 2024/2025': [
+   124→   124→    { code: 'PHS 202', title: 'Electromagnetism I', unit: 3, grade: 'B', score: 64 },
+   125→   125→    { code: 'PHS 213', title: 'Classical Mechanics II', unit: 3, grade: 'A', score: 76 },
+   126→   126→    { code: 'PHS 204', title: 'Optics I', unit: 2, grade: 'A', score: 71 },
+   127→   127→    { code: 'GST 202', title: 'Communication Skills', unit: 2, grade: 'B', score: 62 },
+   128→   128→    { code: 'PHS 299', title: 'Lab Practice II', unit: 2, grade: 'A', score: 79 },
+   129→   129→  ],
+   130→   130→}
+   131→   131→
+   132→   132→const GRADE_POINTS: Record<string, number> = { A: 5, B: 4, C: 3, D: 2, E: 1, F: 0 }
+   133→   133→
+   134→   134→function gradeBadgeClass(grade: string) {
+   135→   135→  switch (grade) {
+   136→   136→    case 'A':
+   137→   137→      return 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+   138→   138→    case 'B':
+   139→   139→      return 'bg-primary/15 text-primary border-primary/30'
+   140→   140→    case 'C':
+   141→   141→      return 'bg-gold/15 text-gold-foreground dark:text-gold border-gold/30'
+   142→   142→    case 'D':
+   143→   143→      return 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30'
+   144→   144→    default:
+   145→   145→      return 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30'
+   146→   146→  }
+   147→   147→}
+   148→   148→
+   149→   149→function computeCgpa(rows: ResultRow[]) {
+   150→   150→  let totalUnits = 0
+   151→   151→  let totalPoints = 0
+   152→   152→  for (const r of rows) {
+   153→   153→    const gp = GRADE_POINTS[r.grade] ?? 0
+   154→   154→    totalPoints += gp * r.unit
+   155→   155→    totalUnits += r.unit
+   156→   156→  }
+   157→   157→  return {
+   158→   158→    cgpa: totalUnits ? totalPoints / totalUnits : 0,
+   159→   159→    totalUnits,
+   160→   160→    totalPoints,
+   161→   161→  }
+   162→   162→}
+   163→   163→
+   164→   164→function resourceIcon(type: string) {
+   165→   165→  switch (type) {
+   166→   166→    case 'note':
+   167→   167→      return FileText
+   168→   168→    case 'past_question':
+   169→   169→      return FileQuestion
+   170→   170→    case 'textbook':
+   171→   171→      return Book
+   172→   172→    case 'slides':
+   173→   173→      return Presentation
+   174→   174→    case 'video':
+   175→   175→      return Video
+   176→   176→    default:
+   177→   177→      return FileText
+   178→   178→  }
+   179→   179→}
+   180→   180→
+   181→   181→// ===================== Sub-components =====================
+   182→   182→
+   183→   183→function LevelPills({ active, onChange }: { active: string; onChange: (v: string) => void }) {
+   184→   184→  return (
+   185→   185→    <div className="flex flex-wrap items-center gap-2">
+   186→   186→      <Button
+   187→   187→        size="sm"
+   188→   188→        variant={active === 'all' ? 'default' : 'outline'}
+   189→   189→        onClick={() => onChange('all')}
+   190→   190→        className="rounded-full h-9 px-4"
+   191→   191→      >
+   192→   192→        All Levels
+   193→   193→      </Button>
+   194→   194→      {LEVELS.map((lvl) => (
+   195→   195→        <Button
+   196→   196→          key={lvl}
+   197→   197→          size="sm"
+   198→   198→          variant={active === lvl ? 'default' : 'outline'}
+   199→   199→          onClick={() => onChange(lvl)}
+   200→   200→          className="rounded-full h-9 px-4"
+   201→   201→        >
+   202→   202→          {lvl} Level
+   203→   203→        </Button>
+   204→   204→      ))}
+   205→   205→    </div>
+   206→   206→  )
+   207→   207→}
+   208→   208→
+   209→   209→function CourseCard({ course, index, onView }: { course: Course; index: number; onView: (c: Course) => void }) {
+   210→   210→  return (
+   211→   211→    <motion.div
+   212→   212→      initial={{ opacity: 0, y: 16 }}
+   213→   213→      animate={{ opacity: 1, y: 0 }}
+   214→   214→      transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.4) }}
+   215→   215→    >
+   216→   216→      <Card className="h-full rounded-2xl hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 transition-all duration-300 group">
+   217→   217→        <CardContent className="flex flex-col gap-3 h-full">
+   218→   218→          <div className="flex items-start justify-between gap-2">
+   219→   219→            <Badge className="bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 rounded-md font-mono font-semibold">
+   220→   220→              {course.code}
+   221→   221→            </Badge>
+   222→   222→            <div className="flex items-center gap-1.5">
+   223→   223→              <Badge variant="outline" className="rounded-full text-[11px] font-medium">
+   224→   224→                <Layers className="h-3 w-3 mr-1 text-muted-foreground" />
+   225→   225→                {course.level} Lvl
+   226→   226→              </Badge>
+   227→   227→              <Badge variant="outline" className="rounded-full text-[11px] font-medium">
+   228→   228→                {course.semester}
+   229→   229→              </Badge>
+   230→   230→            </div>
+   231→   231→          </div>
+   232→   232→          <h3 className="font-semibold text-base leading-snug group-hover:text-primary transition-colors">
+   233→   233→            {course.title}
+   234→   234→          </h3>
+   235→   235→          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 flex-1">
+   236→   236→            {course.description || 'No description available.'}
+   237→   237→          </p>
+   238→   238→          <Button
+   239→   239→            size="sm"
+   240→   240→            variant="outline"
+   241→   241→            onClick={() => onView(course)}
+   242→   242→            className="w-full rounded-full mt-1 group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-colors"
+   243→   243→          >
+   244→   244→            <BookOpen className="h-4 w-4" />
+   245→   245→            View Resources
+   246→   246→          </Button>
+   247→   247→        </CardContent>
+   248→   248→      </Card>
+   249→   249→    </motion.div>
+   250→   250→  )
+   251→   251→}
+   252→   252→
+   253→   253→function CourseSkeleton() {
+   254→   254→  return (
+   255→   255→    <Card className="rounded-2xl">
+   256→   256→      <CardContent className="flex flex-col gap-3 h-full">
+   257→   257→        <div className="flex items-center justify-between">
+   258→   258→          <Skeleton className="h-6 w-20 rounded-md" />
+   259→   259→          <Skeleton className="h-5 w-16 rounded-full" />
+   260→   260→        </div>
+   261→   261→        <Skeleton className="h-5 w-4/5" />
+   262→   262→        <Skeleton className="h-3 w-full" />
+   263→   263→        <Skeleton className="h-3 w-3/4" />
+   264→   264→        <Skeleton className="h-8 w-full rounded-full mt-2" />
+   265→   265→      </CardContent>
+   266→   266→    </Card>
+   267→   267→  )
+   268→   268→}
+   269→   269→
+   270→   270→function TimetableGrid() {
+   271→   271→  return (
+   272→   272→    <Card className="rounded-2xl overflow-hidden">
+   273→   273→      <CardHeader className="border-b">
+   274→   274→        <CardTitle className="font-display flex items-center gap-2">
+   275→   275→          <CalendarDays className="h-5 w-5 text-primary" />
+   276→   276→          Weekly Schedule — 300 Level
+   277→   277→        </CardTitle>
+   278→   278→        <CardDescription>First Semester, 2025/2026 session. Tap a class for venue details.</CardDescription>
+   279→   279→      </CardHeader>
+   280→   280→      <CardContent className="p-0">
+   281→   281→        <div className="overflow-x-auto scrollbar-thin">
+   282→   282→          <div className="min-w-[820px]">
+   283→   283→            {/* Header row */}
+   284→   284→            <div className="grid grid-cols-[120px_repeat(5,1fr)] border-b bg-muted/30">
+   285→   285→              <div className="p-3 text-xs font-semibold text-muted-foreground border-r">
+   286→   286→                Time
+   287→   287→              </div>
+   288→   288→              {DAYS.map((d) => (
+   289→   289→                <div key={d} className="p-3 text-center text-sm font-semibold border-r last:border-r-0">
+   290→   290→                  {d}
+   291→   291→                </div>
+   292→   292→              ))}
+   293→   293→            </div>
+   294→   294→            {/* Rows */}
+   295→   295→            {TIME_SLOTS.map((slot, sIdx) => (
+   296→   296→              <div key={slot} className="grid grid-cols-[120px_repeat(5,1fr)] border-b last:border-b-0 min-h-[64px]">
+   297→   297→                <div className="p-3 text-[11px] text-muted-foreground border-r bg-muted/20 font-medium">
+   298→   298→                  {slot}
+   299→   299→                </div>
+   300→   300→                {DAYS.map((_, dIdx) => {
+   301→   301→                  const block = TIMETABLE.find((c) => c.day === dIdx && c.slot === sIdx)
+   302→   302→                  return (
+   303→   303→                    <div key={dIdx} className="border-r last:border-r-0 p-1.5">
+   304→   304→                      {block ? (
+   305→   305→                        <div className={cn('h-full rounded-lg border p-2 flex flex-col gap-0.5', block.tint)}>
+   306→   306→                          <div className="text-[11px] font-bold font-mono">{block.code}</div>
+   307→   307→                          <div className="text-[10px] font-medium leading-tight line-clamp-2">{block.title}</div>
+   308→   308→                          <div className="text-[10px] opacity-80 flex items-center gap-0.5 mt-auto">
+   309→   309→                            <MapPin className="h-2.5 w-2.5" /> {block.venue}
+   310→   310→                          </div>
+   311→   311→                        </div>
+   312→   312→                      ) : null}
+   313→   313→                    </div>
+   314→   314→                  )
+   315→   315→                })}
+   316→   316→              </div>
+   317→   317→            ))}
+   318→   318→          </div>
+   319→   319→        </div>
+   320→   320→      </CardContent>
+   321→   321→    </Card>
+   322→   322→  )
+   323→   323→}
+   324→   324→
+   325→   325→function ResultsPanel() {
+   326→   326→  const [semester, setSemester] = useState<string>(SEMESTERS[0])
+   327→   327→  const rows = RESULTS[semester] || []
+   328→   328→  const { cgpa, totalUnits } = useMemo(() => computeCgpa(rows), [rows])
+   329→   329→  const cgpaPct = Math.min((cgpa / 5) * 100, 100)
+   330→   330→
+   331→   331→  return (
+   332→   332→    <div className="space-y-5">
+   333→   333→      {/* CGPA Summary */}
+   334→   334→      <Card className="rounded-2xl overflow-hidden">
+   335→   335→        <div className="relative bg-gradient-to-br from-primary via-primary to-primary/80 text-primary-foreground">
+   336→   336→          <div
+   337→   337→            className="absolute inset-0 opacity-20 pointer-events-none"
+   338→   338→            style={{
+   339→   339→              backgroundImage:
+   340→   340→                'linear-gradient(to right, rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.2) 1px, transparent 1px)',
+   341→   341→              backgroundSize: '32px 32px',
+   342→   342→            }}
+   343→   343→            aria-hidden
+   344→   344→          />
+   345→   345→          <div className="absolute -top-16 -right-12 h-48 w-48 rounded-full bg-gold/30 blur-3xl pointer-events-none" aria-hidden />
+   346→   346→          <CardContent className="relative grid sm:grid-cols-[auto_1fr] gap-6 items-center py-6">
+   347→   347→            <div className="text-center sm:text-left">
+   348→   348→              <div className="text-xs uppercase tracking-wider text-primary-foreground/70 font-semibold">Cumulative GPA</div>
+   349→   349→              <div className="text-5xl font-bold font-display tabular-nums mt-1 leading-none">
+   350→   350→                {cgpa.toFixed(2)}
+   351→   351→                <span className="text-2xl text-primary-foreground/60">/5.00</span>
+   352→   352→              </div>
+   353→   353→              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur px-3 py-1 text-xs font-medium">
+   354→   354→                <TrendingUp className="h-3 w-3 text-gold" />
+   355→   355→                {cgpa >= 4.5 ? 'First Class' : cgpa >= 3.5 ? 'Second Class Upper' : cgpa >= 2.4 ? 'Second Class Lower' : 'Third Class'}
+   356→   356→              </div>
+   357→   357→            </div>
+   358→   358→            <div className="space-y-2">
+   359→   359→              <div className="flex items-center justify-between text-xs text-primary-foreground/80">
+   360→   360→                <span>Progress to 5.00</span>
+   361→   361→                <span className="font-semibold tabular-nums">{cgpaPct.toFixed(0)}%</span>
+   362→   362→              </div>
+   363→   363→              <div className="h-2.5 w-full rounded-full bg-white/20 overflow-hidden">
+   364→   364→                <motion.div
+   365→   365→                  className="h-full bg-gradient-to-r from-gold to-white rounded-full"
+   366→   366→                  initial={{ width: 0 }}
+   367→   367→                  animate={{ width: `${cgpaPct}%` }}
+   368→   368→                  transition={{ duration: 0.8, ease: 'easeOut' }}
+   369→   369→                />
+   370→   370→              </div>
+   371→   371→              <div className="flex flex-wrap items-center gap-4 pt-2 text-xs">
+   372→   372→                <div>
+   373→   373→                  <div className="text-primary-foreground/70">Total Units</div>
+   374→   374→                  <div className="font-bold text-lg tabular-nums">{totalUnits}</div>
+   375→   375→                </div>
+   376→   376→                <div>
+   377→   377→                  <div className="text-primary-foreground/70">Courses</div>
+   378→   378→                  <div className="font-bold text-lg tabular-nums">{rows.length}</div>
+   379→   379→                </div>
+   380→   380→                <div>
+   381→   381→                  <div className="text-primary-foreground/70">Best Grade</div>
+   382→   382→                  <div className="font-bold text-lg">{rows[0]?.grade || '—'}</div>
+   383→   383→                </div>
+   384→   384→              </div>
+   385→   385→            </div>
+   386→   386→          </CardContent>
+   387→   387→        </div>
+   388→   388→      </Card>
+   389→   389→
+   390→   390→      {/* Semester selector */}
+   391→   391→      <div className="flex flex-wrap items-center gap-2">
+   392→   392→        <span className="text-sm font-medium text-muted-foreground mr-1">Semester:</span>
+   393→   393→        {SEMESTERS.map((s) => (
+   394→   394→          <Button
+   395→   395→            key={s}
+   396→   396→            size="sm"
+   397→   397→            variant={semester === s ? 'default' : 'outline'}
+   398→   398→            onClick={() => setSemester(s)}
+   399→   399→            className="rounded-full"
+   400→   400→          >
+   401→   401→            {s}
+   402→   402→          </Button>
+   403→   403→        ))}
+   404→   404→      </div>
+   405→   405→
+   406→   406→      {/* Results table */}
+   407→   407→      <Card className="rounded-2xl overflow-hidden">
+   408→   408→        <CardHeader className="border-b pb-4">
+   409→   409→          <CardTitle className="font-display flex items-center gap-2 text-lg">
+   410→   410→            <Award className="h-5 w-5 text-gold" />
+   411→   411→            Course Results
+   412→   412→          </CardTitle>
+   413→   413→          <CardDescription>Official academic record — {semester}</CardDescription>
+   414→   414→        </CardHeader>
+   415→   415→        <CardContent className="p-0">
+   416→   416→          <Table>
+   417→   417→            <TableHeader>
+   418→   418→              <TableRow className="bg-muted/40 hover:bg-muted/40">
+   419→   419→                <TableHead className="pl-6">Code</TableHead>
+   420→   420→                <TableHead>Course Title</TableHead>
+   421→   421→                <TableHead className="text-center">Units</TableHead>
+   422→   422→                <TableHead className="text-center">Score</TableHead>
+   423→   423→                <TableHead className="text-center pr-6">Grade</TableHead>
+   424→   424→              </TableRow>
+   425→   425→            </TableHeader>
+   426→   426→            <TableBody>
+   427→   427→              {rows.map((r) => (
+   428→   428→                <TableRow key={r.code}>
+   429→   429→                  <TableCell className="pl-6 font-mono font-semibold text-sm">{r.code}</TableCell>
+   430→   430→                  <TableCell className="font-medium">{r.title}</TableCell>
+   431→   431→                  <TableCell className="text-center tabular-nums">{r.unit}</TableCell>
+   432→   432→                  <TableCell className="text-center tabular-nums">{r.score}</TableCell>
+   433→   433→                  <TableCell className="text-center pr-6">
+   434→   434→                    <Badge variant="outline" className={cn('rounded-md font-bold w-8 h-8 justify-center', gradeBadgeClass(r.grade))}>
+   435→   435→                      {r.grade}
+   436→   436→                    </Badge>
+   437→   437→                  </TableCell>
+   438→   438→                </TableRow>
+   439→   439→              ))}
+   440→   440→            </TableBody>
+   441→   441→          </Table>
+   442→   442→        </CardContent>
+   443→   443→      </Card>
+   444→   444→
+   445→   445→      <p className="text-xs text-muted-foreground text-center">
+   446→   446→        Results shown are demo data. Official transcripts are issued by the Departmental Exams Office.
+   447→   447→      </p>
+   448→   448→    </div>
+   449→   449→  )
+   450→   450→}
+   451→   451→
+   452→   452→// ===================== Main view =====================
+   453→   453→
+   454→   454→export function AcademicsView() {
+   455→   455→  const { navigate } = useNav()
+   456→   456→  const [courses, setCourses] = useState<Course[]>([])
+   457→   457→  const [loading, setLoading] = useState(true)
+   458→   458→  const [error, setError] = useState<string | null>(null)
+   459→   459→  const [activeLevel, setActiveLevel] = useState<string>('all')
+   460→   460→
+   461→   461→  const [dialogCourse, setDialogCourse] = useState<Course | null>(null)
+   462→   462→  const [dialogResources, setDialogResources] = useState<Resource[]>([])
+   463→   463→  const [dialogLoading, setDialogLoading] = useState(false)
+   464→   464→
+   465→   465→  useEffect(() => {
+   466→   466→    let mounted = true
+   467→   467→    api
+   468→   468→      .get<{ courses: Course[] }>('/courses')
+   469→   469→      .then((res) => {
+   470→   470→        if (!mounted) return
+   471→   471→        setCourses(res.courses || [])
+   472→   472→        setError(null)
+   473→   473→      })
+   474→   474→      .catch((e: unknown) => {
+   475→   475→        if (!mounted) return
+   476→   476→        setError(e instanceof Error ? e.message : 'Failed to load courses')
+   477→   477→        setCourses([])
+   478→   478→      })
+   479→   479→      .finally(() => mounted && setLoading(false))
+   480→   480→    return () => {
+   481→   481→      mounted = false
+   482→   482→    }
+   483→   483→  }, [])
+   484→   484→
+   485→   485→  const filtered = useMemo(() => {
+   486→   486→    if (activeLevel === 'all') return courses
+   487→   487→    return courses.filter((c) => c.level === activeLevel)
+   488→   488→  }, [courses, activeLevel])
+   489→   489→
+   490→   490→  async function openResources(course: Course) {
+   491→   491→    setDialogCourse(course)
+   492→   492→    setDialogResources([])
+   493→   493→    setDialogLoading(true)
+   494→   494→    try {
+   495→   495→      const res = await api.get<{ resources: Resource[] }>(`/resources?courseId=${course.id}`)
+   496→   496→      setDialogResources(res.resources || [])
+   497→   497→    } catch (e: unknown) {
+   498→   498→      toast.error(e instanceof Error ? e.message : 'Failed to load resources')
+   499→   499→    } finally {
+   500→   500→      setDialogLoading(false)
+   501→   501→    }
+   502→   502→  }
+   503→   503→
+   504→   504→  return (
+   505→   505→    <div className="animate-fade-in">
+   506→   506→      {/* ===================== HERO ===================== */}
+   507→   507→      <section className="relative overflow-hidden border-b border-border/40">
+   508→   508→        <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
+   509→   509→        <div className="absolute -top-20 left-1/2 -translate-x-1/2 h-64 w-[50rem] rounded-full bg-primary/20 blur-3xl pointer-events-none" aria-hidden />
+   510→   510→        <div className="absolute top-20 right-12 h-32 w-32 rounded-full bg-gold/20 blur-3xl pointer-events-none" aria-hidden />
+   511→   511→
+   512→   512→        <div className="container mx-auto px-4 lg:px-6 relative py-12 md:py-16">
+   513→   513→          <motion.div
+   514→   514→            initial={{ opacity: 0, y: 20 }}
+   515→   515→            animate={{ opacity: 1, y: 0 }}
+   516→   516→            transition={{ duration: 0.5 }}
+   517→   517→            className="max-w-3xl"
+   518→   518→          >
+   519→   519→            <Badge variant="outline" className="mb-4 rounded-full bg-background/70 backdrop-blur px-3 py-1 border-primary/20">
+   520→   520→              <Sparkles className="h-3.5 w-3.5 text-gold mr-1.5" />
+   521→   521→              Academic Hub
+   522→   522→            </Badge>
+   523→   523→            <h1 className="font-display font-extrabold tracking-tight text-3xl sm:text-4xl md:text-5xl leading-tight">
+   524→   524→              Courses, <span className="text-gradient-primary">Timetable</span> & Results
+   525→   525→            </h1>
+   526→   526→            <p className="mt-3 text-sm md:text-base text-muted-foreground max-w-2xl">
+   527→   527→              Everything academic in one place — browse all departmental courses, view your weekly schedule, and track your CGPA progress.
+   528→   528→            </p>
+   529→   529→          </motion.div>
+   530→   530→        </div>
+   531→   531→      </section>
+   532→   532→
+   533→   533→      {/* ===================== TABS ===================== */}
+   534→   534→      <section className="container mx-auto px-4 lg:px-6 py-8 md:py-12">
+   535→   535→        <Tabs defaultValue="courses" className="gap-6">
+   536→   536→          <TabsList className="bg-muted/60 rounded-full p-1 h-auto flex flex-wrap">
+   537→   537→            <TabsTrigger value="courses" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   538→   538→              <BookOpen className="h-4 w-4" />
+   539→   539→              Courses
+   540→   540→            </TabsTrigger>
+   541→   541→            <TabsTrigger value="timetable" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   542→   542→              <CalendarDays className="h-4 w-4" />
+   543→   543→              Timetable
+   544→   544→            </TabsTrigger>
+   545→   545→            <TabsTrigger value="results" className="rounded-full px-5 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+   546→   546→              <GraduationCap className="h-4 w-4" />
+   547→   547→              Results
+   548→   548→            </TabsTrigger>
+   549→   549→          </TabsList>
+   550→   550→
+   551→   551→          {/* COURSES */}
+   552→   552→          <TabsContent value="courses" className="space-y-6 animate-fade-in">
+   553→   553→            <div className="flex flex-col gap-4">
+   554→   554→              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   555→   555→                <div>
+   556→   556→                  <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Departmental Courses</h2>
+   557→   557→                  <p className="text-sm text-muted-foreground mt-0.5">
+   558→   558→                    {loading ? 'Loading courses…' : `${filtered.length} course${filtered.length === 1 ? '' : 's'} available`}
+   559→   559→                  </p>
+   560→   560→                </div>
+   561→   561→                <Button
+   562→   562→                  variant="outline"
+   563→   563→                  size="sm"
+   564→   564→                  onClick={() => navigate('resources')}
+   565→   565→                  className="rounded-full w-fit"
+   566→   566→                >
+   567→   567→                  Browse All Resources
+   568→   568→                  <ArrowRight className="h-4 w-4" />
+   569→   569→                </Button>
+   570→   570→              </div>
+   571→   571→              <LevelPills active={activeLevel} onChange={setActiveLevel} />
+   572→   572→            </div>
+   573→   573→
+   574→   574→            {loading ? (
+   575→   575→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   576→   576→                {Array.from({ length: 6 }).map((_, i) => (
+   577→   577→                  <CourseSkeleton key={i} />
+   578→   578→                ))}
+   579→   579→              </div>
+   580→   580→            ) : error ? (
+   581→   581→              <Card className="rounded-2xl border-dashed">
+   582→   582→                <CardContent className="py-12 text-center text-sm text-muted-foreground">
+   583→   583→                  <BookOpen className="h-9 w-9 mx-auto mb-3 opacity-40" />
+   584→   584→                  Couldn&apos;t load courses right now.
+   585→   585→                  <div className="text-xs mt-1 opacity-70">{error}</div>
+   586→   586→                </CardContent>
+   587→   587→              </Card>
+   588→   588→            ) : filtered.length === 0 ? (
+   589→   589→              <Card className="rounded-2xl border-dashed">
+   590→   590→                <CardContent className="py-12 text-center text-sm text-muted-foreground">
+   591→   591→                  <BookOpen className="h-9 w-9 mx-auto mb-3 opacity-40" />
+   592→   592→                  No courses found for this level.
+   593→   593→                </CardContent>
+   594→   594→              </Card>
+   595→   595→            ) : (
+   596→   596→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   597→   597→                {filtered.map((c, i) => (
+   598→   598→                  <CourseCard key={c.id} course={c} index={i} onView={openResources} />
+   599→   599→                ))}
+   600→   600→              </div>
+   601→   601→            )}
+   602→   602→          </TabsContent>
+   603→   603→
+   604→   604→          {/* TIMETABLE */}
+   605→   605→          <TabsContent value="timetable" className="space-y-4 animate-fade-in">
+   606→   606→            <div>
+   607→   607→              <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Weekly Timetable</h2>
+   608→   608→              <p className="text-sm text-muted-foreground mt-0.5">
+   609→   609→                Your class schedule — tap and drag horizontally on mobile to view all days.
+   610→   610→              </p>
+   611→   611→            </div>
+   612→   612→            <TimetableGrid />
+   613→   613→
+   614→   614→            <Card className="rounded-2xl bg-muted/30">
+   615→   615→              <CardContent className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+   616→   616→                <span className="font-semibold text-foreground">Legend:</span>
+   617→   617→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-primary/30 border border-primary/40" /> Quantum Mechanics</span>
+   618→   618→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-gold/30 border border-gold/40" /> Thermal Physics</span>
+   619→   619→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-500/30 border border-emerald-500/40" /> Math Methods</span>
+   620→   620→                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-rose-500/30 border border-rose-500/40" /> Lab Sessions</span>
+   621→   621→              </CardContent>
+   622→   622→            </Card>
+   623→   623→          </TabsContent>
+   624→   624→
+   625→   625→          {/* RESULTS */}
+   626→   626→          <TabsContent value="results" className="animate-fade-in">
+   627→   627→            <div className="mb-5">
+   628→   628→              <h2 className="text-xl md:text-2xl font-bold font-display tracking-tight">Academic Results</h2>
+   629→   629→              <p className="text-sm text-muted-foreground mt-0.5">
+   630→   630→                Track your CGPA and review per-semester course grades.
+   631→   631→              </p>
+   632→   632→            </div>
+   633→   633→            <ResultsPanel />
+   634→   634→          </TabsContent>
+   635→   635→        </Tabs>
+   636→   636→      </section>
+   637→   637→
+   638→   638→      {/* ===================== COURSE RESOURCES DIALOG ===================== */}
+   639→   639→      <Dialog open={!!dialogCourse} onOpenChange={(o) => !o && setDialogCourse(null)}>
+   640→   640→        <DialogContent className="sm:max-w-2xl">
+   641→   641→          <DialogHeader>
+   642→   642→            <DialogTitle className="font-display flex items-center gap-2">
+   643→   643→              <BookOpen className="h-5 w-5 text-primary" />
+   644→   644→              {dialogCourse?.code} — Resources
+   645→   645→            </DialogTitle>
+   646→   646→            <DialogDescription>
+   647→   647→              {dialogCourse?.title} • {dialogCourse?.level} Level • {dialogCourse?.semester} Semester
+   648→   648→            </DialogDescription>
+   649→   649→          </DialogHeader>
+   650→   650→
+   651→   651→          {dialogLoading ? (
+   652→   652→            <div className="space-y-2 py-4">
+   653→   653→              {Array.from({ length: 3 }).map((_, i) => (
+   654→   654→                <div key={i} className="flex items-center gap-3 p-3 rounded-xl border">
+   655→   655→                  <Skeleton className="h-10 w-10 rounded-lg" />
+   656→   656→                  <div className="flex-1 space-y-1.5">
+   657→   657→                    <Skeleton className="h-4 w-3/4" />
+   658→   658→                    <Skeleton className="h-3 w-1/2" />
+   659→   659→                  </div>
+   660→   660→                  <Skeleton className="h-8 w-24 rounded-full" />
+   661→   661→                </div>
+   662→   662→              ))}
+   663→   663→            </div>
+   664→   664→          ) : dialogResources.length === 0 ? (
+   665→   665→            <div className="text-center py-8 text-sm text-muted-foreground">
+   666→   666→              <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+   667→   667→              No resources uploaded for this course yet.
+   668→   668→              <div className="mt-3">
+   669→   669→                <Button size="sm" variant="outline" onClick={() => { setDialogCourse(null); navigate('resources') }} className="rounded-full">
+   670→   670→                  Browse all resources
+   671→   671→                  <ChevronRight className="h-4 w-4" />
+   672→   672→                </Button>
+   673→   673→              </div>
+   674→   674→            </div>
+   675→   675→          ) : (
+   676→   676→            <div className="space-y-2 max-h-[60vh] overflow-y-auto scrollbar-thin pr-1">
+   677→   677→              {dialogResources.map((r) => {
+   678→   678→                const Icon = resourceIcon(r.type)
+   679→   679→                return (
+   680→   680→                  <div
+   681→   681→                    key={r.id}
+   682→   682→                    className="flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/40 transition-colors"
+   683→   683→                  >
+   684→   684→                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+   685→   685→                      <Icon className="h-5 w-5" />
+   686→   686→                    </div>
+   687→   687→                    <div className="flex-1 min-w-0">
+   688→   688→                      <div className="font-medium text-sm leading-snug truncate">{r.title}</div>
+   689→   689→                      {r.description && (
+   690→   690→                        <div className="text-xs text-muted-foreground line-clamp-1">{r.description}</div>
+   691→   691→                      )}
+   692→   692→                      <Badge variant="outline" className="mt-1 rounded-full text-[10px] capitalize">
+   693→   693→                        {r.type.replace('_', ' ')}
+   694→   694→                      </Badge>
+   695→   695→                    </div>
+   696→   696→                    <Button
+   697→   697→                      size="sm"
+   698→   698→                      variant="outline"
+   699→   699→                      onClick={() => toast.message('Downloading…', { description: r.title })}
+   700→   700→                      className="rounded-full shrink-0"
+   701→   701→                    >
+   702→   702→                      <Download className="h-3.5 w-3.5" />
+   703→   703→                      Get
+   704→   704→                    </Button>
+   705→   705→                  </div>
+   706→   706→                )
+   707→   707→              })}
+   708→   708→            </div>
+   709→   709→          )}
+   710→   710→        </DialogContent>
+   711→   711→      </Dialog>
+   712→   712→    </div>
+   713→   713→  )
+   714→   714→}
+   715→   715→
+   716→   716→export default AcademicsView
+   717→   717→

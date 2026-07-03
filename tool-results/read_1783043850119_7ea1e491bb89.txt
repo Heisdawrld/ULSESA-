@@ -1,0 +1,919 @@
+     1→'use client'
+     2→
+     3→import { useState, useRef, useEffect } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import { useNav } from '@/lib/stores/nav-store'
+     6→import { useAuth, type StudentUser } from '@/lib/stores/auth-store'
+     7→import { api } from '@/lib/api-client'
+     8→import { toast } from 'sonner'
+     9→import { Button } from '@/components/ui/button'
+    10→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+    11→import { Input } from '@/components/ui/input'
+    12→import { Label } from '@/components/ui/label'
+    13→import { Badge } from '@/components/ui/badge'
+    14→import { Separator } from '@/components/ui/separator'
+    15→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    16→import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+    17→import {
+    18→  InputOTP,
+    19→  InputOTPGroup,
+    20→  InputOTPSlot,
+    21→  InputOTPSeparator,
+    22→} from '@/components/ui/input-otp'
+    23→import {
+    24→  GraduationCap,
+    25→  ShieldCheck,
+    26→  Mail,
+    27→  Phone,
+    28→  KeyRound,
+    29→  Lock,
+    30→  ArrowRight,
+    31→  ArrowLeft,
+    32→  CheckCircle2,
+    33→  Upload,
+    34→  FileText,
+    35→  Loader2,
+    36→  Eye,
+    37→  EyeOff,
+    38→  Sparkles,
+    39→  UserCheck,
+    40→  IdCard,
+    41→  AlertCircle,
+    42→} from 'lucide-react'
+    43→
+    44→// ===================== Types =====================
+    45→
+    46→interface ClaimedStudent {
+    47→  id: string
+    48→  fullName: string
+    49→  level: string
+    50→  programme: string
+    51→  matricNumber: string
+    52→  email: string | null
+    53→  phone: string | null
+    54→  verificationStatus: string
+    55→  isVerified: boolean
+    56→}
+    57→
+    58→type Step = 0 | 1 | 2 | 3
+    59→type Channel = 'email' | 'phone'
+    60→
+    61→// ===================== Helpers =====================
+    62→
+    63→function maskEmail(email: string | null): string {
+    64→  if (!email) return 'No email on file'
+    65→  const [user, domain] = email.split('@')
+    66→  if (!domain) return email
+    67→  if (user.length <= 2) return `${user[0] ?? ''}***@${domain}`
+    68→  return `${user.slice(0, 2)}***@${domain}`
+    69→}
+    70→
+    71→function maskPhone(phone: string | null): string {
+    72→  if (!phone) return 'No phone on file'
+    73→  const digits = phone.replace(/\D/g, '')
+    74→  if (digits.length < 4) return phone
+    75→  return `***${digits.slice(-4)}`
+    76→}
+    77→
+    78→function toStudentUser(s: ClaimedStudent): StudentUser {
+    79→  return {
+    80→    id: s.id,
+    81→    matricNumber: s.matricNumber,
+    82→    fullName: s.fullName,
+    83→    level: s.level,
+    84→    programme: s.programme,
+    85→    email: s.email,
+    86→    isVerified: s.isVerified,
+    87→  }
+    88→}
+    89→
+    90→// ===================== Step Indicator =====================
+    91→
+    92→const stepDefs = [
+    93→  { n: 1, label: 'Identify', icon: UserCheck },
+    94→  { n: 2, label: 'Verify', icon: ShieldCheck },
+    95→  { n: 3, label: 'Secure', icon: Lock },
+    96→]
+    97→
+    98→function StepIndicator({ current }: { current: Step }) {
+    99→  // current step 0 = mode select (no progress), 1-3 = claim flow
+   100→  const activeIdx = current === 0 ? -1 : current - 1
+   101→  return (
+   102→    <div className="flex items-center justify-center gap-2 mb-6">
+   103→      {stepDefs.map((s, i) => {
+   104→        const done = activeIdx > i
+   105→        const active = activeIdx === i
+   106→        const Icon = s.icon
+   107→        return (
+   108→          <div key={s.n} className="flex items-center gap-2">
+   109→            <div
+   110→              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+   111→                active
+   112→                  ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/30'
+   113→                  : done
+   114→                    ? 'bg-primary/10 text-primary'
+   115→                    : 'bg-muted text-muted-foreground'
+   116→              }`}
+   117→            >
+   118→              <div
+   119→                className={`flex h-5 w-5 items-center justify-center rounded-full ${
+   120→                  active
+   121→                    ? 'bg-primary-foreground/20'
+   122→                    : done
+   123→                      ? 'bg-primary text-primary-foreground'
+   124→                      : 'bg-background border border-border'
+   125→                }`}
+   126→              >
+   127→                {done ? (
+   128→                  <CheckCircle2 className="h-3.5 w-3.5" />
+   129→                ) : (
+   130→                  <Icon className="h-3 w-3" />
+   131→                )}
+   132→              </div>
+   133→              <span className="hidden sm:inline">{s.label}</span>
+   134→            </div>
+   135→            {i < stepDefs.length - 1 && (
+   136→              <div
+   137→                className={`h-px w-6 sm:w-10 ${done ? 'bg-primary' : 'bg-border'}`}
+   138→              />
+   139→            )}
+   140→          </div>
+   141→        )
+   142→      })}
+   143→    </div>
+   144→  )
+   145→}
+   146→
+   147→// ===================== Brand panel (desktop) =====================
+   148→
+   149→function BrandPanel() {
+   150→  return (
+   151→    <div className="hidden lg:flex flex-col justify-between rounded-l-[24px] bg-gradient-to-br from-primary via-primary to-primary/80 text-primary-foreground p-8 relative overflow-hidden">
+   152→      {/* Decorative grid */}
+   153→      <div
+   154→        className="absolute inset-0 opacity-20 pointer-events-none"
+   155→        style={{
+   156→          backgroundImage:
+   157→            'linear-gradient(to right, rgba(255,255,255,.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.2) 1px, transparent 1px)',
+   158→          backgroundSize: '36px 36px',
+   159→        }}
+   160→        aria-hidden
+   161→      />
+   162→      <div className="absolute -top-16 -right-10 h-56 w-56 rounded-full bg-gold/30 blur-3xl pointer-events-none" aria-hidden />
+   163→
+   164→      <div className="relative">
+   165→        <div className="flex items-center gap-2.5 mb-10">
+   166→          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
+   167→            <GraduationCap className="h-5 w-5" />
+   168→          </div>
+   169→          <div>
+   170→            <p className="font-bold font-display leading-tight">Department of Physics</p>
+   171→            <p className="text-[11px] text-primary-foreground/70">University of Lagos</p>
+   172→          </div>
+   173→        </div>
+   174→
+   175→        <h2 className="font-display text-3xl font-bold leading-tight">
+   176→          One Identity.
+   177→          <br />
+   178→          One Community.
+   179→          <br />
+   180→          <span className="text-gradient-gold">One Platform.</span>
+   181→        </h2>
+   182→        <p className="mt-4 text-sm text-primary-foreground/80 max-w-xs">
+   183→          Claim your verified student account to vote, access resources, and join the physics community securely.
+   184→        </p>
+   185→      </div>
+   186→
+   187→      <div className="relative space-y-3 mt-10">
+   188→        {[
+   189→          { icon: ShieldCheck, text: 'Matric-verified identity' },
+   190→          { icon: Lock, text: 'Encrypted password & tokens' },
+   191→          { icon: CheckCircle2, text: 'Anonymous, fair elections' },
+   192→        ].map((f) => {
+   193→          const Icon = f.icon
+   194→          return (
+   195→            <div key={f.text} className="flex items-center gap-3 text-sm">
+   196→              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 backdrop-blur">
+   197→                <Icon className="h-4 w-4" />
+   198→              </div>
+   199→              <span className="text-primary-foreground/90">{f.text}</span>
+   200→            </div>
+   201→          )
+   202→        })}
+   203→      </div>
+   204→    </div>
+   205→  )
+   206→}
+   207→
+   208→// ===================== Loading button helper =====================
+   209→
+   210→function LoadingButton({
+   211→  loading,
+   212→  children,
+   213→  ...props
+   214→}: React.ComponentProps<typeof Button> & { loading?: boolean }) {
+   215→  return (
+   216→    <Button disabled={loading || props.disabled} {...props}>
+   217→      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+   218→      {children}
+   219→    </Button>
+   220→  )
+   221→}
+   222→
+   223→// ===================== Main view =====================
+   224→
+   225→export function AuthView() {
+   226→  const { navigate } = useNav()
+   227→  const { setStudent } = useAuth()
+   228→
+   229→  const [mode, setMode] = useState<'claim' | 'signin'>('claim')
+   230→  const [step, setStep] = useState<Step>(0)
+   231→
+   232→  // Shared state
+   233→  const [matric, setMatric] = useState('')
+   234→  const [student, setStudentInfo] = useState<ClaimedStudent | null>(null)
+   235→  const [channel, setChannel] = useState<Channel>('email')
+   236→  const [otpSent, setOtpSent] = useState(false)
+   237→  const [otp, setOtp] = useState('')
+   238→  const [demoOtp, setDemoOtp] = useState<string | null>(null)
+   239→  const [idDocName, setIdDocName] = useState<string | null>(null)
+   240→  const [password, setPassword] = useState('')
+   241→  const [confirmPassword, setConfirmPassword] = useState('')
+   242→  const [showPwd, setShowPwd] = useState(false)
+   243→  const [showConfirmPwd, setShowConfirmPwd] = useState(false)
+   244→
+   245→  // Sign-in state
+   246→  const [signinMatric, setSigninMatric] = useState('')
+   247→  const [signinPwd, setSigninPwd] = useState('')
+   248→  const [showSigninPwd, setShowSigninPwd] = useState(false)
+   249→
+   250→  // Loading flags
+   251→  const [claiming, setClaiming] = useState(false)
+   252→  const [sendingOtp, setSendingOtp] = useState(false)
+   253→  const [verifying, setVerifying] = useState(false)
+   254→  const [completing, setCompleting] = useState(false)
+   255→  const [signingIn, setSigningIn] = useState(false)
+   256→
+   257→  const fileInputRef = useRef<HTMLInputElement>(null)
+   258→
+   259→  // If a session already exists, send user to dashboard
+   260→  useEffect(() => {
+   261→    if (useAuth.getState().isAuthenticated()) {
+   262→      navigate('dashboard')
+   263→    }
+   264→  }, [navigate])
+   265→
+   266→  function resetClaimFlow() {
+   267→    setStep(0)
+   268→    setMatric('')
+   269→    setStudentInfo(null)
+   270→    setChannel('email')
+   271→    setOtpSent(false)
+   272→    setOtp('')
+   273→    setDemoOtp(null)
+   274→    setIdDocName(null)
+   275→    setPassword('')
+   276→    setConfirmPassword('')
+   277→  }
+   278→
+   279→  // ---------- Step 1: Claim ----------
+   280→  async function handleClaim() {
+   281→    const trimmed = matric.trim()
+   282→    if (!trimmed) {
+   283→      toast.error('Enter your matric number')
+   284→      return
+   285→    }
+   286→    setClaiming(true)
+   287→    try {
+   288→      const res = await api.post<{ student: ClaimedStudent }>('/auth/claim', {
+   289→        matricNumber: trimmed,
+   290→      })
+   291→      setStudentInfo(res.student)
+   292→      toast.success(`Welcome, ${res.student.fullName.split(' ')[0]}!`)
+   293→      if (res.student.isVerified) {
+   294→        // Already verified → switch to sign in
+   295→        toast.info('Your account is already verified. Please sign in.')
+   296→        setMode('signin')
+   297→        setSigninMatric(res.student.matricNumber)
+   298→        resetClaimFlow()
+   299→      } else {
+   300→        // Go to step 1: confirm identity, then advance to step 2 (verify)
+   301→        setStep(1)
+   302→      }
+   303→    } catch (e) {
+   304→      toast.error(e instanceof Error ? e.message : 'Could not verify matric number')
+   305→    } finally {
+   306→      setClaiming(false)
+   307→    }
+   308→  }
+   309→
+   310→  // ---------- Step 2: Send OTP ----------
+   311→  async function handleSendOtp() {
+   312→    if (!student) return
+   313→    setSendingOtp(true)
+   314→    try {
+   315→      const res = await api.post<{ message: string; otp?: string }>('/auth/send-otp', {
+   316→        matricNumber: student.matricNumber,
+   317→        channel,
+   318→      })
+   319→      setOtpSent(true)
+   320→      setDemoOtp(res.otp ?? null)
+   321→      toast.success(`OTP sent to your ${channel}`)
+   322→    } catch (e) {
+   323→      toast.error(e instanceof Error ? e.message : 'Failed to send OTP')
+   324→    } finally {
+   325→      setSendingOtp(false)
+   326→    }
+   327→  }
+   328→
+   329→  // ---------- Step 2: Verify OTP ----------
+   330→  async function handleVerifyOtp() {
+   331→    if (!student) return
+   332→    if (otp.length < 4) {
+   333→      toast.error('Enter the full OTP code')
+   334→      return
+   335→    }
+   336→    setVerifying(true)
+   337→    try {
+   338→      await api.post('/auth/verify-otp', {
+   339→        matricNumber: student.matricNumber,
+   340→        otp,
+   341→      })
+   342→      toast.success('Identity verified!')
+   343→      setStep(3)
+   344→    } catch (e) {
+   345→      toast.error(e instanceof Error ? e.message : 'Invalid or expired OTP')
+   346→    } finally {
+   347→      setVerifying(false)
+   348→    }
+   349→  }
+   350→
+   351→  // ---------- Step 3: Set password ----------
+   352→  async function handleComplete() {
+   353→    if (!student) return
+   354→    if (password.length < 8) {
+   355→      toast.error('Password must be at least 8 characters')
+   356→      return
+   357→    }
+   358→    if (password !== confirmPassword) {
+   359→      toast.error('Passwords do not match')
+   360→      return
+   361→    }
+   362→    setCompleting(true)
+   363→    try {
+   364→      const res = await api.post<{ student: ClaimedStudent; token: string }>(
+   365→        '/auth/set-password',
+   366→        {
+   367→          matricNumber: student.matricNumber,
+   368→          password,
+   369→          idDocumentUrl: idDocName ?? undefined,
+   370→        }
+   371→      )
+   372→      setStudent(toStudentUser(res.student), res.token)
+   373→      toast.success('Account secured! Welcome to DDP.')
+   374→      navigate('dashboard')
+   375→    } catch (e) {
+   376→      toast.error(e instanceof Error ? e.message : 'Failed to complete registration')
+   377→    } finally {
+   378→      setCompleting(false)
+   379→    }
+   380→  }
+   381→
+   382→  // ---------- Sign in ----------
+   383→  async function handleSignIn() {
+   384→    const m = signinMatric.trim()
+   385→    if (!m || !signinPwd) {
+   386→      toast.error('Enter your matric number and password')
+   387→      return
+   388→    }
+   389→    setSigningIn(true)
+   390→    try {
+   391→      const res = await api.post<{ student: ClaimedStudent; token: string }>(
+   392→        '/auth/login',
+   393→        { matricNumber: m, password: signinPwd }
+   394→      )
+   395→      setStudent(toStudentUser(res.student), res.token)
+   396→      toast.success(`Welcome back, ${res.student.fullName.split(' ')[0]}!`)
+   397→      navigate('dashboard')
+   398→    } catch (e) {
+   399→      toast.error(e instanceof Error ? e.message : 'Invalid credentials')
+   400→    } finally {
+   401→      setSigningIn(false)
+   402→    }
+   403→  }
+   404→
+   405→  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+   406→    const f = e.target.files?.[0]
+   407→    if (f) {
+   408→      setIdDocName(f.name)
+   409→      toast.success(`ID document ready: ${f.name}`)
+   410→    }
+   411→  }
+   412→
+   413→  // ---------- Render ----------
+   414→  return (
+   415→    <div className="min-h-[calc(100vh-4rem)] relative overflow-hidden flex items-center justify-center px-4 py-10 md:py-16">
+   416→      {/* Background */}
+   417→      <div className="absolute inset-0 bg-grid pointer-events-none" aria-hidden />
+   418→      <div className="absolute -top-20 left-1/2 -translate-x-1/2 h-72 w-[60rem] rounded-full bg-primary/15 blur-3xl pointer-events-none" aria-hidden />
+   419→      <div className="absolute bottom-0 right-0 h-48 w-48 rounded-full bg-gold/15 blur-3xl pointer-events-none" aria-hidden />
+   420→
+   421→      <div className="relative w-full max-w-4xl">
+   422→        <div className="grid lg:grid-cols-2 rounded-[24px] overflow-hidden shadow-2xl shadow-primary/10 border border-border/60 bg-card">
+   423→          <BrandPanel />
+   424→
+   425→          {/* Right side: form */}
+   426→          <div className="p-6 md:p-8">
+   427→            <div className="lg:hidden flex items-center gap-2 mb-5">
+   428→              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+   429→                <GraduationCap className="h-5 w-5" />
+   430→              </div>
+   431→              <div>
+   432→                <p className="font-bold font-display text-sm leading-tight">Department of Physics</p>
+   433→                <p className="text-[10px] text-muted-foreground">University of Lagos • DDP</p>
+   434→              </div>
+   435→            </div>
+   436→
+   437→            {/* Mode select (Step 0) */}
+   438→            {step === 0 && (
+   439→              <div className="animate-fade-in">
+   440→                <h1 className="text-2xl font-bold font-display tracking-tight">Get started</h1>
+   441→                <p className="text-sm text-muted-foreground mt-1">
+   442→                  Claim your account if it&apos;s your first time, or sign in to continue.
+   443→                </p>
+   444→
+   445→                <Tabs value={mode} onValueChange={(v) => setMode(v as 'claim' | 'signin')} className="mt-6">
+   446→                  <TabsList className="grid w-full grid-cols-2">
+   447→                    <TabsTrigger value="claim">
+   448→                      <IdCard className="h-3.5 w-3.5 mr-1.5" />
+   449→                      Claim Account
+   450→                    </TabsTrigger>
+   451→                    <TabsTrigger value="signin">
+   452→                      <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+   453→                      Sign In
+   454→                    </TabsTrigger>
+   455→                  </TabsList>
+   456→
+   457→                  {/* Claim account */}
+   458→                  <TabsContent value="claim" className="mt-5 space-y-4">
+   459→                    <div className="space-y-2">
+   460→                      <Label htmlFor="matric">Matric Number</Label>
+   461→                      <Input
+   462→                        id="matric"
+   463→                        placeholder="e.g. PHS/2023/001"
+   464→                        value={matric}
+   465→                        onChange={(e) => setMatric(e.target.value)}
+   466→                        onKeyDown={(e) => e.key === 'Enter' && handleClaim()}
+   467→                        className="h-11"
+   468→                      />
+   469→                      <p className="text-xs text-muted-foreground">
+   470→                        Use the format on your student ID card.
+   471→                      </p>
+   472→                    </div>
+   473→                    <LoadingButton
+   474→                      loading={claiming}
+   475→                      onClick={handleClaim}
+   476→                      className="w-full h-11 rounded-full"
+   477→                    >
+   478→                      Continue
+   479→                      <ArrowRight className="h-4 w-4" />
+   480→                    </LoadingButton>
+   481→                    <div className="text-center text-xs text-muted-foreground">
+   482→                      New to DDP? Your account is pre-created — just claim it.
+   483→                    </div>
+   484→                  </TabsContent>
+   485→
+   486→                  {/* Sign in */}
+   487→                  <TabsContent value="signin" className="mt-5 space-y-4">
+   488→                    <div className="space-y-2">
+   489→                      <Label htmlFor="signin-matric">Matric Number</Label>
+   490→                      <Input
+   491→                        id="signin-matric"
+   492→                        placeholder="e.g. PHS/2023/001"
+   493→                        value={signinMatric}
+   494→                        onChange={(e) => setSigninMatric(e.target.value)}
+   495→                        className="h-11"
+   496→                      />
+   497→                    </div>
+   498→                    <div className="space-y-2">
+   499→                      <div className="flex items-center justify-between">
+   500→                        <Label htmlFor="signin-pwd">Password</Label>
+   501→                        <button
+   502→                          type="button"
+   503→                          onClick={() => toast.info('Contact the admin to reset your password.')}
+   504→                          className="text-xs text-primary hover:underline"
+   505→                        >
+   506→                          Forgot?
+   507→                        </button>
+   508→                      </div>
+   509→                      <div className="relative">
+   510→                        <Input
+   511→                          id="signin-pwd"
+   512→                          type={showSigninPwd ? 'text' : 'password'}
+   513→                          placeholder="••••••••"
+   514→                          value={signinPwd}
+   515→                          onChange={(e) => setSigninPwd(e.target.value)}
+   516→                          onKeyDown={(e) => e.key === 'Enter' && handleSignIn()}
+   517→                          className="h-11 pr-10"
+   518→                        />
+   519→                        <button
+   520→                          type="button"
+   521→                          onClick={() => setShowSigninPwd((v) => !v)}
+   522→                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   523→                        >
+   524→                          {showSigninPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   525→                        </button>
+   526→                      </div>
+   527→                    </div>
+   528→                    <LoadingButton
+   529→                      loading={signingIn}
+   530→                      onClick={handleSignIn}
+   531→                      className="w-full h-11 rounded-full"
+   532→                    >
+   533→                      Sign In
+   534→                      <ArrowRight className="h-4 w-4" />
+   535→                    </LoadingButton>
+   536→                    <div className="text-center text-xs text-muted-foreground">
+   537→                      Demo: <code className="font-mono">PHS/2023/001</code> / <code className="font-mono">student123</code>
+   538→                    </div>
+   539→                  </TabsContent>
+   540→                </Tabs>
+   541→              </div>
+   542→            )}
+   543→
+   544→            {/* Steps 1-3: Claim flow */}
+   545→            {step > 0 && (
+   546→              <div>
+   547→                <StepIndicator current={step} />
+   548→
+   549→                <AnimatePresence mode="wait">
+   550→                  {/* Step 1 — Identify (confirmation of who was found) */}
+   551→                  {step === 1 && student && (
+   552→                    <motion.div
+   553→                      key="step1"
+   554→                      initial={{ opacity: 0, x: 20 }}
+   555→                      animate={{ opacity: 1, x: 0 }}
+   556→                      exit={{ opacity: 0, x: -20 }}
+   557→                      transition={{ duration: 0.25 }}
+   558→                      className="space-y-4"
+   559→                    >
+   560→                      <h2 className="text-xl font-bold font-display">Confirm your identity</h2>
+   561→                      <Card className="rounded-2xl bg-primary/5 border-primary/20">
+   562→                        <CardContent className="flex items-center gap-3 py-2">
+   563→                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold font-display">
+   564→                            {student.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
+   565→                          </div>
+   566→                          <div className="min-w-0">
+   567→                            <p className="font-semibold truncate">{student.fullName}</p>
+   568→                            <p className="text-xs text-muted-foreground">
+   569→                              {student.programme} • {student.level} Level
+   570→                            </p>
+   571→                            <p className="text-xs text-muted-foreground font-mono">{student.matricNumber}</p>
+   572→                          </div>
+   573→                        </CardContent>
+   574→                      </Card>
+   575→                      <Button onClick={() => setStep(2)} className="w-full h-11 rounded-full">
+   576→                        Continue to verification
+   577→                        <ArrowRight className="h-4 w-4" />
+   578→                      </Button>
+   579→                    </motion.div>
+   580→                  )}
+   581→
+   582→                  {/* Step 2 — Verify identity */}
+   583→                  {step === 2 && student && (
+   584→                    <motion.div
+   585→                      key="step2"
+   586→                      initial={{ opacity: 0, x: 20 }}
+   587→                      animate={{ opacity: 1, x: 0 }}
+   588→                      exit={{ opacity: 0, x: -20 }}
+   589→                      transition={{ duration: 0.25 }}
+   590→                      className="space-y-4"
+   591→                    >
+   592→                      <div>
+   593→                        <h2 className="text-xl font-bold font-display">Verify your identity</h2>
+   594→                        <p className="text-sm text-muted-foreground">
+   595→                          Choose where to receive your one-time code.
+   596→                        </p>
+   597→                      </div>
+   598→
+   599→                      {/* Contact preview */}
+   600→                      <div className="grid grid-cols-2 gap-2">
+   601→                        <div className="rounded-xl border p-3 text-xs">
+   602→                          <div className="flex items-center gap-1.5 text-muted-foreground">
+   603→                            <Mail className="h-3 w-3" /> Email
+   604→                          </div>
+   605→                          <p className="font-medium mt-1 truncate">{maskEmail(student.email)}</p>
+   606→                        </div>
+   607→                        <div className="rounded-xl border p-3 text-xs">
+   608→                          <div className="flex items-center gap-1.5 text-muted-foreground">
+   609→                            <Phone className="h-3 w-3" /> Phone
+   610→                          </div>
+   611→                          <p className="font-medium mt-1">{maskPhone(student.phone)}</p>
+   612→                        </div>
+   613→                      </div>
+   614→
+   615→                      {/* Channel selection */}
+   616→                      <RadioGroup
+   617→                        value={channel}
+   618→                        onValueChange={(v) => setChannel(v as Channel)}
+   619→                        className="grid grid-cols-2 gap-2"
+   620→                      >
+   621→                        <Label
+   622→                          htmlFor="ch-email"
+   623→                          className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
+   624→                            channel === 'email' ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+   625→                          }`}
+   626→                        >
+   627→                          <RadioGroupItem id="ch-email" value="email" />
+   628→                          <Mail className="h-4 w-4" />
+   629→                          <div>
+   630→                            <p className="text-sm font-medium">Email</p>
+   631→                            <p className="text-[11px] text-muted-foreground">Recommended</p>
+   632→                          </div>
+   633→                        </Label>
+   634→                        <Label
+   635→                          htmlFor="ch-phone"
+   636→                          className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
+   637→                            channel === 'phone' ? 'border-primary bg-primary/5' : 'hover:bg-accent'
+   638→                          }`}
+   639→                        >
+   640→                          <RadioGroupItem id="ch-phone" value="phone" />
+   641→                          <Phone className="h-4 w-4" />
+   642→                          <div>
+   643→                            <p className="text-sm font-medium">SMS</p>
+   644→                            <p className="text-[11px] text-muted-foreground">Carrier rates apply</p>
+   645→                          </div>
+   646→                        </Label>
+   647→                      </RadioGroup>
+   648→
+   649→                      {/* Send OTP button */}
+   650→                      {!otpSent && (
+   651→                        <LoadingButton
+   652→                          loading={sendingOtp}
+   653→                          onClick={handleSendOtp}
+   654→                          className="w-full h-11 rounded-full"
+   655→                        >
+   656→                          Send OTP to {channel === 'email' ? 'email' : 'phone'}
+   657→                          <ArrowRight className="h-4 w-4" />
+   658→                        </LoadingButton>
+   659→                      )}
+   660→
+   661→                      {/* OTP input */}
+   662→                      {otpSent && (
+   663→                        <motion.div
+   664→                          initial={{ opacity: 0, height: 0 }}
+   665→                          animate={{ opacity: 1, height: 'auto' }}
+   666→                          className="space-y-3"
+   667→                        >
+   668→                          {demoOtp && (
+   669→                            <div className="flex items-start gap-2 rounded-xl bg-gold/10 border border-gold/30 p-3 text-xs">
+   670→                              <Sparkles className="h-4 w-4 text-gold mt-0.5 shrink-0" />
+   671→                              <div>
+   672→                                <p className="font-semibold text-gold-foreground dark:text-gold">
+   673→                                  Demo mode
+   674→                                </p>
+   675→                                <p className="text-muted-foreground">
+   676→                                  Your OTP is{' '}
+   677→                                  <code className="font-mono font-bold text-foreground">{demoOtp}</code>
+   678→                                </p>
+   679→                              </div>
+   680→                            </div>
+   681→                          )}
+   682→
+   683→                          <Label>Enter OTP</Label>
+   684→                          <div className="flex justify-center">
+   685→                            <InputOTP
+   686→                              maxLength={6}
+   687→                              value={otp}
+   688→                              onChange={(v) => setOtp(v)}
+   689→                            >
+   690→                              <InputOTPGroup>
+   691→                                <InputOTPSlot index={0} className="h-11 w-11 text-base" />
+   692→                                <InputOTPSlot index={1} className="h-11 w-11 text-base" />
+   693→                                <InputOTPSlot index={2} className="h-11 w-11 text-base" />
+   694→                              </InputOTPGroup>
+   695→                              <InputOTPSeparator />
+   696→                              <InputOTPGroup>
+   697→                                <InputOTPSlot index={3} className="h-11 w-11 text-base" />
+   698→                                <InputOTPSlot index={4} className="h-11 w-11 text-base" />
+   699→                                <InputOTPSlot index={5} className="h-11 w-11 text-base" />
+   700→                              </InputOTPGroup>
+   701→                            </InputOTP>
+   702→                          </div>
+   703→
+   704→                          <div className="flex items-center justify-between text-xs">
+   705→                            <button
+   706→                              type="button"
+   707→                              onClick={handleSendOtp}
+   708→                              disabled={sendingOtp}
+   709→                              className="text-primary hover:underline disabled:opacity-50"
+   710→                            >
+   711→                              Resend code
+   712→                            </button>
+   713→                            <button
+   714→                              type="button"
+   715→                              onClick={() => {
+   716→                                setOtpSent(false)
+   717→                                setOtp('')
+   718→                                setDemoOtp(null)
+   719→                              }}
+   720→                              className="text-muted-foreground hover:underline"
+   721→                            >
+   722→                              Change channel
+   723→                            </button>
+   724→                          </div>
+   725→
+   726→                          <LoadingButton
+   727→                            loading={verifying}
+   728→                            onClick={handleVerifyOtp}
+   729→                            className="w-full h-11 rounded-full"
+   730→                          >
+   731→                            Verify code
+   732→                            <CheckCircle2 className="h-4 w-4" />
+   733→                          </LoadingButton>
+   734→                        </motion.div>
+   735→                      )}
+   736→
+   737→                      {/* ID upload */}
+   738→                      <Separator className="my-2" />
+   739→                      <div>
+   740→                        <Label className="mb-2">Upload Student ID (optional)</Label>
+   741→                        <input
+   742→                          ref={fileInputRef}
+   743→                          type="file"
+   744→                          accept="image/*,.pdf"
+   745→                          onChange={handleFileChange}
+   746→                          className="hidden"
+   747→                        />
+   748→                        <button
+   749→                          type="button"
+   750→                          onClick={() => fileInputRef.current?.click()}
+   751→                          className={`w-full flex items-center gap-3 rounded-xl border border-dashed p-4 text-left transition-colors hover:bg-accent ${
+   752→                            idDocName ? 'border-primary/40 bg-primary/5' : 'border-border'
+   753→                          }`}
+   754→                        >
+   755→                          <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${idDocName ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+   756→                            {idDocName ? <FileText className="h-5 w-5" /> : <Upload className="h-5 w-5" />}
+   757→                          </div>
+   758→                          <div className="min-w-0 flex-1">
+   759→                            {idDocName ? (
+   760→                              <>
+   761→                                <p className="text-sm font-medium truncate">{idDocName}</p>
+   762→                                <p className="text-[11px] text-muted-foreground">Tap to replace</p>
+   763→                              </>
+   764→                            ) : (
+   765→                              <>
+   766→                                <p className="text-sm font-medium">Upload ID card or schedule</p>
+   767→                                <p className="text-[11px] text-muted-foreground">PNG, JPG or PDF • speeds up verification</p>
+   768→                              </>
+   769→                            )}
+   770→                          </div>
+   771→                        </button>
+   772→                      </div>
+   773→
+   774→                      <Button
+   775→                        variant="ghost"
+   776→                        onClick={() => setStep(0)}
+   777→                        className="w-full"
+   778→                      >
+   779→                        <ArrowLeft className="h-4 w-4" />
+   780→                        Back
+   781→                      </Button>
+   782→                    </motion.div>
+   783→                  )}
+   784→
+   785→                  {/* Step 3 — Set password */}
+   786→                  {step === 3 && student && (
+   787→                    <motion.div
+   788→                      key="step3"
+   789→                      initial={{ opacity: 0, x: 20 }}
+   790→                      animate={{ opacity: 1, x: 0 }}
+   791→                      exit={{ opacity: 0, x: -20 }}
+   792→                      transition={{ duration: 0.25 }}
+   793→                      className="space-y-4"
+   794→                    >
+   795→                      <div>
+   796→                        <h2 className="text-xl font-bold font-display">Secure your account</h2>
+   797→                        <p className="text-sm text-muted-foreground">
+   798→                          Set a strong password to finish claiming your account.
+   799→                        </p>
+   800→                      </div>
+   801→
+   802→                      <div className="space-y-2">
+   803→                        <Label htmlFor="pwd">Password</Label>
+   804→                        <div className="relative">
+   805→                          <Input
+   806→                            id="pwd"
+   807→                            type={showPwd ? 'text' : 'password'}
+   808→                            placeholder="At least 8 characters"
+   809→                            value={password}
+   810→                            onChange={(e) => setPassword(e.target.value)}
+   811→                            className="h-11 pr-10"
+   812→                          />
+   813→                          <button
+   814→                            type="button"
+   815→                            onClick={() => setShowPwd((v) => !v)}
+   816→                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   817→                          >
+   818→                            {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   819→                          </button>
+   820→                        </div>
+   821→                      </div>
+   822→
+   823→                      <div className="space-y-2">
+   824→                        <Label htmlFor="confirm-pwd">Confirm password</Label>
+   825→                        <div className="relative">
+   826→                          <Input
+   827→                            id="confirm-pwd"
+   828→                            type={showConfirmPwd ? 'text' : 'password'}
+   829→                            placeholder="Re-enter your password"
+   830→                            value={confirmPassword}
+   831→                            onChange={(e) => setConfirmPassword(e.target.value)}
+   832→                            className="h-11 pr-10"
+   833→                          />
+   834→                          <button
+   835→                            type="button"
+   836→                            onClick={() => setShowConfirmPwd((v) => !v)}
+   837→                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   838→                          >
+   839→                            {showConfirmPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   840→                          </button>
+   841→                        </div>
+   842→                        {confirmPassword.length > 0 && (
+   843→                          <p className={`text-xs flex items-center gap-1 ${password === confirmPassword ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
+   844→                            {password === confirmPassword ? (
+   845→                              <>
+   846→                                <CheckCircle2 className="h-3 w-3" /> Passwords match
+   847→                              </>
+   848→                            ) : (
+   849→                              <>
+   850→                                <AlertCircle className="h-3 w-3" /> Passwords don&apos;t match
+   851→                              </>
+   852→                            )}
+   853→                          </p>
+   854→                        )}
+   855→                      </div>
+   856→
+   857→                      {/* Password strength meter */}
+   858→                      <div className="space-y-1.5">
+   859→                        <div className="flex gap-1">
+   860→                          {[0, 1, 2, 3].map((i) => {
+   861→                            const thresholds = [8, 10, 12, 14]
+   862→                            const colors = ['bg-destructive', 'bg-gold', 'bg-primary', 'bg-emerald-500']
+   863→                            const reached = password.length >= thresholds[i]
+   864→                            return (
+   865→                              <div
+   866→                                key={i}
+   867→                                className={`h-1.5 flex-1 rounded-full transition-colors ${
+   868→                                  reached ? colors[i] : 'bg-muted'
+   869→                                }`}
+   870→                              />
+   871→                            )
+   872→                          })}
+   873→                        </div>
+   874→                        <p className="text-[11px] text-muted-foreground">
+   875→                          Use 8+ characters with a mix of letters, numbers and symbols.
+   876→                        </p>
+   877→                      </div>
+   878→
+   879→                      <LoadingButton
+   880→                        loading={completing}
+   881→                        onClick={handleComplete}
+   882→                        className="w-full h-11 rounded-full"
+   883→                      >
+   884→                        Complete registration
+   885→                        <CheckCircle2 className="h-4 w-4" />
+   886→                      </LoadingButton>
+   887→
+   888→                      <Button
+   889→                        variant="ghost"
+   890→                        onClick={() => setStep(2)}
+   891→                        className="w-full"
+   892→                      >
+   893→                        <ArrowLeft className="h-4 w-4" />
+   894→                        Back
+   895→                      </Button>
+   896→                    </motion.div>
+   897→                  )}
+   898→                </AnimatePresence>
+   899→              </div>
+   900→            )}
+   901→
+   902→            <Separator className="my-6" />
+   903→            <p className="text-center text-[11px] text-muted-foreground">
+   904→              By continuing you agree to the DDP terms & privacy policy.
+   905→              <br />
+   906→              Need help?{' '}
+   907→              <button onClick={() => navigate('help')} className="text-primary hover:underline">
+   908→                Visit help center
+   909→              </button>
+   910→            </p>
+   911→          </div>
+   912→        </div>
+   913→      </div>
+   914→    </div>
+   915→  )
+   916→}
+   917→
+   918→export default AuthView
+   919→

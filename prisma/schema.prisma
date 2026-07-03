@@ -1,0 +1,202 @@
+// Department Digital Platform (DDP) - Prisma Schema
+// Built for UNILAG Physics Department
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============ AUTH & USERS ============
+
+model Student {
+  id                  String   @id @default(cuid())
+  matricNumber        String   @unique
+  fullName            String
+  level               String   // 100, 200, 300, 400, 500
+  programme           String   // BSc Physics, BSc Astrophysics, etc.
+  email               String?
+  phone               String?
+  password            String?
+  isVerified          Boolean  @default(false)
+  verificationStatus  String   @default("pending") // pending, submitted, approved, rejected
+  idDocumentUrl       String?
+  hasVoted            Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  activities          Activity[]
+  verificationLogs    VerificationLog[]
+  votes               Vote[]
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("admin") // admin, superadmin
+  createdAt DateTime @default(now())
+
+  auditLogs   AuditLog[]
+  verificationActions VerificationLog[]
+}
+
+// ============ ELECTION ============
+
+model Election {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      String   @default("upcoming") // upcoming, active, ended, cancelled
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  positions   Position[]
+  votes       Vote[]
+}
+
+model Position {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  electionId  String
+  order       Int      @default(0)
+  election    Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+
+  candidates  Candidate[]
+  votes       Vote[]
+}
+
+model Candidate {
+  id          String   @id @default(cuid())
+  name        String
+  positionId  String
+  manifesto   String?
+  photoUrl    String?
+  level       String?
+  programme   String?
+  bio         String?
+  isVerified  Boolean  @default(true)
+  voteCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  position    Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  votes       Vote[]
+}
+
+model Vote {
+  id          String   @id @default(cuid())
+  electionId  String
+  positionId  String
+  candidateId String
+  studentId   String   // stored for one-vote-per-student enforcement, but not displayed publicly
+  timestamp   DateTime @default(now())
+  // Anonymous: no relation back to student identity in public views
+
+  election    Election  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  position    Position  @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  student     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, positionId]) // one vote per student per position
+}
+
+// ============ CONTENT ============
+
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  category  String   @default("general") // general, academic, election, event
+  createdAt DateTime @default(now())
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  date        DateTime
+  time        String
+  location    String?
+  category    String   @default("upcoming") // upcoming, past
+  createdAt   DateTime @default(now())
+}
+
+model Course {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  title          String
+  level          String
+  semester       String   // First, Second
+  description    String?
+  department     String   @default("General") // Biology Edu, Chemistry Edu, Mathematics Edu, Physics Edu, Integrated Science Edu, General
+  googleDriveUrl String?  // Google Drive folder link containing course materials
+  createdAt      DateTime @default(now())
+
+  resources      Resource[]
+}
+
+model Resource {
+  id          String   @id @default(cuid())
+  title       String
+  type        String   // note, past_question, textbook, slides, video
+  url         String
+  description String?
+  courseId     String?
+  createdAt   DateTime @default(now())
+
+  course      Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+// ============ TRANSPARENCY & AUDIT ============
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String   // approve_student, reject_student, start_election, end_election, etc.
+  target    String?  // what was acted upon
+  details   String?
+  timestamp DateTime @default(now())
+
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+}
+
+model VerificationLog {
+  id          String   @id @default(cuid())
+  studentId   String
+  adminId     String?
+  action      String   // submitted, approved, rejected
+  notes       String?
+  timestamp   DateTime @default(now())
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  admin       Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  studentId   String
+  action      String   // account_verified, downloaded_notes, voted, etc.
+  details     String?
+  timestamp   DateTime @default(now())
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+// ============ COMMUNITY ============
+
+model CommunityGroup {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  category      String   @default("general") // general, level, department, sports, academic, announcement
+  whatsappLink  String   // WhatsApp group invite link
+  memberCount   Int      @default(0)
+  createdAt     DateTime @default(now())
+}

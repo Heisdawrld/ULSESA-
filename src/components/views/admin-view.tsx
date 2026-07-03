@@ -1,0 +1,2096 @@
+'use client'
+
+import { useEffect, useState, useMemo, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import Image from 'next/image'
+import { toast } from 'sonner'
+import {
+  LayoutDashboard,
+  Users,
+  ShieldCheck,
+  Vote,
+  ScrollText,
+  Settings,
+  LogOut,
+  Menu,
+  Activity,
+  BadgeCheck,
+  Search,
+  Filter,
+  Eye,
+  CheckCircle2,
+  XCircle,
+  PlayCircle,
+  StopCircle,
+  Megaphone,
+  RefreshCw,
+  ExternalLink,
+  FileText,
+  Loader2,
+} from 'lucide-react'
+
+import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
+import { api } from '@/lib/api-client'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+} from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Progress } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
+
+// ===================== Types =====================
+type Section =
+  | 'dashboard'
+  | 'students'
+  | 'verification'
+  | 'election'
+  | 'audit'
+  | 'settings'
+
+interface AdminStats {
+  totalStudents: number
+  verifiedStudents: number
+  eligibleVoters: number
+  votesCast: number
+  turnout: number
+  systemHealth: string
+  electionStatus: string
+  electionTitle?: string | null
+}
+
+interface StudentRow {
+  id: string
+  matricNumber: string
+  fullName: string
+  level: string
+  programme: string
+  email: string | null
+  phone: string | null
+  isVerified: boolean
+  verificationStatus: string
+  hasVoted?: boolean
+  idDocumentUrl?: string | null
+  createdAt: string
+  updatedAt?: string
+}
+
+interface VerificationRequest extends StudentRow {
+  verificationLogs?: Array<{
+    id: string
+    action: string
+    notes: string | null
+    timestamp: string
+    admin: { id: string; name: string; username: string }
+  }>
+}
+
+interface AuditLog {
+  id: string
+  action: string
+  target: string | null
+  details: string | null
+  timestamp: string
+  admin: { id: string; name: string; username: string } | null
+}
+
+interface ElectionPosition {
+  id: string
+  title: string
+  order: number
+  voteCount?: number
+  _count?: { votes: number }
+  candidates: Array<{
+    id: string
+    name: string
+    voteCount: number
+  }>
+}
+
+interface Election {
+  id: string
+  title: string
+  status: string
+  startDate: string
+  endDate: string | null
+  positions?: ElectionPosition[]
+}
+
+// ===================== Helpers =====================
+function formatRelativeTime(dateStr: string) {
+  const date = new Date(dateStr)
+  const diff = Date.now() - date.getTime()
+  const seconds = Math.floor(diff / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (days > 0) return `${days}d ago`
+  if (hours > 0) return `${hours}h ago`
+  if (minutes > 0) return `${minutes}m ago`
+  return 'just now'
+}
+
+function formatDateTime(dateStr: string) {
+  return new Date(dateStr).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((n) => n[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case 'approved':
+      return (
+        <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+          Approved
+        </Badge>
+      )
+    case 'pending':
+      return (
+        <Badge variant="secondary" className="text-muted-foreground">
+          Pending
+        </Badge>
+      )
+    case 'submitted':
+      return (
+        <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent">
+          Submitted
+        </Badge>
+      )
+    case 'rejected':
+      return (
+        <Badge className="border-transparent bg-red-500/15 text-red-600 dark:text-red-400">
+          Rejected
+        </Badge>
+      )
+    default:
+      return (
+        <Badge variant="outline" className="capitalize">
+          {status}
+        </Badge>
+      )
+  }
+}
+
+function electionStatusBadge(status: string) {
+  switch (status) {
+    case 'active':
+      return (
+        <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 gap-1">
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          Active
+        </Badge>
+      )
+    case 'upcoming':
+      return (
+        <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent">Upcoming</Badge>
+      )
+    case 'ended':
+      return (
+        <Badge variant="secondary" className="text-muted-foreground">
+          Ended
+        </Badge>
+      )
+    default:
+      return (
+        <Badge variant="outline" className="capitalize">
+          {status}
+        </Badge>
+      )
+  }
+}
+
+function auditActionBadge(action: string) {
+  const map: Record<string, string> = {
+    approve_student:
+      'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-transparent',
+    reject_student:
+      'bg-red-500/15 text-red-600 dark:text-red-400 border-transparent',
+    start_election:
+      'bg-primary/15 text-primary border-transparent',
+    end_election:
+      'bg-cyan-accent/20 text-cyan-accent border-transparent',
+    create_announcement:
+      'bg-violet-500/15 text-violet-600 dark:text-violet-400 border-transparent',
+  }
+  return (
+    <Badge className={cn('capitalize', map[action] || '')}>
+      {action.replace(/_/g, ' ')}
+    </Badge>
+  )
+}
+
+// ===================== Admin Login =====================
+function AdminLogin({ onLogin }: { onLogin: () => void }) {
+  const { setAdmin } = useAuth()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const res = await api.post<{ admin: AdminUser; token: string }>(
+        '/auth/admin-login',
+        { username, password }
+      )
+      setAdmin(res.admin, res.token)
+      toast.success(`Welcome back, ${res.admin.name}`)
+      onLogin()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Login failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="relative min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
+      <div className="absolute inset-0 -z-10 bg-grid opacity-40" />
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="w-full max-w-md"
+      >
+        <Card className="overflow-hidden border-border/60 shadow-xl">
+          <CardHeader className="space-y-3 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
+            <div className="flex items-center gap-3">
+              <div className="grid size-12 place-items-center rounded-2xl bg-white/15 backdrop-blur overflow-hidden ring-1 ring-white/20">
+                <Image
+                  src="/ulsesa-logo.jpg"
+                  alt="ULSESA logo"
+                  width={36}
+                  height={36}
+                  className="rounded-lg"
+                />
+              </div>
+              <div>
+                <CardTitle className="font-display text-2xl">
+                  ULSESA Admin
+                </CardTitle>
+                <CardDescription className="text-primary-foreground/80">
+                  Shaping Tomorrow&apos;s Scientific Innovators
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="admin-username">Username</Label>
+                <Input
+                  id="admin-username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="admin"
+                  autoComplete="username"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="admin-password">Password</Label>
+                <Input
+                  id="admin-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••"
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full"
+                size="lg"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Signing in…
+                  </>
+                ) : (
+                  'Sign In'
+                )}
+              </Button>
+            </form>
+            <div className="mt-5 rounded-xl border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Demo credentials</p>
+              <p className="mt-1 font-mono">admin / ulsesa-admin-2026</p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </div>
+  )
+}
+
+// ===================== Sidebar =====================
+const NAV_ITEMS: { id: Section; label: string; icon: typeof Users }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'students', label: 'Students', icon: Users },
+  { id: 'verification', label: 'Verification', icon: ShieldCheck },
+  { id: 'election', label: 'Election', icon: Vote },
+  { id: 'audit', label: 'Audit Logs', icon: ScrollText },
+  { id: 'settings', label: 'Settings', icon: Settings },
+]
+
+function SidebarContent({
+  admin,
+  active,
+  onSelect,
+  onLogout,
+}: {
+  admin: AdminUser
+  active: Section
+  onSelect: (s: Section) => void
+  onLogout: () => void
+}) {
+  return (
+    <div className="flex h-full flex-col gap-2 p-4">
+      <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/80 p-4 text-primary-foreground">
+        <div className="flex items-center gap-3">
+          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/15 overflow-hidden ring-1 ring-white/20">
+            <Image
+              src="/ulsesa-logo.jpg"
+              alt="ULSESA"
+              width={32}
+              height={32}
+              className="rounded-lg"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-display text-sm font-semibold tracking-wide">
+              ULSESA Admin
+            </p>
+            <p className="truncate text-[10px] text-primary-foreground/70">
+              Shaping Tomorrow&apos;s Scientific Innovators
+            </p>
+          </div>
+          <Badge className="border-transparent bg-white/20 text-primary-foreground text-[10px]">
+            {admin.role}
+          </Badge>
+        </div>
+        <Separator className="my-3 bg-white/15" />
+        <div className="flex items-center gap-3">
+          <Avatar className="size-8 border-2 border-white/30">
+            <AvatarFallback className="bg-white/20 text-primary-foreground text-xs">
+              {getInitials(admin.name)}
+            </AvatarFallback>
+          </Avatar>
+          <p className="truncate text-sm font-medium">{admin.name}</p>
+        </div>
+      </div>
+
+      <nav className="mt-2 flex flex-1 flex-col gap-1">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon
+          const isActive = active === item.id
+          return (
+            <button
+              key={item.id}
+              onClick={() => onSelect(item.id)}
+              className={cn(
+                'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all',
+                isActive
+                  ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/30'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              <Icon
+                className={cn(
+                  'size-4 transition-transform',
+                  isActive
+                    ? 'text-primary-foreground'
+                    : 'group-hover:scale-110'
+                )}
+              />
+              {item.label}
+            </button>
+          )
+        })}
+      </nav>
+
+      <Separator />
+      <button
+        onClick={onLogout}
+        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+      >
+        <LogOut className="size-4" /> Logout
+      </button>
+    </div>
+  )
+}
+
+// ===================== Dashboard Section =====================
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  subtitle,
+  accent,
+  loading,
+}: {
+  icon: typeof Users
+  label: string
+  value: string | number
+  subtitle: string
+  accent: 'primary' | 'emerald' | 'cyan-accent'
+  loading?: boolean
+}) {
+  const accents = {
+    primary: 'from-primary/15 to-primary/5 text-primary',
+    emerald: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400',
+    'cyan-accent': 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent',
+  }
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {label}
+            </p>
+            {loading ? (
+              <Skeleton className="mt-2 h-8 w-20" />
+            ) : (
+              <p className="mt-1 font-display text-3xl font-bold">{value}</p>
+            )}
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {subtitle}
+            </p>
+          </div>
+          <div
+            className={cn(
+              'grid size-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br',
+              accents[accent]
+            )}
+          >
+            <Icon className="size-5" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DashboardSection() {
+  const [stats, setStats] = useState<AdminStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [requests, setRequests] = useState<VerificationRequest[]>([])
+  const [requestsLoading, setRequestsLoading] = useState(true)
+  const [election, setElection] = useState<Election | null>(null)
+  const [acting, setActing] = useState(false)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true)
+    setRequestsLoading(true)
+    try {
+      const [s, r, e] = await Promise.all([
+        api.get<{ stats: AdminStats }>('/admin/stats'),
+        api.get<{ requests: VerificationRequest[] }>(
+          '/admin/verification-requests'
+        ),
+        api.get<{ election: Election | null }>('/admin/election'),
+      ])
+      setStats(s.stats)
+      setRequests(r.requests.slice(0, 5))
+      setElection(e.election)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load stats')
+    } finally {
+      setLoading(false)
+      setRequestsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchAll()
+  }, [fetchAll])
+
+  async function toggleElection(action: 'start' | 'end') {
+    setActing(true)
+    try {
+      const res = await api.post<{ election: Election }>('/admin/election', {
+        action,
+      })
+      setElection(res.election)
+      toast.success(
+        action === 'start' ? 'Election started' : 'Election ended'
+      )
+      void fetchAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  async function quickVerify(
+    student: VerificationRequest,
+    action: 'approve' | 'reject'
+  ) {
+    setPendingId(student.id)
+    try {
+      await api.post(`/admin/students/${student.id}/verify`, { action })
+      toast.success(
+        `${student.fullName} ${action === 'approve' ? 'approved' : 'rejected'}`
+      )
+      setRequests((prev) => prev.filter((r) => r.id !== student.id))
+      void fetchAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setPendingId(null)
+    }
+  }
+
+  const turnoutPct = stats
+    ? Math.min(100, Math.round(stats.turnout))
+    : 0
+  const verifiedRatio = stats && stats.totalStudents > 0
+    ? Math.round((stats.verifiedStudents / stats.totalStudents) * 100)
+    : 0
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+          ULSESA Admin Dashboard
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Real-time overview of the ULSESA platform
+        </p>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Users}
+          label="Total Students"
+          value={stats?.totalStudents ?? 0}
+          subtitle="Registered accounts"
+          accent="primary"
+          loading={loading}
+        />
+        <StatCard
+          icon={BadgeCheck}
+          label="Verified"
+          value={stats?.verifiedStudents ?? 0}
+          subtitle="Eligible voters"
+          accent="emerald"
+          loading={loading}
+        />
+        <StatCard
+          icon={Vote}
+          label="Votes Cast"
+          value={stats?.votesCast ?? 0}
+          subtitle={`Turnout: ${stats?.turnout.toFixed(1) ?? 0}%`}
+          accent="cyan-accent"
+          loading={loading}
+        />
+        <StatCard
+          icon={Activity}
+          label="System Health"
+          value={stats?.systemHealth ?? '99.9%'}
+          subtitle="All services operational"
+          accent="emerald"
+          loading={loading}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Election status */}
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="font-display text-lg">
+              Election Status
+            </CardTitle>
+            <CardDescription>
+              {stats?.electionTitle || 'No election configured'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">
+                Current state
+              </span>
+              {election
+                ? electionStatusBadge(election.status)
+                : (
+                  <Badge variant="secondary" className="text-muted-foreground">
+                    None
+                  </Badge>
+                )}
+            </div>
+            <Separator />
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Verified ratio</span>
+                <span className="font-medium">{verifiedRatio}%</span>
+              </div>
+              <Progress value={verifiedRatio} className="h-2" />
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Voter turnout</span>
+                <span className="font-medium">{turnoutPct}%</span>
+              </div>
+              <Progress value={turnoutPct} className="h-2" />
+            </div>
+            <div className="flex flex-col gap-2 pt-2">
+              {election?.status === 'upcoming' && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button disabled={acting} className="w-full">
+                      <PlayCircle className="size-4" /> Start Election
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Start election?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will open voting for all verified students. The
+                        action will be recorded in the audit log.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => void toggleElection('start')}
+                      >
+                        Confirm Start
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              {election?.status === 'active' && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      disabled={acting}
+                      className="w-full"
+                    >
+                      <StopCircle className="size-4" /> End Election
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>End election?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will immediately close voting. Results will be
+                        final. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-white hover:bg-destructive/90"
+                        onClick={() => void toggleElection('end')}
+                      >
+                        Confirm End
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              {(!election || election.status === 'ended') && (
+                <div className="rounded-xl bg-muted/40 p-3 text-center text-xs text-muted-foreground">
+                  {election
+                    ? 'This election has ended.'
+                    : 'No election configured.'}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent verification requests */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle className="font-display text-lg">
+                Pending Verification
+              </CardTitle>
+              <CardDescription>
+                Most recent submissions awaiting review
+              </CardDescription>
+            </div>
+            <Badge variant="secondary" className="text-muted-foreground">
+              {requests.length} pending
+            </Badge>
+          </CardHeader>
+          <CardContent>
+            {requestsLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 rounded-xl border border-border/60 p-3"
+                  >
+                    <Skeleton className="size-10 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                    <Skeleton className="h-8 w-20" />
+                  </div>
+                ))}
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                <div className="grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+                  <CheckCircle2 className="size-6" />
+                </div>
+                <p className="font-medium">All caught up!</p>
+                <p className="text-sm text-muted-foreground">
+                  No pending verification requests.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {requests.map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex flex-col gap-3 rounded-xl border border-border/60 p-3 sm:flex-row sm:items-center"
+                  >
+                    <Avatar className="size-10 shrink-0">
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                        {getInitials(r.fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {r.fullName}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {r.matricNumber} · {r.level} · {r.programme}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600"
+                        disabled={pendingId === r.id}
+                        onClick={() => void quickVerify(r, 'approve')}
+                      >
+                        <CheckCircle2 className="size-4" /> Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+                        disabled={pendingId === r.id}
+                        onClick={() => void quickVerify(r, 'reject')}
+                      >
+                        <XCircle className="size-4" /> Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+// ===================== Students Section =====================
+function StudentsSection() {
+  const [students, setStudents] = useState<StudentRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [selected, setSelected] = useState<StudentRow | null>(null)
+  const [acting, setActing] = useState(false)
+  const [notes, setNotes] = useState('')
+
+  const fetchStudents = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (search.trim()) params.set('search', search.trim())
+      const q = params.toString()
+      const res = await api.get<{ students: StudentRow[] }>(
+        `/admin/students${q ? `?${q}` : ''}`
+      )
+      setStudents(res.students)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load students'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [statusFilter, search])
+
+  useEffect(() => {
+    void fetchStudents()
+  }, [fetchStudents])
+
+  async function verify(student: StudentRow, action: 'approve' | 'reject') {
+    setActing(true)
+    try {
+      await api.post(`/admin/students/${student.id}/verify`, {
+        action,
+        notes: notes.trim() || undefined,
+      })
+      toast.success(
+        `${student.fullName} ${action === 'approve' ? 'approved' : 'rejected'}`
+      )
+      setSelected(null)
+      setNotes('')
+      void fetchStudents()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Students
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Manage and verify student accounts
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void fetchStudents()}>
+          <RefreshCw className="size-4" /> Refresh
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader className="gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, matric, email, programme…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void fetchStudents()
+                }}
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-48">
+                <Filter className="size-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="submitted">Submitted</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : students.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <div className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+                <Users className="size-6" />
+              </div>
+              <p className="font-medium">No students found</p>
+              <p className="text-sm text-muted-foreground">
+                Try adjusting your filters or search query.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Matric</TableHead>
+                    <TableHead>Level</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Programme
+                    </TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {students.map((s) => (
+                    <TableRow key={s.id} className="cursor-pointer">
+                      <TableCell
+                        className="font-medium"
+                        onClick={() => setSelected(s)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Avatar className="size-8">
+                            <AvatarFallback className="bg-primary/10 text-primary text-[10px]">
+                              {getInitials(s.fullName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{s.fullName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell
+                        className="font-mono text-xs"
+                        onClick={() => setSelected(s)}
+                      >
+                        {s.matricNumber}
+                      </TableCell>
+                      <TableCell onClick={() => setSelected(s)}>
+                        {s.level}
+                      </TableCell>
+                      <TableCell
+                        className="hidden max-w-48 truncate text-muted-foreground md:table-cell"
+                        onClick={() => setSelected(s)}
+                      >
+                        {s.programme}
+                      </TableCell>
+                      <TableCell onClick={() => setSelected(s)}>
+                        {statusBadge(s.verificationStatus)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSelected(s)}
+                        >
+                          <Eye className="size-4" /> View
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Student detail dialog */}
+      <Dialog
+        open={!!selected}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSelected(null)
+            setNotes('')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          {selected && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="font-display">
+                  Student Details
+                </DialogTitle>
+                <DialogDescription>
+                  Review and verify this student account
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Avatar className="size-14">
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                      {getInitials(selected.fullName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-display text-lg font-semibold">
+                      {selected.fullName}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {selected.matricNumber}
+                    </p>
+                  </div>
+                  <div className="ml-auto">
+                    {statusBadge(selected.verificationStatus)}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Level</p>
+                    <p className="font-medium">{selected.level}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Programme</p>
+                    <p className="font-medium">{selected.programme}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Email</p>
+                    <p className="font-medium truncate">
+                      {selected.email || '—'}
+                    </p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Phone</p>
+                    <p className="font-medium">{selected.phone || '—'}</p>
+                  </div>
+                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+                    <p className="text-xs text-muted-foreground">Joined</p>
+                    <p className="font-medium">
+                      {formatDateTime(selected.createdAt)}
+                    </p>
+                  </div>
+                  {selected.idDocumentUrl && (
+                    <a
+                      href={selected.idDocumentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="col-span-2 flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FileText className="size-4 text-primary" />
+                        View ID document
+                      </span>
+                      <ExternalLink className="size-4 text-muted-foreground" />
+                    </a>
+                  )}
+                </div>
+
+                {(selected.verificationStatus === 'submitted' ||
+                  selected.verificationStatus === 'pending') && (
+                  <div className="space-y-2">
+                    <Label htmlFor="verify-notes">
+                      Notes <span className="text-muted-foreground">(optional)</span>
+                    </Label>
+                    <Textarea
+                      id="verify-notes"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Add internal notes for this decision…"
+                      rows={2}
+                    />
+                  </div>
+                )}
+              </div>
+              <DialogFooter className="gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+                {(selected.verificationStatus === 'submitted' ||
+                  selected.verificationStatus === 'pending') && (
+                  <>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+                          disabled={acting}
+                        >
+                          <XCircle className="size-4" /> Reject
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Reject this student?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {selected.fullName} ({selected.matricNumber}) will
+                            not be able to vote. They can resubmit later.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-white hover:bg-destructive/90"
+                            onClick={() => void verify(selected, 'reject')}
+                          >
+                            Confirm Reject
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <Button
+                      disabled={acting}
+                      onClick={() => void verify(selected, 'approve')}
+                    >
+                      <CheckCircle2 className="size-4" /> Approve
+                    </Button>
+                  </>
+                )}
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ===================== Verification Section =====================
+function VerificationSection() {
+  const [requests, setRequests] = useState<VerificationRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [actingId, setActingId] = useState<string | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<VerificationRequest | null>(
+    null
+  )
+  const [notes, setNotes] = useState('')
+
+  const fetchReqs = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<{ requests: VerificationRequest[] }>(
+        '/admin/verification-requests'
+      )
+      setRequests(res.requests)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load requests'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchReqs()
+  }, [fetchReqs])
+
+  async function approve(r: VerificationRequest) {
+    setActingId(r.id)
+    try {
+      await api.post(`/admin/students/${r.id}/verify`, {
+        action: 'approve',
+        notes: notes.trim() || undefined,
+      })
+      toast.success(`${r.fullName} approved`)
+      setRequests((prev) => prev.filter((x) => x.id !== r.id))
+      setNotes('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  async function confirmReject() {
+    if (!rejectTarget) return
+    setActingId(rejectTarget.id)
+    try {
+      await api.post(`/admin/students/${rejectTarget.id}/verify`, {
+        action: 'reject',
+        notes: notes.trim() || undefined,
+      })
+      toast.success(`${rejectTarget.fullName} rejected`)
+      setRequests((prev) => prev.filter((x) => x.id !== rejectTarget.id))
+      setRejectTarget(null)
+      setNotes('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Verification Queue
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Review submitted student verification requests
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void fetchReqs()}>
+          <RefreshCw className="size-4" /> Refresh
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="space-y-3 p-5">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="size-12 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                </div>
+                <Skeleton className="h-16 w-full" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-9 w-24" />
+                  <Skeleton className="h-9 w-24" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : requests.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
+            <div className="grid size-14 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+              <CheckCircle2 className="size-7" />
+            </div>
+            <p className="font-display text-lg font-semibold">
+              No pending verification requests
+            </p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              When students submit their verification documents, they will
+              appear here for review.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {requests.map((r) => (
+            <Card key={r.id} className="flex flex-col">
+              <CardHeader className="gap-3">
+                <div className="flex items-start gap-3">
+                  <Avatar className="size-12">
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                      {getInitials(r.fullName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="font-display text-base">
+                      {r.fullName}
+                    </CardTitle>
+                    <CardDescription className="font-mono text-xs">
+                      {r.matricNumber}
+                    </CardDescription>
+                  </div>
+                  {statusBadge(r.verificationStatus)}
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 space-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Level</p>
+                    <p className="font-medium">{r.level}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Programme</p>
+                    <p className="font-medium">{r.programme}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">Email</p>
+                    <p className="truncate font-medium">
+                      {r.email || '—'}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">Phone</p>
+                    <p className="font-medium">{r.phone || '—'}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">Submitted</p>
+                    <p className="font-medium">
+                      {r.updatedAt
+                        ? formatDateTime(r.updatedAt)
+                        : formatDateTime(r.createdAt)}
+                    </p>
+                  </div>
+                </div>
+                {r.idDocumentUrl && (
+                  <a
+                    href={r.idDocumentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
+                  >
+                    <span className="flex items-center gap-2">
+                      <FileText className="size-4 text-primary" />
+                      View ID document
+                    </span>
+                    <ExternalLink className="size-4 text-muted-foreground" />
+                  </a>
+                )}
+              </CardContent>
+              <CardFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+                  disabled={actingId === r.id}
+                  onClick={() => {
+                    setRejectTarget(r)
+                    setNotes('')
+                  }}
+                >
+                  <XCircle className="size-4" /> Reject
+                </Button>
+                <Button
+                  className="flex-1 bg-emerald-600 text-white hover:bg-emerald-600/90"
+                  disabled={actingId === r.id}
+                  onClick={() => void approve(r)}
+                >
+                  {actingId === r.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="size-4" />
+                  )}
+                  Approve
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Reject dialog with notes */}
+      <Dialog
+        open={!!rejectTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRejectTarget(null)
+            setNotes('')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          {rejectTarget && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="font-display">
+                  Reject verification?
+                </DialogTitle>
+                <DialogDescription>
+                  {rejectTarget.fullName} ({rejectTarget.matricNumber}) will be
+                  marked as rejected and won&apos;t be able to vote.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="reject-notes">
+                  Reason <span className="text-muted-foreground">(optional)</span>
+                </Label>
+                <Textarea
+                  id="reject-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="e.g. ID document not legible…"
+                  rows={3}
+                />
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button
+                  variant="destructive"
+                  disabled={actingId === rejectTarget.id}
+                  onClick={() => void confirmReject()}
+                >
+                  {actingId === rejectTarget.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <XCircle className="size-4" />
+                  )}
+                  Confirm Reject
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ===================== Election Section =====================
+function ElectionSection() {
+  const [election, setElection] = useState<Election | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing] = useState(false)
+
+  const fetchElection = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<{ election: Election | null }>(
+        '/admin/election'
+      )
+      setElection(res.election)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load election'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchElection()
+  }, [fetchElection])
+
+  async function toggle(action: 'start' | 'end') {
+    setActing(true)
+    try {
+      const res = await api.post<{ election: Election }>('/admin/election', {
+        action,
+      })
+      setElection((prev) => ({
+        ...res.election,
+        positions: prev?.positions ?? res.election.positions,
+      }))
+      toast.success(
+        action === 'start' ? 'Election started' : 'Election ended'
+      )
+      void fetchElection()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const totalVotes = useMemo(() => {
+    if (!election?.positions) return 0
+    return election.positions.reduce(
+      (sum, p) => sum + (p._count?.votes ?? p.voteCount ?? 0),
+      0
+    )
+  }, [election])
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-9 w-48" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+          Election Control
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Manage election lifecycle and view live results
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="font-display text-xl">
+                {election?.title || 'No election configured'}
+              </CardTitle>
+              <CardDescription>
+                Manage the active election cycle
+              </CardDescription>
+            </div>
+            {election && electionStatusBadge(election.status)}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {election && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-xs text-muted-foreground">Start date</p>
+                <p className="text-sm font-medium">
+                  {formatDateTime(election.startDate)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-xs text-muted-foreground">End date</p>
+                <p className="text-sm font-medium">
+                  {election.endDate ? formatDateTime(election.endDate) : '—'}
+                </p>
+              </div>
+              <div className="rounded-xl bg-muted/40 p-3">
+                <p className="text-xs text-muted-foreground">Total votes</p>
+                <p className="text-sm font-medium">{totalVotes}</p>
+              </div>
+            </div>
+          )}
+          <Separator />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {election?.status === 'upcoming' && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button disabled={acting} className="flex-1">
+                    <PlayCircle className="size-4" /> Start Election
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Start election?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Voting will open immediately for all verified students.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void toggle('start')}>
+                      Confirm Start
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {election?.status === 'active' && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    disabled={acting}
+                    className="flex-1"
+                  >
+                    <StopCircle className="size-4" /> End Election
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>End election?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Voting will close immediately. Results will be final.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-white hover:bg-destructive/90"
+                      onClick={() => void toggle('end')}
+                    >
+                      Confirm End
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {(!election || election.status === 'ended') && (
+              <div className="flex-1 rounded-xl bg-muted/40 p-3 text-center text-sm text-muted-foreground">
+                {election
+                  ? 'This election has ended. No further actions available.'
+                  : 'No election configured in the database.'}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Live results preview */}
+      {election?.positions && election.positions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-lg flex items-center gap-2">
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live Results
+            </CardTitle>
+            <CardDescription>
+              Per-position candidate standings
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {election.positions.map((p) => {
+              const total =
+                p._count?.votes ??
+                p.voteCount ??
+                p.candidates.reduce((s, c) => s + c.voteCount, 0)
+              return (
+                <div key={p.id} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-display text-sm font-semibold">
+                      {p.title}
+                    </h4>
+                    <Badge variant="secondary" className="text-xs">
+                      {total} votes
+                    </Badge>
+                  </div>
+                  <div className="space-y-1.5">
+                    {p.candidates
+                      .slice()
+                      .sort((a, b) => b.voteCount - a.voteCount)
+                      .map((c, idx) => {
+                        const pct =
+                          total > 0
+                            ? Math.round((c.voteCount / total) * 100)
+                            : 0
+                        const leading = idx === 0 && c.voteCount > 0
+                        return (
+                          <div
+                            key={c.id}
+                            className={cn(
+                              'space-y-1 rounded-lg border p-2',
+                              leading
+                                ? 'border-cyan-accent/40 bg-cyan-accent/5'
+                                : 'border-border/60'
+                            )}
+                          >
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="flex items-center gap-2">
+                                {leading && (
+                                  <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent text-[10px]">
+                                    Leading
+                                  </Badge>
+                                )}
+                                <span className="font-medium">{c.name}</span>
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {c.voteCount} · {pct}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${pct}%` }}
+                                transition={{ duration: 0.6, ease: 'easeOut' }}
+                                className={cn(
+                                  'h-full rounded-full',
+                                  leading ? 'bg-cyan-accent' : 'bg-primary'
+                                )}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// ===================== Audit Logs Section =====================
+function AuditLogsSection() {
+  const [logs, setLogs] = useState<AuditLog[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchLogs = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<{ logs: AuditLog[] }>('/admin/audit-logs')
+      setLogs(res.logs)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load audit logs'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchLogs()
+  }, [fetchLogs])
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Audit Logs
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Chronological trail of all admin actions
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void fetchLogs()}>
+          <RefreshCw className="size-4" /> Refresh
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-display text-lg">
+            Recent Activity
+          </CardTitle>
+          <CardDescription>
+            Showing last {logs.length} {logs.length === 1 ? 'entry' : 'entries'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <div className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+                <ScrollText className="size-6" />
+              </div>
+              <p className="font-medium">No audit logs yet</p>
+              <p className="text-sm text-muted-foreground">
+                Admin actions will be recorded here.
+              </p>
+            </div>
+          ) : (
+            <ScrollArea className="h-[60vh]">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-card z-10">
+                    <TableRow>
+                      <TableHead>When</TableHead>
+                      <TableHead>Admin</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Target</TableHead>
+                      <TableHead className="hidden md:table-cell">
+                        Details
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {formatDateTime(log.timestamp)}
+                          <div className="text-[10px] opacity-70">
+                            {formatRelativeTime(log.timestamp)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {log.admin?.name || 'System'}
+                        </TableCell>
+                        <TableCell>
+                          {auditActionBadge(log.action)}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {log.target || '—'}
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate text-xs text-muted-foreground md:table-cell">
+                          {log.details || '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ===================== Settings Section =====================
+function SettingsSection() {
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [category, setCategory] = useState('general')
+  const [posting, setPosting] = useState(false)
+
+  async function postAnnouncement(e: React.FormEvent) {
+    e.preventDefault()
+    if (!title.trim() || !content.trim()) {
+      toast.error('Title and content are required')
+      return
+    }
+    setPosting(true)
+    try {
+      await api.post('/admin/announcements', {
+        title: title.trim(),
+        content: content.trim(),
+        category,
+      })
+      toast.success('Announcement posted')
+      setTitle('')
+      setContent('')
+      setCategory('general')
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to post announcement'
+      )
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+          Settings
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Platform configuration and announcements
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-display text-lg flex items-center gap-2">
+            <Megaphone className="size-5 text-primary" />
+            New Announcement
+          </CardTitle>
+          <CardDescription>
+            Broadcast an update to all students
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={postAnnouncement} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="ann-title">Title</Label>
+              <Input
+                id="ann-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Exam timetable released"
+                maxLength={120}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ann-content">Content</Label>
+              <Textarea
+                id="ann-content"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Write the announcement body…"
+                rows={5}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ann-category">Category</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger id="ann-category" className="w-full sm:w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="general">General</SelectItem>
+                  <SelectItem value="academic">Academic</SelectItem>
+                  <SelectItem value="election">Election</SelectItem>
+                  <SelectItem value="event">Event</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={posting}>
+                {posting ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Posting…
+                  </>
+                ) : (
+                  <>
+                    <Megaphone className="size-4" /> Post Announcement
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-display text-lg">About this admin</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AdminInfoCard />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function AdminInfoCard() {
+  const { admin } = useAuth()
+  if (!admin) return null
+  return (
+    <div className="flex items-center gap-4">
+      <Avatar className="size-14">
+        <AvatarFallback className="bg-primary/10 text-primary font-semibold text-lg">
+          {getInitials(admin.name)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="space-y-1">
+        <p className="font-display text-lg font-semibold">{admin.name}</p>
+        <p className="text-sm text-muted-foreground">
+          @{admin.username} · {admin.role}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ===================== Main AdminView =====================
+export function AdminView() {
+  const { admin, isAdminAuthenticated, logoutAdmin } = useAuth()
+  const [mounted, setMounted] = useState(false)
+  const [section, setSection] = useState<Section>('dashboard')
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const isAuthed = mounted && isAdminAuthenticated() && !!admin
+
+  const handleLogout = () => {
+    logoutAdmin()
+    toast.success('Signed out')
+  }
+
+  const handleSelect = (s: Section) => {
+    setSection(s)
+    setMobileOpen(false)
+  }
+
+  if (!mounted) {
+    return (
+      <div className="container mx-auto px-4 py-20 text-center text-muted-foreground">
+        Loading…
+      </div>
+    )
+  }
+
+  if (!isAuthed) {
+    return <AdminLogin onLogin={() => setSection('dashboard')} />
+  }
+
+  return (
+    <div className="flex min-h-[calc(100vh-4rem)]">
+      {/* Desktop sidebar */}
+      <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-64 shrink-0 border-r border-border bg-sidebar/40 lg:block">
+        <SidebarContent
+          admin={admin!}
+          active={section}
+          onSelect={handleSelect}
+          onLogout={handleLogout}
+        />
+      </aside>
+
+      {/* Mobile sidebar */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="fixed left-4 top-20 z-40 lg:hidden"
+          >
+            <Menu className="size-4" /> Menu
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="w-72 p-0">
+          <SheetHeader className="px-4 pt-4">
+            <SheetTitle className="font-display">ULSESA Admin</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto">
+            <SidebarContent
+              admin={admin!}
+              active={section}
+              onSelect={handleSelect}
+              onLogout={handleLogout}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Main content */}
+      <main className="flex-1 px-4 pb-12 pt-16 sm:px-6 lg:pt-8">
+        <div className="mx-auto max-w-7xl">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={section}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25 }}
+            >
+              {section === 'dashboard' && <DashboardSection />}
+              {section === 'students' && <StudentsSection />}
+              {section === 'verification' && <VerificationSection />}
+              {section === 'election' && <ElectionSection />}
+              {section === 'audit' && <AuditLogsSection />}
+              {section === 'settings' && <SettingsSection />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </main>
+    </div>
+  )
+}
