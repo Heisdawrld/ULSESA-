@@ -1,0 +1,2002 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState, useMemo, useCallback } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import Image from 'next/image'
+     6→import { toast } from 'sonner'
+     7→import {
+     8→  LayoutDashboard,
+     9→  Users,
+    10→  ShieldCheck,
+    11→  Vote,
+    12→  ScrollText,
+    13→  Settings,
+    14→  LogOut,
+    15→  Menu,
+    16→  Activity,
+    17→  BadgeCheck,
+    18→  Search,
+    19→  Filter,
+    20→  Eye,
+    21→  CheckCircle2,
+    22→  XCircle,
+    23→  PlayCircle,
+    24→  StopCircle,
+    25→  Megaphone,
+    26→  RefreshCw,
+    27→  ExternalLink,
+    28→  FileText,
+    29→  Loader2,
+    30→  KeyRound,
+    31→  UserPlus,
+    32→} from 'lucide-react'
+    33→
+    34→import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
+    35→import { api } from '@/lib/api-client'
+    36→import {
+    37→  Card,
+    38→  CardContent,
+    39→  CardHeader,
+    40→  CardTitle,
+    41→  CardDescription,
+    42→  CardFooter,
+    43→} from '@/components/ui/card'
+    44→import { Button } from '@/components/ui/button'
+    45→import { Badge } from '@/components/ui/badge'
+    46→import { Input } from '@/components/ui/input'
+    47→import { Label } from '@/components/ui/label'
+    48→import { Skeleton } from '@/components/ui/skeleton'
+    49→import { Progress } from '@/components/ui/progress'
+    50→import { Separator } from '@/components/ui/separator'
+    51→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    52→import { Textarea } from '@/components/ui/textarea'
+    53→import {
+    54→  Sheet,
+    55→  SheetContent,
+    56→  SheetHeader,
+    57→  SheetTitle,
+    58→  SheetTrigger,
+    59→} from '@/components/ui/sheet'
+    60→import {
+    61→  Dialog,
+    62→  DialogContent,
+    63→  DialogHeader,
+    64→  DialogTitle,
+    65→  DialogDescription,
+    66→  DialogFooter,
+    67→  DialogClose,
+    68→} from '@/components/ui/dialog'
+    69→import {
+    70→  AlertDialog,
+    71→  AlertDialogAction,
+    72→  AlertDialogCancel,
+    73→  AlertDialogContent,
+    74→  AlertDialogDescription,
+    75→  AlertDialogFooter,
+    76→  AlertDialogHeader,
+    77→  AlertDialogTitle,
+    78→  AlertDialogTrigger,
+    79→} from '@/components/ui/alert-dialog'
+    80→import {
+    81→  Select,
+    82→  SelectContent,
+    83→  SelectItem,
+    84→  SelectTrigger,
+    85→  SelectValue,
+    86→} from '@/components/ui/select'
+    87→import {
+    88→  Table,
+    89→  TableBody,
+    90→  TableCell,
+    91→  TableHead,
+    92→  TableHeader,
+    93→  TableRow,
+    94→} from '@/components/ui/table'
+    95→import { ScrollArea } from '@/components/ui/scroll-area'
+    96→import { cn } from '@/lib/utils'
+    97→
+    98→// ===================== Types =====================
+    99→type Section =
+   100→  | 'dashboard'
+   101→  | 'students'
+   102→  | 'verification'
+   103→  | 'election'
+   104→  | 'audit'
+   105→  | 'settings'
+   106→
+   107→interface AdminStats {
+   108→  totalStudents: number
+   109→  verifiedStudents: number
+   110→  eligibleVoters: number
+   111→  votesCast: number
+   112→  turnout: number
+   113→  systemHealth: string
+   114→  electionStatus: string
+   115→  electionTitle?: string | null
+   116→}
+   117→
+   118→interface StudentRow {
+   119→  id: string
+   120→  matricNumber: string
+   121→  fullName: string
+   122→  level: string
+   123→  programme: string
+   124→  email: string | null
+   125→  phone: string | null
+   126→  isVerified: boolean
+   127→  verificationStatus: string
+   128→  hasVoted?: boolean
+   129→  hasPassword?: boolean
+   130→  idDocumentUrl?: string | null
+   131→  createdAt: string
+   132→  updatedAt?: string
+   133→}
+   134→
+   135→interface VerificationRequest extends StudentRow {
+   136→  verificationLogs?: Array<{
+   137→    id: string
+   138→    action: string
+   139→    notes: string | null
+   140→    timestamp: string
+   141→    admin: { id: string; name: string; username: string }
+   142→  }>
+   143→}
+   144→
+   145→interface AuditLog {
+   146→  id: string
+   147→  action: string
+   148→  target: string | null
+   149→  details: string | null
+   150→  timestamp: string
+   151→  admin: { id: string; name: string; username: string } | null
+   152→}
+   153→
+   154→interface ElectionPosition {
+   155→  id: string
+   156→  title: string
+   157→  order: number
+   158→  voteCount?: number
+   159→  _count?: { votes: number }
+   160→  candidates: Array<{
+   161→    id: string
+   162→    name: string
+   163→    voteCount: number
+   164→  }>
+   165→}
+   166→
+   167→interface Election {
+   168→  id: string
+   169→  title: string
+   170→  status: string
+   171→  startDate: string
+   172→  endDate: string | null
+   173→  positions?: ElectionPosition[]
+   174→}
+   175→
+   176→// ===================== Helpers =====================
+   177→function formatRelativeTime(dateStr: string) {
+   178→  const date = new Date(dateStr)
+   179→  const diff = Date.now() - date.getTime()
+   180→  const seconds = Math.floor(diff / 1000)
+   181→  const minutes = Math.floor(seconds / 60)
+   182→  const hours = Math.floor(minutes / 60)
+   183→  const days = Math.floor(hours / 24)
+   184→  if (days > 0) return `${days}d ago`
+   185→  if (hours > 0) return `${hours}h ago`
+   186→  if (minutes > 0) return `${minutes}m ago`
+   187→  return 'just now'
+   188→}
+   189→
+   190→function formatDateTime(dateStr: string) {
+   191→  return new Date(dateStr).toLocaleString(undefined, {
+   192→    month: 'short',
+   193→    day: 'numeric',
+   194→    year: 'numeric',
+   195→    hour: '2-digit',
+   196→    minute: '2-digit',
+   197→  })
+   198→}
+   199→
+   200→function getInitials(name: string) {
+   201→  return name
+   202→    .split(' ')
+   203→    .map((n) => n[0])
+   204→    .filter(Boolean)
+   205→    .slice(0, 2)
+   206→    .join('')
+   207→    .toUpperCase()
+   208→}
+   209→
+   210→function statusBadge(status: string) {
+   211→  switch (status) {
+   212→    case 'approved':
+   213→      return (
+   214→        <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+   215→          Approved
+   216→        </Badge>
+   217→      )
+   218→    case 'admin_verified':
+   219→      return (
+   220→        <Badge className="gap-1 border-transparent bg-emerald-600/20 text-emerald-700 dark:text-emerald-300">
+   221→          <ShieldCheck className="size-3" />
+   222→          Admin Verified
+   223→        </Badge>
+   224→      )
+   225→    case 'pending':
+   226→      return (
+   227→        <Badge variant="secondary" className="text-muted-foreground">
+   228→          Pending
+   229→        </Badge>
+   230→      )
+   231→    case 'submitted':
+   232→      return (
+   233→        <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent">
+   234→          Submitted
+   235→        </Badge>
+   236→      )
+   237→    case 'rejected':
+   238→      return (
+   239→        <Badge className="border-transparent bg-red-500/15 text-red-600 dark:text-red-400">
+   240→          Rejected
+   241→        </Badge>
+   242→      )
+   243→    default:
+   244→      return (
+   245→        <Badge variant="outline" className="capitalize">
+   246→          {status}
+   247→        </Badge>
+   248→      )
+   249→  }
+   250→}
+   251→
+   252→function electionStatusBadge(status: string) {
+   253→  switch (status) {
+   254→    case 'active':
+   255→      return (
+   256→        <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 gap-1">
+   257→          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+   258→          Active
+   259→        </Badge>
+   260→      )
+   261→    case 'upcoming':
+   262→      return (
+   263→        <Badge className="border-transparent bg-cyan-accent/20 text-cyan-accent">Upcoming</Badge>
+   264→      )
+   265→    case 'ended':
+   266→      return (
+   267→        <Badge variant="secondary" className="text-muted-foreground">
+   268→          Ended
+   269→        </Badge>
+   270→      )
+   271→    default:
+   272→      return (
+   273→        <Badge variant="outline" className="capitalize">
+   274→          {status}
+   275→        </Badge>
+   276→      )
+   277→  }
+   278→}
+   279→
+   280→function auditActionBadge(action: string) {
+   281→  const map: Record<string, string> = {
+   282→    approve_student:
+   283→      'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-transparent',
+   284→    reject_student:
+   285→      'bg-red-500/15 text-red-600 dark:text-red-400 border-transparent',
+   286→    start_election:
+   287→      'bg-primary/15 text-primary border-transparent',
+   288→    end_election:
+   289→      'bg-cyan-accent/20 text-cyan-accent border-transparent',
+   290→    create_announcement:
+   291→      'bg-violet-500/15 text-violet-600 dark:text-violet-400 border-transparent',
+   292→  }
+   293→  return (
+   294→    <Badge className={cn('capitalize', map[action] || '')}>
+   295→      {action.replace(/_/g, ' ')}
+   296→    </Badge>
+   297→  )
+   298→}
+   299→
+   300→// ===================== Admin Login =====================
+   301→function AdminLogin({ onLogin }: { onLogin: () => void }) {
+   302→  const { setAdmin } = useAuth()
+   303→  const [username, setUsername] = useState('')
+   304→  const [password, setPassword] = useState('')
+   305→  const [loading, setLoading] = useState(false)
+   306→
+   307→  async function handleSubmit(e: React.FormEvent) {
+   308→    e.preventDefault()
+   309→    setLoading(true)
+   310→    try {
+   311→      const res = await api.post<{ admin: AdminUser; token: string }>(
+   312→        '/auth/admin-login',
+   313→        { username, password }
+   314→      )
+   315→      setAdmin(res.admin, res.token)
+   316→      toast.success(`Welcome back, ${res.admin.name}`)
+   317→      onLogin()
+   318→    } catch (err) {
+   319→      toast.error(err instanceof Error ? err.message : 'Login failed')
+   320→    } finally {
+   321→      setLoading(false)
+   322→    }
+   323→  }
+   324→
+   325→  return (
+   326→    <div className="relative min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
+   327→      <div className="absolute inset-0 -z-10 bg-grid opacity-40" />
+   328→      <motion.div
+   329→        initial={{ opacity: 0, y: 16 }}
+   330→        animate={{ opacity: 1, y: 0 }}
+   331→        transition={{ duration: 0.4 }}
+   332→        className="w-full max-w-md"
+   333→      >
+   334→        <Card className="overflow-hidden border-border/60 shadow-xl">
+   335→          <CardHeader className="space-y-3 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
+   336→            <div className="flex items-center gap-3">
+   337→              <div className="grid size-12 place-items-center rounded-2xl bg-white/15 backdrop-blur overflow-hidden ring-1 ring-white/20">
+   338→                <Image
+   339→                  src="/ulsesa-logo.jpg"
+   340→                  alt="ULSESA logo"
+   341→                  width={36}
+   342→                  height={36}
+   343→                  className="rounded-lg"
+   344→                />
+   345→              </div>
+   346→              <div>
+   347→                <CardTitle className="font-display text-2xl">
+   348→                  ULSESA Admin
+   349→                </CardTitle>
+   350→                <CardDescription className="text-primary-foreground/80">
+   351→                  Shaping Tomorrow&apos;s Scientific Innovators
+   352→                </CardDescription>
+   353→              </div>
+   354→            </div>
+   355→          </CardHeader>
+   356→          <CardContent className="pt-6">
+   357→            <form onSubmit={handleSubmit} className="space-y-4">
+   358→              <div className="space-y-2">
+   359→                <Label htmlFor="admin-username">Username</Label>
+   360→                <Input
+   361→                  id="admin-username"
+   362→                  value={username}
+   363→                  onChange={(e) => setUsername(e.target.value)}
+   364→                  placeholder="admin"
+   365→                  autoComplete="username"
+   366→                  required
+   367→                />
+   368→              </div>
+   369→              <div className="space-y-2">
+   370→                <Label htmlFor="admin-password">Password</Label>
+   371→                <Input
+   372→                  id="admin-password"
+   373→                  type="password"
+   374→                  value={password}
+   375→                  onChange={(e) => setPassword(e.target.value)}
+   376→                  placeholder="••••••••••"
+   377→                  autoComplete="current-password"
+   378→                  required
+   379→                />
+   380→              </div>
+   381→              <Button
+   382→                type="submit"
+   383→                className="w-full"
+   384→                size="lg"
+   385→                disabled={loading}
+   386→              >
+   387→                {loading ? (
+   388→                  <>
+   389→                    <Loader2 className="size-4 animate-spin" /> Signing in…
+   390→                  </>
+   391→                ) : (
+   392→                  'Sign In'
+   393→                )}
+   394→              </Button>
+   395→            </form>
+   396→            <div className="mt-5 rounded-xl border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+   397→              <p className="font-medium text-foreground">Demo credentials</p>
+   398→              <p className="mt-1 font-mono">admin / ulsesa-admin-2026</p>
+   399→            </div>
+   400→          </CardContent>
+   401→        </Card>
+   402→      </motion.div>
+   403→    </div>
+   404→  )
+   405→}
+   406→
+   407→// ===================== Sidebar =====================
+   408→const NAV_ITEMS: { id: Section; label: string; icon: typeof Users }[] = [
+   409→  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+   410→  { id: 'students', label: 'Students', icon: Users },
+   411→  { id: 'verification', label: 'Verification', icon: ShieldCheck },
+   412→  { id: 'election', label: 'Election', icon: Vote },
+   413→  { id: 'audit', label: 'Audit Logs', icon: ScrollText },
+   414→  { id: 'settings', label: 'Settings', icon: Settings },
+   415→]
+   416→
+   417→function SidebarContent({
+   418→  admin,
+   419→  active,
+   420→  onSelect,
+   421→  onLogout,
+   422→}: {
+   423→  admin: AdminUser
+   424→  active: Section
+   425→  onSelect: (s: Section) => void
+   426→  onLogout: () => void
+   427→}) {
+   428→  return (
+   429→    <div className="flex h-full flex-col gap-2 p-4">
+   430→      <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/80 p-4 text-primary-foreground">
+   431→        <div className="flex items-center gap-3">
+   432→          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/15 overflow-hidden ring-1 ring-white/20">
+   433→            <Image
+   434→              src="/ulsesa-logo.jpg"
+   435→              alt="ULSESA"
+   436→              width={32}
+   437→              height={32}
+   438→              className="rounded-lg"
+   439→            />
+   440→          </div>
+   441→          <div className="min-w-0 flex-1">
+   442→            <p className="truncate font-display text-sm font-semibold tracking-wide">
+   443→              ULSESA Admin
+   444→            </p>
+   445→            <p className="truncate text-[10px] text-primary-foreground/70">
+   446→              Shaping Tomorrow&apos;s Scientific Innovators
+   447→            </p>
+   448→          </div>
+   449→          <Badge className="border-transparent bg-white/20 text-primary-foreground text-[10px]">
+   450→            {admin.role}
+   451→          </Badge>
+   452→        </div>
+   453→        <Separator className="my-3 bg-white/15" />
+   454→        <div className="flex items-center gap-3">
+   455→          <Avatar className="size-8 border-2 border-white/30">
+   456→            <AvatarFallback className="bg-white/20 text-primary-foreground text-xs">
+   457→              {getInitials(admin.name)}
+   458→            </AvatarFallback>
+   459→          </Avatar>
+   460→          <p className="truncate text-sm font-medium">{admin.name}</p>
+   461→        </div>
+   462→      </div>
+   463→
+   464→      <nav className="mt-2 flex flex-1 flex-col gap-1">
+   465→        {NAV_ITEMS.map((item) => {
+   466→          const Icon = item.icon
+   467→          const isActive = active === item.id
+   468→          return (
+   469→            <button
+   470→              key={item.id}
+   471→              onClick={() => onSelect(item.id)}
+   472→              className={cn(
+   473→                'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all',
+   474→                isActive
+   475→                  ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/30'
+   476→                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+   477→              )}
+   478→            >
+   479→              <Icon
+   480→                className={cn(
+   481→                  'size-4 transition-transform',
+   482→                  isActive
+   483→                    ? 'text-primary-foreground'
+   484→                    : 'group-hover:scale-110'
+   485→                )}
+   486→              />
+   487→              {item.label}
+   488→            </button>
+   489→          )
+   490→        })}
+   491→      </nav>
+   492→
+   493→      <Separator />
+   494→      <button
+   495→        onClick={onLogout}
+   496→        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+   497→      >
+   498→        <LogOut className="size-4" /> Logout
+   499→      </button>
+   500→    </div>
+   501→  )
+   502→}
+   503→
+   504→// ===================== Dashboard Section =====================
+   505→function StatCard({
+   506→  icon: Icon,
+   507→  label,
+   508→  value,
+   509→  subtitle,
+   510→  accent,
+   511→  loading,
+   512→}: {
+   513→  icon: typeof Users
+   514→  label: string
+   515→  value: string | number
+   516→  subtitle: string
+   517→  accent: 'primary' | 'emerald' | 'cyan-accent'
+   518→  loading?: boolean
+   519→}) {
+   520→  const accents = {
+   521→    primary: 'from-primary/15 to-primary/5 text-primary',
+   522→    emerald: 'from-emerald-500/15 to-emerald-500/5 text-emerald-600 dark:text-emerald-400',
+   523→    'cyan-accent': 'from-cyan-accent/20 to-cyan-accent/5 text-cyan-accent',
+   524→  }
+   525→  return (
+   526→    <Card className="overflow-hidden">
+   527→      <CardContent className="p-5">
+   528→        <div className="flex items-start justify-between gap-3">
+   529→          <div className="min-w-0">
+   530→            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   531→              {label}
+   532→            </p>
+   533→            {loading ? (
+   534→              <Skeleton className="mt-2 h-8 w-20" />
+   535→            ) : (
+   536→              <p className="mt-1 font-display text-3xl font-bold">{value}</p>
+   537→            )}
+   538→            <p className="mt-1 truncate text-xs text-muted-foreground">
+   539→              {subtitle}
+   540→            </p>
+   541→          </div>
+   542→          <div
+   543→            className={cn(
+   544→              'grid size-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br',
+   545→              accents[accent]
+   546→            )}
+   547→          >
+   548→            <Icon className="size-5" />
+   549→          </div>
+   550→        </div>
+   551→      </CardContent>
+   552→    </Card>
+   553→  )
+   554→}
+   555→
+   556→function DashboardSection() {
+   557→  const [stats, setStats] = useState<AdminStats | null>(null)
+   558→  const [loading, setLoading] = useState(true)
+   559→  const [requests, setRequests] = useState<VerificationRequest[]>([])
+   560→  const [requestsLoading, setRequestsLoading] = useState(true)
+   561→  const [election, setElection] = useState<Election | null>(null)
+   562→  const [acting, setActing] = useState(false)
+   563→  const [pendingId, setPendingId] = useState<string | null>(null)
+   564→
+   565→  const fetchAll = useCallback(async () => {
+   566→    setLoading(true)
+   567→    setRequestsLoading(true)
+   568→    try {
+   569→      const [s, r, e] = await Promise.all([
+   570→        api.get<{ stats: AdminStats }>('/admin/stats'),
+   571→        api.get<{ requests: VerificationRequest[] }>(
+   572→          '/admin/verification-requests'
+   573→        ),
+   574→        api.get<{ election: Election | null }>('/admin/election'),
+   575→      ])
+   576→      setStats(s.stats)
+   577→      setRequests(r.requests.slice(0, 5))
+   578→      setElection(e.election)
+   579→    } catch (err) {
+   580→      toast.error(err instanceof Error ? err.message : 'Failed to load stats')
+   581→    } finally {
+   582→      setLoading(false)
+   583→      setRequestsLoading(false)
+   584→    }
+   585→  }, [])
+   586→
+   587→  useEffect(() => {
+   588→    void fetchAll()
+   589→  }, [fetchAll])
+   590→
+   591→  async function toggleElection(action: 'start' | 'end') {
+   592→    setActing(true)
+   593→    try {
+   594→      const res = await api.post<{ election: Election }>('/admin/election', {
+   595→        action,
+   596→      })
+   597→      setElection(res.election)
+   598→      toast.success(
+   599→        action === 'start' ? 'Election started' : 'Election ended'
+   600→      )
+   601→      void fetchAll()
+   602→    } catch (err) {
+   603→      toast.error(err instanceof Error ? err.message : 'Action failed')
+   604→    } finally {
+   605→      setActing(false)
+   606→    }
+   607→  }
+   608→
+   609→  async function quickVerify(
+   610→    student: VerificationRequest,
+   611→    action: 'approve' | 'reject'
+   612→  ) {
+   613→    setPendingId(student.id)
+   614→    try {
+   615→      await api.post(`/admin/students/${student.id}/verify`, { action })
+   616→      toast.success(
+   617→        `${student.fullName} ${action === 'approve' ? 'approved' : 'rejected'}`
+   618→      )
+   619→      setRequests((prev) => prev.filter((r) => r.id !== student.id))
+   620→      void fetchAll()
+   621→    } catch (err) {
+   622→      toast.error(err instanceof Error ? err.message : 'Action failed')
+   623→    } finally {
+   624→      setPendingId(null)
+   625→    }
+   626→  }
+   627→
+   628→  const turnoutPct = stats
+   629→    ? Math.min(100, Math.round(stats.turnout))
+   630→    : 0
+   631→  const verifiedRatio = stats && stats.totalStudents > 0
+   632→    ? Math.round((stats.verifiedStudents / stats.totalStudents) * 100)
+   633→    : 0
+   634→
+   635→  return (
+   636→    <div className="space-y-6">
+   637→      <div>
+   638→        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+   639→          ULSESA Admin Dashboard
+   640→        </h1>
+   641→        <p className="text-sm text-muted-foreground">
+   642→          Real-time overview of the ULSESA platform
+   643→        </p>
+   644→      </div>
+   645→
+   646→      {/* Stat cards */}
+   647→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+   648→        <StatCard
+   649→          icon={Users}
+   650→          label="Total Students"
+   651→          value={stats?.totalStudents ?? 0}
+   652→          subtitle="Registered accounts"
+   653→          accent="primary"
+   654→          loading={loading}
+   655→        />
+   656→        <StatCard
+   657→          icon={BadgeCheck}
+   658→          label="Verified"
+   659→          value={stats?.verifiedStudents ?? 0}
+   660→          subtitle="Eligible voters"
+   661→          accent="emerald"
+   662→          loading={loading}
+   663→        />
+   664→        <StatCard
+   665→          icon={Vote}
+   666→          label="Votes Cast"
+   667→          value={stats?.votesCast ?? 0}
+   668→          subtitle={`Turnout: ${stats?.turnout.toFixed(1) ?? 0}%`}
+   669→          accent="cyan-accent"
+   670→          loading={loading}
+   671→        />
+   672→        <StatCard
+   673→          icon={Activity}
+   674→          label="System Health"
+   675→          value={stats?.systemHealth ?? '99.9%'}
+   676→          subtitle="All services operational"
+   677→          accent="emerald"
+   678→          loading={loading}
+   679→        />
+   680→      </div>
+   681→
+   682→      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+   683→        {/* Election status */}
+   684→        <Card className="lg:col-span-1">
+   685→          <CardHeader>
+   686→            <CardTitle className="font-display text-lg">
+   687→              Election Status
+   688→            </CardTitle>
+   689→            <CardDescription>
+   690→              {stats?.electionTitle || 'No election configured'}
+   691→            </CardDescription>
+   692→          </CardHeader>
+   693→          <CardContent className="space-y-4">
+   694→            <div className="flex items-center justify-between">
+   695→              <span className="text-sm text-muted-foreground">
+   696→                Current state
+   697→              </span>
+   698→              {election
+   699→                ? electionStatusBadge(election.status)
+   700→                : (
+   701→                  <Badge variant="secondary" className="text-muted-foreground">
+   702→                    None
+   703→                  </Badge>
+   704→                )}
+   705→            </div>
+   706→            <Separator />
+   707→            <div className="space-y-1.5">
+   708→              <div className="flex items-center justify-between text-sm">
+   709→                <span className="text-muted-foreground">Verified ratio</span>
+   710→                <span className="font-medium">{verifiedRatio}%</span>
+   711→              </div>
+   712→              <Progress value={verifiedRatio} className="h-2" />
+   713→            </div>
+   714→            <div className="space-y-1.5">
+   715→              <div className="flex items-center justify-between text-sm">
+   716→                <span className="text-muted-foreground">Voter turnout</span>
+   717→                <span className="font-medium">{turnoutPct}%</span>
+   718→              </div>
+   719→              <Progress value={turnoutPct} className="h-2" />
+   720→            </div>
+   721→            <div className="flex flex-col gap-2 pt-2">
+   722→              {election?.status === 'upcoming' && (
+   723→                <AlertDialog>
+   724→                  <AlertDialogTrigger asChild>
+   725→                    <Button disabled={acting} className="w-full">
+   726→                      <PlayCircle className="size-4" /> Start Election
+   727→                    </Button>
+   728→                  </AlertDialogTrigger>
+   729→                  <AlertDialogContent>
+   730→                    <AlertDialogHeader>
+   731→                      <AlertDialogTitle>Start election?</AlertDialogTitle>
+   732→                      <AlertDialogDescription>
+   733→                        This will open voting for all verified students. The
+   734→                        action will be recorded in the audit log.
+   735→                      </AlertDialogDescription>
+   736→                    </AlertDialogHeader>
+   737→                    <AlertDialogFooter>
+   738→                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+   739→                      <AlertDialogAction
+   740→                        onClick={() => void toggleElection('start')}
+   741→                      >
+   742→                        Confirm Start
+   743→                      </AlertDialogAction>
+   744→                    </AlertDialogFooter>
+   745→                  </AlertDialogContent>
+   746→                </AlertDialog>
+   747→              )}
+   748→              {election?.status === 'active' && (
+   749→                <AlertDialog>
+   750→                  <AlertDialogTrigger asChild>
+   751→                    <Button
+   752→                      variant="destructive"
+   753→                      disabled={acting}
+   754→                      className="w-full"
+   755→                    >
+   756→                      <StopCircle className="size-4" /> End Election
+   757→                    </Button>
+   758→                  </AlertDialogTrigger>
+   759→                  <AlertDialogContent>
+   760→                    <AlertDialogHeader>
+   761→                      <AlertDialogTitle>End election?</AlertDialogTitle>
+   762→                      <AlertDialogDescription>
+   763→                        This will immediately close voting. Results will be
+   764→                        final. This action cannot be undone.
+   765→                      </AlertDialogDescription>
+   766→                    </AlertDialogHeader>
+   767→                    <AlertDialogFooter>
+   768→                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+   769→                      <AlertDialogAction
+   770→                        className="bg-destructive text-white hover:bg-destructive/90"
+   771→                        onClick={() => void toggleElection('end')}
+   772→                      >
+   773→                        Confirm End
+   774→                      </AlertDialogAction>
+   775→                    </AlertDialogFooter>
+   776→                  </AlertDialogContent>
+   777→                </AlertDialog>
+   778→              )}
+   779→              {(!election || election.status === 'ended') && (
+   780→                <div className="rounded-xl bg-muted/40 p-3 text-center text-xs text-muted-foreground">
+   781→                  {election
+   782→                    ? 'This election has ended.'
+   783→                    : 'No election configured.'}
+   784→                </div>
+   785→              )}
+   786→            </div>
+   787→          </CardContent>
+   788→        </Card>
+   789→
+   790→        {/* Recent verification requests */}
+   791→        <Card className="lg:col-span-2">
+   792→          <CardHeader className="flex-row items-center justify-between space-y-0">
+   793→            <div>
+   794→              <CardTitle className="font-display text-lg">
+   795→                Pending Verification
+   796→              </CardTitle>
+   797→              <CardDescription>
+   798→                Most recent submissions awaiting review
+   799→              </CardDescription>
+   800→            </div>
+   801→            <Badge variant="secondary" className="text-muted-foreground">
+   802→              {requests.length} pending
+   803→            </Badge>
+   804→          </CardHeader>
+   805→          <CardContent>
+   806→            {requestsLoading ? (
+   807→              <div className="space-y-3">
+   808→                {Array.from({ length: 3 }).map((_, i) => (
+   809→                  <div
+   810→                    key={i}
+   811→                    className="flex items-center gap-3 rounded-xl border border-border/60 p-3"
+   812→                  >
+   813→                    <Skeleton className="size-10 rounded-full" />
+   814→                    <div className="flex-1 space-y-2">
+   815→                      <Skeleton className="h-4 w-32" />
+   816→                      <Skeleton className="h-3 w-24" />
+   817→                    </div>
+   818→                    <Skeleton className="h-8 w-20" />
+   819→                  </div>
+   820→                ))}
+   821→              </div>
+   822→            ) : requests.length === 0 ? (
+   823→              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+   824→                <div className="grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+   825→                  <CheckCircle2 className="size-6" />
+   826→                </div>
+   827→                <p className="font-medium">All caught up!</p>
+   828→                <p className="text-sm text-muted-foreground">
+   829→                  No pending verification requests.
+   830→                </p>
+   831→              </div>
+   832→            ) : (
+   833→              <div className="space-y-2">
+   834→                {requests.map((r) => (
+   835→                  <div
+   836→                    key={r.id}
+   837→                    className="flex flex-col gap-3 rounded-xl border border-border/60 p-3 sm:flex-row sm:items-center"
+   838→                  >
+   839→                    <Avatar className="size-10 shrink-0">
+   840→                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+   841→                        {getInitials(r.fullName)}
+   842→                      </AvatarFallback>
+   843→                    </Avatar>
+   844→                    <div className="min-w-0 flex-1">
+   845→                      <p className="truncate text-sm font-medium">
+   846→                        {r.fullName}
+   847→                      </p>
+   848→                      <p className="truncate text-xs text-muted-foreground">
+   849→                        {r.matricNumber} · {r.level} · {r.programme}
+   850→                      </p>
+   851→                    </div>
+   852→                    <div className="flex shrink-0 gap-2">
+   853→                      <Button
+   854→                        size="sm"
+   855→                        variant="outline"
+   856→                        className="border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600"
+   857→                        disabled={pendingId === r.id}
+   858→                        onClick={() => void quickVerify(r, 'approve')}
+   859→                      >
+   860→                        <CheckCircle2 className="size-4" /> Approve
+   861→                      </Button>
+   862→                      <Button
+   863→                        size="sm"
+   864→                        variant="outline"
+   865→                        className="border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+   866→                        disabled={pendingId === r.id}
+   867→                        onClick={() => void quickVerify(r, 'reject')}
+   868→                      >
+   869→                        <XCircle className="size-4" /> Reject
+   870→                      </Button>
+   871→                    </div>
+   872→                  </div>
+   873→                ))}
+   874→              </div>
+   875→            )}
+   876→          </CardContent>
+   877→        </Card>
+   878→      </div>
+   879→    </div>
+   880→  )
+   881→}
+   882→
+   883→// ===================== Students Section =====================
+   884→function StudentsSection() {
+   885→  const [students, setStudents] = useState<StudentRow[]>([])
+   886→  const [loading, setLoading] = useState(true)
+   887→  const [search, setSearch] = useState('')
+   888→  const [statusFilter, setStatusFilter] = useState<string>('all')
+   889→  const [selected, setSelected] = useState<StudentRow | null>(null)
+   890→  const [acting, setActing] = useState(false)
+   891→  const [notes, setNotes] = useState('')
+   892→
+   893→  // Manual verify / reset password state
+   894→  const [manualVerifying, setManualVerifying] = useState(false)
+   895→  const [resettingPassword, setResettingPassword] = useState(false)
+   896→  const [showManualVerifyConfirm, setShowManualVerifyConfirm] = useState(false)
+   897→  const [showResetPasswordConfirm, setShowResetPasswordConfirm] = useState(false)
+   898→
+   899→  // Add student dialog state
+   900→  const [showAddDialog, setShowAddDialog] = useState(false)
+   901→  const [addingStudent, setAddingStudent] = useState(false)
+   902→  const [newMatric, setNewMatric] = useState('')
+   903→  const [newFullName, setNewFullName] = useState('')
+   904→  const [newLevel, setNewLevel] = useState('')
+   905→  const [newProgramme, setNewProgramme] = useState('')
+   906→  const [newEmail, setNewEmail] = useState('')
+   907→  const [newPhone, setNewPhone] = useState('')
+   908→
+   909→  const fetchStudents = useCallback(async () => {
+   910→    setLoading(true)
+   911→    try {
+   912→      const params = new URLSearchParams()
+   913→      if (statusFilter !== 'all') params.set('status', statusFilter)
+   914→      if (search.trim()) params.set('search', search.trim())
+   915→      const q = params.toString()
+   916→      const res = await api.get<{ students: StudentRow[] }>(
+   917→        `/admin/students${q ? `?${q}` : ''}`
+   918→      )
+   919→      setStudents(res.students)
+   920→    } catch (err) {
+   921→      toast.error(
+   922→        err instanceof Error ? err.message : 'Failed to load students'
+   923→      )
+   924→    } finally {
+   925→      setLoading(false)
+   926→    }
+   927→  }, [statusFilter, search])
+   928→
+   929→  useEffect(() => {
+   930→    void fetchStudents()
+   931→  }, [fetchStudents])
+   932→
+   933→  async function verify(student: StudentRow, action: 'approve' | 'reject') {
+   934→    setActing(true)
+   935→    try {
+   936→      await api.post(`/admin/students/${student.id}/verify`, {
+   937→        action,
+   938→        notes: notes.trim() || undefined,
+   939→      })
+   940→      toast.success(
+   941→        `${student.fullName} ${action === 'approve' ? 'approved' : 'rejected'}`
+   942→      )
+   943→      setSelected(null)
+   944→      setNotes('')
+   945→      void fetchStudents()
+   946→    } catch (err) {
+   947→      toast.error(err instanceof Error ? err.message : 'Action failed')
+   948→    } finally {
+   949→      setActing(false)
+   950→    }
+   951→  }
+   952→
+   953→  async function handleManualVerify() {
+   954→    if (!selected) return
+   955→    setManualVerifying(true)
+   956→    try {
+   957→      await api.post(`/admin/students/${selected.id}/manual-verify`, {
+   958→        notes: notes.trim() || undefined,
+   959→      })
+   960→      toast.success(`${selected.fullName} manually verified`)
+   961→      setShowManualVerifyConfirm(false)
+   962→      setSelected(null)
+   963→      setNotes('')
+   964→      void fetchStudents()
+   965→    } catch (err) {
+   966→      toast.error(err instanceof Error ? err.message : 'Manual verify failed')
+   967→    } finally {
+   968→      setManualVerifying(false)
+   969→    }
+   970→  }
+   971→
+   972→  async function handleResetPassword() {
+   973→    if (!selected) return
+   974→    setResettingPassword(true)
+   975→    try {
+   976→      await api.post(`/admin/students/${selected.id}/reset-password`, {
+   977→        notes: notes.trim() || undefined,
+   978→      })
+   979→      toast.success(`Password reset for ${selected.fullName}`)
+   980→      setShowResetPasswordConfirm(false)
+   981→      setSelected(null)
+   982→      setNotes('')
+   983→      void fetchStudents()
+   984→    } catch (err) {
+   985→      toast.error(err instanceof Error ? err.message : 'Reset failed')
+   986→    } finally {
+   987→      setResettingPassword(false)
+   988→    }
+   989→  }
+   990→
+   991→  function resetAddForm() {
+   992→    setNewMatric('')
+   993→    setNewFullName('')
+   994→    setNewLevel('')
+   995→    setNewProgramme('')
+   996→    setNewEmail('')
+   997→    setNewPhone('')
+   998→  }
+   999→
+  1000→  async function handleAddStudent(e: React.FormEvent) {
+  1001→    e.preventDefault()
+  1002→    if (!newMatric.trim() || !newFullName.trim() || !newLevel || !newProgramme.trim()) {
+  1003→      toast.error('Please fill in all required fields')
+  1004→      return
+  1005→    }
+  1006→    setAddingStudent(true)
+  1007→    try {
+  1008→      await api.post('/admin/students', {
+  1009→        matricNumber: newMatric.trim(),
+  1010→        fullName: newFullName.trim(),
+  1011→        level: newLevel,
+  1012→        programme: newProgramme.trim(),
+  1013→        email: newEmail.trim() || undefined,
+  1014→        phone: newPhone.trim() || undefined,
+  1015→      })
+  1016→      toast.success('Student added')
+  1017→      setShowAddDialog(false)
+  1018→      resetAddForm()
+  1019→      void fetchStudents()
+  1020→    } catch (err) {
+  1021→      toast.error(err instanceof Error ? err.message : 'Failed to add student')
+  1022→    } finally {
+  1023→      setAddingStudent(false)
+  1024→    }
+  1025→  }
+  1026→
+  1027→  return (
+  1028→    <div className="space-y-6">
+  1029→      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+  1030→        <div>
+  1031→          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+  1032→            Students
+  1033→          </h1>
+  1034→          <p className="text-sm text-muted-foreground">
+  1035→            Manage and verify student accounts
+  1036→          </p>
+  1037→        </div>
+  1038→        <div className="flex gap-2">
+  1039→          <Button variant="outline" size="sm" onClick={() => void fetchStudents()}>
+  1040→            <RefreshCw className="size-4" /> Refresh
+  1041→          </Button>
+  1042→          <Button size="sm" onClick={() => setShowAddDialog(true)}>
+  1043→            <UserPlus className="size-4" /> Add Student
+  1044→          </Button>
+  1045→        </div>
+  1046→      </div>
+  1047→
+  1048→      <Card>
+  1049→        <CardHeader className="gap-3">
+  1050→          <div className="flex flex-col gap-3 sm:flex-row">
+  1051→            <div className="relative flex-1">
+  1052→              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+  1053→              <Input
+  1054→                placeholder="Search by name, matric, email, programme…"
+  1055→                value={search}
+  1056→                onChange={(e) => setSearch(e.target.value)}
+  1057→                className="pl-9"
+  1058→                onKeyDown={(e) => {
+  1059→                  if (e.key === 'Enter') void fetchStudents()
+  1060→                }}
+  1061→              />
+  1062→            </div>
+  1063→            <Select value={statusFilter} onValueChange={setStatusFilter}>
+  1064→              <SelectTrigger className="w-full sm:w-48">
+  1065→                <Filter className="size-4 text-muted-foreground" />
+  1066→                <SelectValue />
+  1067→              </SelectTrigger>
+  1068→              <SelectContent>
+  1069→                <SelectItem value="all">All statuses</SelectItem>
+  1070→                <SelectItem value="pending">Pending</SelectItem>
+  1071→                <SelectItem value="submitted">Submitted</SelectItem>
+  1072→                <SelectItem value="approved">Approved</SelectItem>
+  1073→                <SelectItem value="admin_verified">Admin Verified</SelectItem>
+  1074→                <SelectItem value="rejected">Rejected</SelectItem>
+  1075→              </SelectContent>
+  1076→            </Select>
+  1077→          </div>
+  1078→        </CardHeader>
+  1079→        <CardContent className="p-0">
+  1080→          {loading ? (
+  1081→            <div className="space-y-2 p-4">
+  1082→              {Array.from({ length: 6 }).map((_, i) => (
+  1083→                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+  1084→              ))}
+  1085→            </div>
+  1086→          ) : students.length === 0 ? (
+  1087→            <div className="flex flex-col items-center gap-2 py-12 text-center">
+  1088→              <div className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+  1089→                <Users className="size-6" />
+  1090→              </div>
+  1091→              <p className="font-medium">No students found</p>
+  1092→              <p className="text-sm text-muted-foreground">
+  1093→                Try adjusting your filters or search query.
+  1094→              </p>
+  1095→            </div>
+  1096→          ) : (
+  1097→            <div className="overflow-x-auto">
+  1098→              <Table>
+  1099→                <TableHeader>
+  1100→                  <TableRow>
+  1101→                    <TableHead>Name</TableHead>
+  1102→                    <TableHead>Matric</TableHead>
+  1103→                    <TableHead>Level</TableHead>
+  1104→                    <TableHead className="hidden md:table-cell">
+  1105→                      Programme
+  1106→                    </TableHead>
+  1107→                    <TableHead>Status</TableHead>
+  1108→                    <TableHead className="text-right">Actions</TableHead>
+  1109→                  </TableRow>
+  1110→                </TableHeader>
+  1111→                <TableBody>
+  1112→                  {students.map((s) => (
+  1113→                    <TableRow key={s.id} className="cursor-pointer">
+  1114→                      <TableCell
+  1115→                        className="font-medium"
+  1116→                        onClick={() => setSelected(s)}
+  1117→                      >
+  1118→                        <div className="flex items-center gap-2">
+  1119→                          <Avatar className="size-8">
+  1120→                            <AvatarFallback className="bg-primary/10 text-primary text-[10px]">
+  1121→                              {getInitials(s.fullName)}
+  1122→                            </AvatarFallback>
+  1123→                          </Avatar>
+  1124→                          <span>{s.fullName}</span>
+  1125→                        </div>
+  1126→                      </TableCell>
+  1127→                      <TableCell
+  1128→                        className="font-mono text-xs"
+  1129→                        onClick={() => setSelected(s)}
+  1130→                      >
+  1131→                        {s.matricNumber}
+  1132→                      </TableCell>
+  1133→                      <TableCell onClick={() => setSelected(s)}>
+  1134→                        {s.level}
+  1135→                      </TableCell>
+  1136→                      <TableCell
+  1137→                        className="hidden max-w-48 truncate text-muted-foreground md:table-cell"
+  1138→                        onClick={() => setSelected(s)}
+  1139→                      >
+  1140→                        {s.programme}
+  1141→                      </TableCell>
+  1142→                      <TableCell onClick={() => setSelected(s)}>
+  1143→                        {statusBadge(s.verificationStatus)}
+  1144→                      </TableCell>
+  1145→                      <TableCell className="text-right">
+  1146→                        <Button
+  1147→                          size="sm"
+  1148→                          variant="ghost"
+  1149→                          onClick={() => setSelected(s)}
+  1150→                        >
+  1151→                          <Eye className="size-4" /> View
+  1152→                        </Button>
+  1153→                      </TableCell>
+  1154→                    </TableRow>
+  1155→                  ))}
+  1156→                </TableBody>
+  1157→              </Table>
+  1158→            </div>
+  1159→          )}
+  1160→        </CardContent>
+  1161→      </Card>
+  1162→
+  1163→      {/* Student detail dialog */}
+  1164→      <Dialog
+  1165→        open={!!selected}
+  1166→        onOpenChange={(o) => {
+  1167→          if (!o) {
+  1168→            setSelected(null)
+  1169→            setNotes('')
+  1170→          }
+  1171→        }}
+  1172→      >
+  1173→        <DialogContent className="sm:max-w-lg">
+  1174→          {selected && (
+  1175→            <>
+  1176→              <DialogHeader>
+  1177→                <DialogTitle className="font-display">
+  1178→                  Student Details
+  1179→                </DialogTitle>
+  1180→                <DialogDescription>
+  1181→                  Review and verify this student account
+  1182→                </DialogDescription>
+  1183→              </DialogHeader>
+  1184→              <div className="space-y-4">
+  1185→                <div className="flex items-center gap-3">
+  1186→                  <Avatar className="size-14">
+  1187→                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+  1188→                      {getInitials(selected.fullName)}
+  1189→                    </AvatarFallback>
+  1190→                  </Avatar>
+  1191→                  <div>
+  1192→                    <p className="font-display text-lg font-semibold">
+  1193→                      {selected.fullName}
+  1194→                    </p>
+  1195→                    <p className="font-mono text-xs text-muted-foreground">
+  1196→                      {selected.matricNumber}
+  1197→                    </p>
+  1198→                  </div>
+  1199→                  <div className="ml-auto">
+  1200→                    {statusBadge(selected.verificationStatus)}
+  1201→                  </div>
+  1202→                </div>
+  1203→                <div className="grid grid-cols-2 gap-3 text-sm">
+  1204→                  <div className="rounded-lg bg-muted/40 p-3">
+  1205→                    <p className="text-xs text-muted-foreground">Level</p>
+  1206→                    <p className="font-medium">{selected.level}</p>
+  1207→                  </div>
+  1208→                  <div className="rounded-lg bg-muted/40 p-3">
+  1209→                    <p className="text-xs text-muted-foreground">Programme</p>
+  1210→                    <p className="font-medium">{selected.programme}</p>
+  1211→                  </div>
+  1212→                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+  1213→                    <p className="text-xs text-muted-foreground">Email</p>
+  1214→                    <p className="font-medium truncate">
+  1215→                      {selected.email || '—'}
+  1216→                    </p>
+  1217→                  </div>
+  1218→                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+  1219→                    <p className="text-xs text-muted-foreground">Phone</p>
+  1220→                    <p className="font-medium">{selected.phone || '—'}</p>
+  1221→                  </div>
+  1222→                  <div className="col-span-2 rounded-lg bg-muted/40 p-3">
+  1223→                    <p className="text-xs text-muted-foreground">Joined</p>
+  1224→                    <p className="font-medium">
+  1225→                      {formatDateTime(selected.createdAt)}
+  1226→                    </p>
+  1227→                  </div>
+  1228→                  {selected.idDocumentUrl && (
+  1229→                    <a
+  1230→                      href={selected.idDocumentUrl}
+  1231→                      target="_blank"
+  1232→                      rel="noopener noreferrer"
+  1233→                      className="col-span-2 flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
+  1234→                    >
+  1235→                      <span className="flex items-center gap-2">
+  1236→                        <FileText className="size-4 text-primary" />
+  1237→                        View ID document
+  1238→                      </span>
+  1239→                      <ExternalLink className="size-4 text-muted-foreground" />
+  1240→                    </a>
+  1241→                  )}
+  1242→                </div>
+  1243→
+  1244→                {(selected.verificationStatus === 'submitted' ||
+  1245→                  selected.verificationStatus === 'pending' ||
+  1246→                  (selected.verificationStatus !== 'admin_verified' &&
+  1247→                    !selected.hasPassword) ||
+  1248→                  selected.hasPassword) && (
+  1249→                  <div className="space-y-2">
+  1250→                    <Label htmlFor="verify-notes">
+  1251→                      Notes <span className="text-muted-foreground">(optional)</span>
+  1252→                    </Label>
+  1253→                    <Textarea
+  1254→                      id="verify-notes"
+  1255→                      value={notes}
+  1256→                      onChange={(e) => setNotes(e.target.value)}
+  1257→                      placeholder="Add internal notes for this decision…"
+  1258→                      rows={2}
+  1259→                    />
+  1260→                  </div>
+  1261→                )}
+  1262→
+  1263→                {/* Manual verify + reset password admin tools */}
+  1264→                {selected.verificationStatus !== 'admin_verified' &&
+  1265→                  !selected.hasPassword && (
+  1266→                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
+  1267→                      <div className="flex items-start gap-2">
+  1268→                        <ShieldCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+  1269→                        <div className="flex-1 min-w-0">
+  1270→                          <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+  1271→                            Manual verification (skip OTP)
+  1272→                          </p>
+  1273→                          <p className="text-xs text-muted-foreground">
+  1274→                            Use this when the student&apos;s email OTP fails or
+  1275→                            they can&apos;t access their email. The student can
+  1276→                            then claim their account and set a password without
+  1277→                            the email code.
+  1278→                          </p>
+  1279→                        </div>
+  1280→                      </div>
+  1281→                      <Button
+  1282→                        type="button"
+  1283→                        size="sm"
+  1284→                        variant="outline"
+  1285→                        className="w-full border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-300"
+  1286→                        disabled={manualVerifying || acting}
+  1287→                        onClick={() => setShowManualVerifyConfirm(true)}
+  1288→                      >
+  1289→                        <ShieldCheck className="size-4" />
+  1290→                        Manually Verify (Skip OTP)
+  1291→                      </Button>
+  1292→                    </div>
+  1293→                  )}
+  1294→
+  1295→                {selected.hasPassword && (
+  1296→                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+  1297→                    <div className="flex items-start gap-2">
+  1298→                      <KeyRound className="size-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+  1299→                      <div className="flex-1 min-w-0">
+  1300→                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+  1301→                          Reset password
+  1302→                        </p>
+  1303→                        <p className="text-xs text-muted-foreground">
+  1304→                          The student will need to go through the claim flow
+  1305→                          again with their matric number. Since they&apos;re
+  1306→                          already admin-verified, they won&apos;t need an email
+  1307→                          code.
+  1308→                        </p>
+  1309→                      </div>
+  1310→                    </div>
+  1311→                    <Button
+  1312→                      type="button"
+  1313→                      size="sm"
+  1314→                      variant="outline"
+  1315→                      className="w-full border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-700 dark:text-amber-300"
+  1316→                      disabled={resettingPassword || acting}
+  1317→                      onClick={() => setShowResetPasswordConfirm(true)}
+  1318→                    >
+  1319→                      <KeyRound className="size-4" />
+  1320→                      Reset Password
+  1321→                    </Button>
+  1322→                  </div>
+  1323→                )}
+  1324→              </div>
+  1325→              <DialogFooter className="gap-2">
+  1326→                <DialogClose asChild>
+  1327→                  <Button variant="outline">Close</Button>
+  1328→                </DialogClose>
+  1329→                {(selected.verificationStatus === 'submitted' ||
+  1330→                  selected.verificationStatus === 'pending') && (
+  1331→                  <>
+  1332→                    <AlertDialog>
+  1333→                      <AlertDialogTrigger asChild>
+  1334→                        <Button
+  1335→                          variant="outline"
+  1336→                          className="border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+  1337→                          disabled={acting}
+  1338→                        >
+  1339→                          <XCircle className="size-4" /> Reject
+  1340→                        </Button>
+  1341→                      </AlertDialogTrigger>
+  1342→                      <AlertDialogContent>
+  1343→                        <AlertDialogHeader>
+  1344→                          <AlertDialogTitle>
+  1345→                            Reject this student?
+  1346→                          </AlertDialogTitle>
+  1347→                          <AlertDialogDescription>
+  1348→                            {selected.fullName} ({selected.matricNumber}) will
+  1349→                            not be able to vote. They can resubmit later.
+  1350→                          </AlertDialogDescription>
+  1351→                        </AlertDialogHeader>
+  1352→                        <AlertDialogFooter>
+  1353→                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1354→                          <AlertDialogAction
+  1355→                            className="bg-destructive text-white hover:bg-destructive/90"
+  1356→                            onClick={() => void verify(selected, 'reject')}
+  1357→                          >
+  1358→                            Confirm Reject
+  1359→                          </AlertDialogAction>
+  1360→                        </AlertDialogFooter>
+  1361→                      </AlertDialogContent>
+  1362→                    </AlertDialog>
+  1363→                    <Button
+  1364→                      disabled={acting}
+  1365→                      onClick={() => void verify(selected, 'approve')}
+  1366→                    >
+  1367→                      <CheckCircle2 className="size-4" /> Approve
+  1368→                    </Button>
+  1369→                  </>
+  1370→                )}
+  1371→              </DialogFooter>
+  1372→            </>
+  1373→          )}
+  1374→        </DialogContent>
+  1375→      </Dialog>
+  1376→
+  1377→      {/* Manual verify confirmation */}
+  1378→      <AlertDialog
+  1379→        open={showManualVerifyConfirm}
+  1380→        onOpenChange={setShowManualVerifyConfirm}
+  1381→      >
+  1382→        <AlertDialogContent>
+  1383→          <AlertDialogHeader>
+  1384→            <AlertDialogTitle>
+  1385→              Manually verify this student without OTP?
+  1386→            </AlertDialogTitle>
+  1387→            <AlertDialogDescription>
+  1388→              This will verify the student&apos;s identity without an email OTP
+  1389→              code. They will be able to set a password immediately. Continue?
+  1390→            </AlertDialogDescription>
+  1391→          </AlertDialogHeader>
+  1392→          <AlertDialogFooter>
+  1393→            <AlertDialogCancel disabled={manualVerifying}>
+  1394→              Cancel
+  1395→            </AlertDialogCancel>
+  1396→            <AlertDialogAction
+  1397→              className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+  1398→              disabled={manualVerifying}
+  1399→              onClick={(e) => {
+  1400→                e.preventDefault()
+  1401→                void handleManualVerify()
+  1402→              }}
+  1403→            >
+  1404→              {manualVerifying ? (
+  1405→                <>
+  1406→                  <Loader2 className="size-4 animate-spin" /> Verifying…
+  1407→                </>
+  1408→              ) : (
+  1409→                <>
+  1410→                  <ShieldCheck className="size-4" /> Confirm Manual Verify
+  1411→                </>
+  1412→              )}
+  1413→            </AlertDialogAction>
+  1414→          </AlertDialogFooter>
+  1415→        </AlertDialogContent>
+  1416→      </AlertDialog>
+  1417→
+  1418→      {/* Reset password confirmation */}
+  1419→      <AlertDialog
+  1420→        open={showResetPasswordConfirm}
+  1421→        onOpenChange={setShowResetPasswordConfirm}
+  1422→      >
+  1423→        <AlertDialogContent>
+  1424→          <AlertDialogHeader>
+  1425→            <AlertDialogTitle>Reset this student&apos;s password?</AlertDialogTitle>
+  1426→            <AlertDialogDescription>
+  1427→              This will clear the student&apos;s current password. They will
+  1428→              need to claim their account again and set a new password (no OTP
+  1429→              required since they were already verified). Continue?
+  1430→            </AlertDialogDescription>
+  1431→          </AlertDialogHeader>
+  1432→          <AlertDialogFooter>
+  1433→            <AlertDialogCancel disabled={resettingPassword}>
+  1434→              Cancel
+  1435→            </AlertDialogCancel>
+  1436→            <AlertDialogAction
+  1437→              className="bg-amber-600 text-white hover:bg-amber-600/90"
+  1438→              disabled={resettingPassword}
+  1439→              onClick={(e) => {
+  1440→                e.preventDefault()
+  1441→                void handleResetPassword()
+  1442→              }}
+  1443→            >
+  1444→              {resettingPassword ? (
+  1445→                <>
+  1446→                  <Loader2 className="size-4 animate-spin" /> Resetting…
+  1447→                </>
+  1448→              ) : (
+  1449→                <>
+  1450→                  <KeyRound className="size-4" /> Confirm Reset
+  1451→                </>
+  1452→              )}
+  1453→            </AlertDialogAction>
+  1454→          </AlertDialogFooter>
+  1455→        </AlertDialogContent>
+  1456→      </AlertDialog>
+  1457→
+  1458→      {/* Add student dialog */}
+  1459→      <Dialog
+  1460→        open={showAddDialog}
+  1461→        onOpenChange={(o) => {
+  1462→          setShowAddDialog(o)
+  1463→          if (!o) resetAddForm()
+  1464→        }}
+  1465→      >
+  1466→        <DialogContent className="sm:max-w-md">
+  1467→          <DialogHeader>
+  1468→            <DialogTitle className="font-display">Add Student</DialogTitle>
+  1469→            <DialogDescription>
+  1470→              Pre-register a student record. The student will start unverified
+  1471→              and can claim their account with their matric number.
+  1472→            </DialogDescription>
+  1473→          </DialogHeader>
+  1474→          <form onSubmit={handleAddStudent} className="space-y-4">
+  1475→            <div className="space-y-2">
+  1476→              <Label htmlFor="new-matric">
+  1477→                Matric Number <span className="text-destructive">*</span>
+  1478→              </Label>
+  1479→              <Input
+  1480→                id="new-matric"
+  1481→                placeholder="e.g., 230315011"
+  1482→                value={newMatric}
+  1483→                onChange={(e) => setNewMatric(e.target.value)}
+  1484→                required
+  1485→                autoFocus
+  1486→              />
+  1487→            </div>
+  1488→            <div className="space-y-2">
+  1489→              <Label htmlFor="new-fullname">
+  1490→                Full Name <span className="text-destructive">*</span>
+  1491→              </Label>
+  1492→              <Input
+  1493→                id="new-fullname"
+  1494→                placeholder="e.g., Adekunle Bola Ahmed"
+  1495→                value={newFullName}
+  1496→                onChange={(e) => setNewFullName(e.target.value)}
+  1497→                required
+  1498→              />
+  1499→            </div>
+  1500→            <div className="grid grid-cols-2 gap-3">
+  1501→              <div className="space-y-2">
+  1502→                <Label htmlFor="new-level">
+  1503→                  Level <span className="text-destructive">*</span>
+  1504→                </Label>
+  1505→                <Select value={newLevel} onValueChange={setNewLevel} required>
+  1506→                  <SelectTrigger id="new-level">
+  1507→                    <SelectValue placeholder="Select" />
+  1508→                  </SelectTrigger>
+  1509→                  <SelectContent>
+  1510→                    <SelectItem value="100">100</SelectItem>
+  1511→                    <SelectItem value="200">200</SelectItem>
+  1512→                    <SelectItem value="300">300</SelectItem>
+  1513→                    <SelectItem value="400">400</SelectItem>
+  1514→                    <SelectItem value="500">500</SelectItem>
+  1515→                  </SelectContent>
+  1516→                </Select>
+  1517→              </div>
+  1518→              <div className="space-y-2">
+  1519→                <Label htmlFor="new-programme">
+  1520→                  Programme <span className="text-destructive">*</span>
+  1521→                </Label>
+  1522→                <Select
+  1523→                  value={newProgramme}
+  1524→                  onValueChange={setNewProgramme}
+  1525→                  required
+  1526→                >
+  1527→                  <SelectTrigger id="new-programme">
+  1528→                    <SelectValue placeholder="Select" />
+  1529→                  </SelectTrigger>
+  1530→                  <SelectContent className="max-h-72">
+  1531→                    <SelectItem value="BSc Physics">BSc Physics</SelectItem>
+  1532→                    <SelectItem value="BSc Astrophysics">
+  1533→                      BSc Astrophysics
+  1534→                    </SelectItem>
+  1535→                    <SelectItem value="BSc Geophysics">
+  1536→                      BSc Geophysics
+  1537→                    </SelectItem>
+  1538→                    <SelectItem value="BSc Geology">BSc Geology</SelectItem>
+  1539→                    <SelectItem value="BSc Chemistry">BSc Chemistry</SelectItem>
+  1540→                    <SelectItem value="BSc Biochemistry">
+  1541→                      BSc Biochemistry
+  1542→                    </SelectItem>
+  1543→                    <SelectItem value="BSc Botany">BSc Botany</SelectItem>
+  1544→                    <SelectItem value="BSc Zoology">BSc Zoology</SelectItem>
+  1545→                    <SelectItem value="BSc Microbiology">
+  1546→                      BSc Microbiology
+  1547→                    </SelectItem>
+  1548→                    <SelectItem value="BSc Mathematics">
+  1549→                      BSc Mathematics
+  1550→                    </SelectItem>
+  1551→                    <SelectItem value="BSc Statistics">
+  1552→                      BSc Statistics
+  1553→                    </SelectItem>
+  1554→                    <SelectItem value="BEd Computer Science">
+  1555→                      BEd Computer Science
+  1556→                    </SelectItem>
+  1557→                    <SelectItem value="Ed Biology">Ed Biology</SelectItem>
+  1558→                    <SelectItem value="Ed Chemistry">Ed Chemistry</SelectItem>
+  1559→                    <SelectItem value="Ed Mathematics">Ed Mathematics</SelectItem>
+  1560→                    <SelectItem value="Ed Physics">Ed Physics</SelectItem>
+  1561→                  </SelectContent>
+  1562→                </Select>
+  1563→              </div>
+  1564→            </div>
+  1565→            <div className="space-y-2">
+  1566→              <Label htmlFor="new-email">
+  1567→                Email{' '}
+  1568→                <span className="text-muted-foreground">(optional)</span>
+  1569→              </Label>
+  1570→              <Input
+  1571→                id="new-email"
+  1572→                type="email"
+  1573→                placeholder="student@example.com"
+  1574→                value={newEmail}
+  1575→                onChange={(e) => setNewEmail(e.target.value)}
+  1576→              />
+  1577→            </div>
+  1578→            <div className="space-y-2">
+  1579→              <Label htmlFor="new-phone">
+  1580→                Phone{' '}
+  1581→                <span className="text-muted-foreground">(optional)</span>
+  1582→              </Label>
+  1583→              <Input
+  1584→                id="new-phone"
+  1585→                placeholder="e.g., 08031234567"
+  1586→                value={newPhone}
+  1587→                onChange={(e) => setNewPhone(e.target.value)}
+  1588→              />
+  1589→            </div>
+  1590→            <DialogFooter className="gap-2">
+  1591→              <DialogClose asChild>
+  1592→                <Button type="button" variant="outline" disabled={addingStudent}>
+  1593→                  Cancel
+  1594→                </Button>
+  1595→              </DialogClose>
+  1596→              <Button type="submit" disabled={addingStudent}>
+  1597→                {addingStudent ? (
+  1598→                  <>
+  1599→                    <Loader2 className="size-4 animate-spin" /> Adding…
+  1600→                  </>
+  1601→                ) : (
+  1602→                  <>
+  1603→                    <UserPlus className="size-4" /> Create Student
+  1604→                  </>
+  1605→                )}
+  1606→              </Button>
+  1607→            </DialogFooter>
+  1608→          </form>
+  1609→        </DialogContent>
+  1610→      </Dialog>
+  1611→    </div>
+  1612→  )
+  1613→}
+  1614→
+  1615→// ===================== Verification Section =====================
+  1616→function VerificationSection() {
+  1617→  const [requests, setRequests] = useState<VerificationRequest[]>([])
+  1618→  const [loading, setLoading] = useState(true)
+  1619→  const [actingId, setActingId] = useState<string | null>(null)
+  1620→  const [rejectTarget, setRejectTarget] = useState<VerificationRequest | null>(
+  1621→    null
+  1622→  )
+  1623→  const [notes, setNotes] = useState('')
+  1624→
+  1625→  const fetchReqs = useCallback(async () => {
+  1626→    setLoading(true)
+  1627→    try {
+  1628→      const res = await api.get<{ requests: VerificationRequest[] }>(
+  1629→        '/admin/verification-requests'
+  1630→      )
+  1631→      setRequests(res.requests)
+  1632→    } catch (err) {
+  1633→      toast.error(
+  1634→        err instanceof Error ? err.message : 'Failed to load requests'
+  1635→      )
+  1636→    } finally {
+  1637→      setLoading(false)
+  1638→    }
+  1639→  }, [])
+  1640→
+  1641→  useEffect(() => {
+  1642→    void fetchReqs()
+  1643→  }, [fetchReqs])
+  1644→
+  1645→  async function approve(r: VerificationRequest) {
+  1646→    setActingId(r.id)
+  1647→    try {
+  1648→      await api.post(`/admin/students/${r.id}/verify`, {
+  1649→        action: 'approve',
+  1650→        notes: notes.trim() || undefined,
+  1651→      })
+  1652→      toast.success(`${r.fullName} approved`)
+  1653→      setRequests((prev) => prev.filter((x) => x.id !== r.id))
+  1654→      setNotes('')
+  1655→    } catch (err) {
+  1656→      toast.error(err instanceof Error ? err.message : 'Action failed')
+  1657→    } finally {
+  1658→      setActingId(null)
+  1659→    }
+  1660→  }
+  1661→
+  1662→  async function confirmReject() {
+  1663→    if (!rejectTarget) return
+  1664→    setActingId(rejectTarget.id)
+  1665→    try {
+  1666→      await api.post(`/admin/students/${rejectTarget.id}/verify`, {
+  1667→        action: 'reject',
+  1668→        notes: notes.trim() || undefined,
+  1669→      })
+  1670→      toast.success(`${rejectTarget.fullName} rejected`)
+  1671→      setRequests((prev) => prev.filter((x) => x.id !== rejectTarget.id))
+  1672→      setRejectTarget(null)
+  1673→      setNotes('')
+  1674→    } catch (err) {
+  1675→      toast.error(err instanceof Error ? err.message : 'Action failed')
+  1676→    } finally {
+  1677→      setActingId(null)
+  1678→    }
+  1679→  }
+  1680→
+  1681→  return (
+  1682→    <div className="space-y-6">
+  1683→      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+  1684→        <div>
+  1685→          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+  1686→            Verification Queue
+  1687→          </h1>
+  1688→          <p className="text-sm text-muted-foreground">
+  1689→            Review submitted student verification requests
+  1690→          </p>
+  1691→        </div>
+  1692→        <Button variant="outline" size="sm" onClick={() => void fetchReqs()}>
+  1693→          <RefreshCw className="size-4" /> Refresh
+  1694→        </Button>
+  1695→      </div>
+  1696→
+  1697→      {loading ? (
+  1698→        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  1699→          {Array.from({ length: 4 }).map((_, i) => (
+  1700→            <Card key={i}>
+  1701→              <CardContent className="space-y-3 p-5">
+  1702→                <div className="flex items-center gap-3">
+  1703→                  <Skeleton className="size-12 rounded-full" />
+  1704→                  <div className="flex-1 space-y-2">
+  1705→                    <Skeleton className="h-4 w-32" />
+  1706→                    <Skeleton className="h-3 w-24" />
+  1707→                  </div>
+  1708→                </div>
+  1709→                <Skeleton className="h-16 w-full" />
+  1710→                <div className="flex gap-2">
+  1711→                  <Skeleton className="h-9 w-24" />
+  1712→                  <Skeleton className="h-9 w-24" />
+  1713→                </div>
+  1714→              </CardContent>
+  1715→            </Card>
+  1716→          ))}
+  1717→        </div>
+  1718→      ) : requests.length === 0 ? (
+  1719→        <Card>
+  1720→          <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
+  1721→            <div className="grid size-14 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+  1722→              <CheckCircle2 className="size-7" />
+  1723→            </div>
+  1724→            <p className="font-display text-lg font-semibold">
+  1725→              No pending verification requests
+  1726→            </p>
+  1727→            <p className="max-w-sm text-sm text-muted-foreground">
+  1728→              When students submit their verification documents, they will
+  1729→              appear here for review.
+  1730→            </p>
+  1731→          </CardContent>
+  1732→        </Card>
+  1733→      ) : (
+  1734→        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  1735→          {requests.map((r) => (
+  1736→            <Card key={r.id} className="flex flex-col">
+  1737→              <CardHeader className="gap-3">
+  1738→                <div className="flex items-start gap-3">
+  1739→                  <Avatar className="size-12">
+  1740→                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+  1741→                      {getInitials(r.fullName)}
+  1742→                    </AvatarFallback>
+  1743→                  </Avatar>
+  1744→                  <div className="min-w-0 flex-1">
+  1745→                    <CardTitle className="font-display text-base">
+  1746→                      {r.fullName}
+  1747→                    </CardTitle>
+  1748→                    <CardDescription className="font-mono text-xs">
+  1749→                      {r.matricNumber}
+  1750→                    </CardDescription>
+  1751→                  </div>
+  1752→                  {statusBadge(r.verificationStatus)}
+  1753→                </div>
+  1754→              </CardHeader>
+  1755→              <CardContent className="flex-1 space-y-3 text-sm">
+  1756→                <div className="grid grid-cols-2 gap-2">
+  1757→                  <div>
+  1758→                    <p className="text-xs text-muted-foreground">Level</p>
+  1759→                    <p className="font-medium">{r.level}</p>
+  1760→                  </div>
+  1761→                  <div>
+  1762→                    <p className="text-xs text-muted-foreground">Programme</p>
+  1763→                    <p className="font-medium">{r.programme}</p>
+  1764→                  </div>
+  1765→                  <div className="col-span-2">
+  1766→                    <p className="text-xs text-muted-foreground">Email</p>
+  1767→                    <p className="truncate font-medium">
+  1768→                      {r.email || '—'}
+  1769→                    </p>
+  1770→                  </div>
+  1771→                  <div className="col-span-2">
+  1772→                    <p className="text-xs text-muted-foreground">Phone</p>
+  1773→                    <p className="font-medium">{r.phone || '—'}</p>
+  1774→                  </div>
+  1775→                  <div className="col-span-2">
+  1776→                    <p className="text-xs text-muted-foreground">Submitted</p>
+  1777→                    <p className="font-medium">
+  1778→                      {r.updatedAt
+  1779→                        ? formatDateTime(r.updatedAt)
+  1780→                        : formatDateTime(r.createdAt)}
+  1781→                    </p>
+  1782→                  </div>
+  1783→                </div>
+  1784→                {r.idDocumentUrl && (
+  1785→                  <a
+  1786→                    href={r.idDocumentUrl}
+  1787→                    target="_blank"
+  1788→                    rel="noopener noreferrer"
+  1789→                    className="flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
+  1790→                  >
+  1791→                    <span className="flex items-center gap-2">
+  1792→                      <FileText className="size-4 text-primary" />
+  1793→                      View ID document
+  1794→                    </span>
+  1795→                    <ExternalLink className="size-4 text-muted-foreground" />
+  1796→                  </a>
+  1797→                )}
+  1798→              </CardContent>
+  1799→              <CardFooter className="gap-2">
+  1800→                <Button
+  1801→                  variant="outline"
+  1802→                  className="flex-1 border-red-500/30 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+  1803→                  disabled={actingId === r.id}
+  1804→                  onClick={() => {
+  1805→                    setRejectTarget(r)
+  1806→                    setNotes('')
+  1807→                  }}
+  1808→                >
+  1809→                  <XCircle className="size-4" /> Reject
+  1810→                </Button>
+  1811→                <Button
+  1812→                  className="flex-1 bg-emerald-600 text-white hover:bg-emerald-600/90"
+  1813→                  disabled={actingId === r.id}
+  1814→                  onClick={() => void approve(r)}
+  1815→                >
+  1816→                  {actingId === r.id ? (
+  1817→                    <Loader2 className="size-4 animate-spin" />
+  1818→                  ) : (
+  1819→                    <CheckCircle2 className="size-4" />
+  1820→                  )}
+  1821→                  Approve
+  1822→                </Button>
+  1823→              </CardFooter>
+  1824→            </Card>
+  1825→          ))}
+  1826→        </div>
+  1827→      )}
+  1828→
+  1829→      {/* Reject dialog with notes */}
+  1830→      <Dialog
+  1831→        open={!!rejectTarget}
+  1832→        onOpenChange={(o) => {
+  1833→          if (!o) {
+  1834→            setRejectTarget(null)
+  1835→            setNotes('')
+  1836→          }
+  1837→        }}
+  1838→      >
+  1839→        <DialogContent className="sm:max-w-md">
+  1840→          {rejectTarget && (
+  1841→            <>
+  1842→              <DialogHeader>
+  1843→                <DialogTitle className="font-display">
+  1844→                  Reject verification?
+  1845→                </DialogTitle>
+  1846→                <DialogDescription>
+  1847→                  {rejectTarget.fullName} ({rejectTarget.matricNumber}) will be
+  1848→                  marked as rejected and won&apos;t be able to vote.
+  1849→                </DialogDescription>
+  1850→              </DialogHeader>
+  1851→              <div className="space-y-2">
+  1852→                <Label htmlFor="reject-notes">
+  1853→                  Reason <span className="text-muted-foreground">(optional)</span>
+  1854→                </Label>
+  1855→                <Textarea
+  1856→                  id="reject-notes"
+  1857→                  value={notes}
+  1858→                  onChange={(e) => setNotes(e.target.value)}
+  1859→                  placeholder="e.g. ID document not legible…"
+  1860→                  rows={3}
+  1861→                />
+  1862→              </div>
+  1863→              <DialogFooter>
+  1864→                <DialogClose asChild>
+  1865→                  <Button variant="outline">Cancel</Button>
+  1866→                </DialogClose>
+  1867→                <Button
+  1868→                  variant="destructive"
+  1869→                  disabled={actingId === rejectTarget.id}
+  1870→                  onClick={() => void confirmReject()}
+  1871→                >
+  1872→                  {actingId === rejectTarget.id ? (
+  1873→                    <Loader2 className="size-4 animate-spin" />
+  1874→                  ) : (
+  1875→                    <XCircle className="size-4" />
+  1876→                  )}
+  1877→                  Confirm Reject
+  1878→                </Button>
+  1879→              </DialogFooter>
+  1880→            </>
+  1881→          )}
+  1882→        </DialogContent>
+  1883→      </Dialog>
+  1884→    </div>
+  1885→  )
+  1886→}
+  1887→
+  1888→// ===================== Election Section =====================
+  1889→function ElectionSection() {
+  1890→  const [election, setElection] = useState<Election | null>(null)
+  1891→  const [loading, setLoading] = useState(true)
+  1892→  const [acting, setActing] = useState(false)
+  1893→
+  1894→  const fetchElection = useCallback(async () => {
+  1895→    setLoading(true)
+  1896→    try {
+  1897→      const res = await api.get<{ election: Election | null }>(
+  1898→        '/admin/election'
+  1899→      )
+  1900→      setElection(res.election)
+  1901→    } catch (err) {
+  1902→      toast.error(
+  1903→        err instanceof Error ? err.message : 'Failed to load election'
+  1904→      )
+  1905→    } finally {
+  1906→      setLoading(false)
+  1907→    }
+  1908→  }, [])
+  1909→
+  1910→  useEffect(() => {
+  1911→    void fetchElection()
+  1912→  }, [fetchElection])
+  1913→
+  1914→  async function toggle(action: 'start' | 'end') {
+  1915→    setActing(true)
+  1916→    try {
+  1917→      const res = await api.post<{ election: Election }>('/admin/election', {
+  1918→        action,
+  1919→      })
+  1920→      setElection((prev) => ({
+  1921→        ...res.election,
+  1922→        positions: prev?.positions ?? res.election.positions,
+  1923→      }))
+  1924→      toast.success(
+  1925→        action === 'start' ? 'Election started' : 'Election ended'
+  1926→      )
+  1927→      void fetchElection()
+  1928→    } catch (err) {
+  1929→      toast.error(err instanceof Error ? err.message : 'Action failed')
+  1930→    } finally {
+  1931→      setActing(false)
+  1932→    }
+  1933→  }
+  1934→
+  1935→  const totalVotes = useMemo(() => {
+  1936→    if (!election?.positions) return 0
+  1937→    return election.positions.reduce(
+  1938→      (sum, p) => sum + (p._count?.votes ?? p.voteCount ?? 0),
+  1939→      0
+  1940→    )
+  1941→  }, [election])
+  1942→
+  1943→  if (loading) {
+  1944→    return (
+  1945→      <div className="space-y-4">
+  1946→        <Skeleton className="h-9 w-48" />
+  1947→        <Skeleton className="h-40 w-full rounded-2xl" />
+  1948→        <Skeleton className="h-64 w-full rounded-2xl" />
+  1949→      </div>
+  1950→    )
+  1951→  }
+  1952→
+  1953→  return (
+  1954→    <div className="space-y-6">
+  1955→      <div>
+  1956→        <h1 className="font-display text-2xl font-bold sm:text-3xl">
+  1957→          Election Control
+  1958→        </h1>
+  1959→        <p className="text-sm text-muted-foreground">
+  1960→          Manage election lifecycle and view live results
+  1961→        </p>
+  1962→      </div>
+  1963→
+  1964→      <Card>
+  1965→        <CardHeader>
+  1966→          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+  1967→            <div>
+  1968→              <CardTitle className="font-display text-xl">
+  1969→                {election?.title || 'No election configured'}
+  1970→              </CardTitle>
+  1971→              <CardDescription>
+  1972→                Manage the active election cycle
+  1973→              </CardDescription>
+  1974→            </div>
+  1975→            {election && electionStatusBadge(election.status)}
+  1976→          </div>
+  1977→        </CardHeader>
+  1978→        <CardContent className="space-y-4">
+  1979→          {election && (
+  1980→            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  1981→              <div className="rounded-xl bg-muted/40 p-3">
+  1982→                <p className="text-xs text-muted-foreground">Start date</p>
+  1983→                <p className="text-sm font-medium">
+  1984→                  {formatDateTime(election.startDate)}
+  1985→                </p>
+  1986→              </div>
+  1987→              <div className="rounded-xl bg-muted/40 p-3">
+  1988→                <p className="text-xs text-muted-foreground">End date</p>
+  1989→                <p className="text-sm font-medium">
+  1990→                  {election.endDate ? formatDateTime(election.endDate) : '—'}
+  1991→                </p>
+  1992→              </div>
+  1993→              <div className="rounded-xl bg-muted/40 p-3">
+  1994→                <p className="text-xs text-muted-foreground">Total votes</p>
+  1995→                <p className="text-sm font-medium">{totalVotes}</p>
+  1996→              </div>
+  1997→            </div>
+  1998→          )}
+  1999→          <Separator />
+  2000→          <div className="flex flex-col gap-2 sm:flex-row">
+
+[showing lines 1-2000 of 2503; use offset=2001 with limit to continue reading]

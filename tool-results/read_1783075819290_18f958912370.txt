@@ -1,0 +1,1237 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useEffect, type ReactNode } from 'react'
+     4→     4→import Image from 'next/image'
+     5→     5→import { motion, AnimatePresence } from 'framer-motion'
+     6→     6→import { useNav } from '@/lib/stores/nav-store'
+     7→     7→import { useAuth, type StudentUser } from '@/lib/stores/auth-store'
+     8→     8→import { api } from '@/lib/api-client'
+     9→     9→import { toast } from 'sonner'
+    10→    10→import { Button } from '@/components/ui/button'
+    11→    11→import { Input } from '@/components/ui/input'
+    12→    12→import { Label } from '@/components/ui/label'
+    13→    13→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    14→    14→import {
+    15→    15→  InputOTP,
+    16→    16→  InputOTPGroup,
+    17→    17→  InputOTPSlot,
+    18→    18→} from '@/components/ui/input-otp'
+    19→    19→import { supportWhatsAppUrl, SUPPORT_MESSAGES } from '@/lib/support'
+    20→    20→import {
+    21→    21→  ShieldCheck,
+    22→    22→  Mail,
+    23→    23→  KeyRound,
+    24→    24→  Lock,
+    25→    25→  ArrowRight,
+    26→    26→  ArrowLeft,
+    27→    27→  CheckCircle2,
+    28→    28→  Loader2,
+    29→    29→  Eye,
+    30→    30→  EyeOff,
+    31→    31→  Sparkles,
+    32→    32→  UserCheck,
+    33→    33→  AlertCircle,
+    34→    34→  Atom,
+    35→    35→  Leaf,
+    36→    36→  FlaskConical,
+    37→    37→  Sigma,
+    38→    38→  Microscope,
+    39→    39→  Info,
+    40→    40→} from 'lucide-react'
+    41→    41→
+    42→    42→// ===================== Types =====================
+    43→    43→
+    44→    44→interface ClaimStudent {
+    45→    45→  id: string
+    46→    46→  fullName: string
+    47→    47→  matricNumber: string
+    48→    48→  level: string
+    49→    49→  programme: string
+    50→    50→  email: string | null
+    51→    51→  isVerified: boolean
+    52→    52→  verificationStatus: string
+    53→    53→  hasPassword: boolean
+    54→    54→}
+    55→    55→
+    56→    56→interface SendOtpResponse {
+    57→    57→  message: string
+    58→    58→  emailSent: boolean
+    59→    59→  maskedEmail: string
+    60→    60→  demoOtp?: string
+    61→    61→  demoMode: boolean
+    62→    62→}
+    63→    63→
+    64→    64→interface SetPasswordResponse {
+    65→    65→  student: StudentUser
+    66→    66→  token: string
+    67→    67→  message: string
+    68→    68→}
+    69→    69→
+    70→    70→interface LoginResponse {
+    71→    71→  student: StudentUser
+    72→    72→  token: string
+    73→    73→  notice?: string
+    74→    74→}
+    75→    75→
+    76→    76→type ClaimStep = 1 | 2 | 3 | 4
+    77→    77→type Mode = 'claim' | 'signin'
+    78→    78→
+    79→    79→// ===================== Helpers =====================
+    80→    80→
+    81→    81→function maskEmail(email: string | null): string {
+    82→    82→  if (!email) return '—'
+    83→    83→  const [local, domain] = email.split('@')
+    84→    84→  if (!domain) return '***'
+    85→    85→  const visible = local.slice(0, 3)
+    86→    86→  return `${visible}***@${domain}`
+    87→    87→}
+    88→    88→
+    89→    89→// ===================== Constants =====================
+    90→    90→
+    91→    91→const COHORTS = [
+    92→    92→  { name: 'Physics', icon: Atom },
+    93→    93→  { name: 'Biology', icon: Leaf },
+    94→    94→  { name: 'Chemistry', icon: FlaskConical },
+    95→    95→  { name: 'Mathematics', icon: Sigma },
+    96→    96→  { name: 'Integrated Sci.', icon: Microscope },
+    97→    97→] as const
+    98→    98→
+    99→    99→const CLAIM_STEPS = [
+   100→   100→  { label: 'Matric', icon: UserCheck },
+   101→   101→  { label: 'Verify', icon: Mail },
+   102→   102→  { label: 'Secure', icon: ShieldCheck },
+   103→   103→] as const
+   104→   104→
+   105→   105→// ===================== Brand Panel (desktop only) =====================
+   106→   106→
+   107→   107→function BrandPanel({ mode }: { mode: Mode }) {
+   108→   108→  return (
+   109→   109→    <div className="relative hidden lg:flex flex-col justify-between overflow-hidden bg-brand-gradient p-10 xl:p-12">
+   110→   110→      {/* Decorative overlays */}
+   111→   111→      <div className="pointer-events-none absolute inset-0 bg-grid opacity-20" />
+   112→   112→      <div className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-cyan-accent/30 blur-[120px]" />
+   113→   113→      <div className="pointer-events-none absolute -bottom-20 -left-20 h-72 w-72 rounded-full bg-primary/40 blur-[120px]" />
+   114→   114→
+   115→   115→      {/* Top: logo + name */}
+   116→   116→      <div className="relative z-10 flex items-center gap-3">
+   117→   117→        <div className="relative size-12 overflow-hidden rounded-2xl ring-2 ring-white/30 shadow-xl">
+   118→   118→          <Image
+   119→   119→            src="/ulsesa-logo.jpg"
+   120→   120→            alt="ULSESA logo"
+   121→   121→            fill
+   122→   122→            sizes="48px"
+   123→   123→            className="object-cover"
+   124→   124→            priority
+   125→   125→          />
+   126→   126→        </div>
+   127→   127→        <div>
+   128→   128→          <p className="font-display text-xl font-bold text-white leading-tight">
+   129→   129→            ULSESA Portal
+   130→   130→          </p>
+   131→   131→          <p className="text-xs font-medium text-white/70">
+   132→   132→            University of Lagos · Science Education
+   133→   133→          </p>
+   134→   134→        </div>
+   135→   135→      </div>
+   136→   136→
+   137→   137→      {/* Middle: hero text + cohort grid */}
+   138→   138→      <div className="relative z-10 max-w-md space-y-6">
+   139→   139→        <AnimatePresence mode="wait">
+   140→   140→          <motion.div
+   141→   141→            key={mode}
+   142→   142→            initial={{ opacity: 0, y: 8 }}
+   143→   143→            animate={{ opacity: 1, y: 0 }}
+   144→   144→            exit={{ opacity: 0, y: -8 }}
+   145→   145→            transition={{ duration: 0.25 }}
+   146→   146→            className="space-y-4"
+   147→   147→          >
+   148→   148→            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/90 backdrop-blur ring-1 ring-white/20">
+   149→   149→              <Sparkles className="size-3.5 text-cyan-accent" />
+   150→   150→              {mode === 'claim' ? 'Claim your account' : 'Welcome back'}
+   151→   151→            </span>
+   152→   152→            <h1 className="font-display text-4xl xl:text-5xl font-bold text-white leading-tight tracking-tight">
+   153→   153→              Shaping Tomorrow&apos;s{' '}
+   154→   154→              <span className="text-cyan-accent">Scientific Innovators</span>
+   155→   155→            </h1>
+   156→   156→            <p className="text-base text-white/80 leading-relaxed">
+   157→   157→              One identity. One community. One platform — built for every
+   158→   158→              Science Education student at UNILAG.
+   159→   159→            </p>
+   160→   160→          </motion.div>
+   161→   161→        </AnimatePresence>
+   162→   162→
+   163→   163→        {/* Cohort icons */}
+   164→   164→        <div className="grid grid-cols-5 gap-3 pt-2">
+   165→   165→          {COHORTS.map((c) => (
+   166→   166→            <div
+   167→   167→              key={c.name}
+   168→   168→              className="group flex flex-col items-center gap-2 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10 backdrop-blur transition-all hover:bg-white/10 hover:ring-white/20"
+   169→   169→            >
+   170→   170→              <div className="flex size-9 items-center justify-center rounded-xl bg-white/10 text-cyan-accent ring-1 ring-white/15 transition-transform group-hover:scale-110">
+   171→   171→                <c.icon className="size-5" />
+   172→   172→              </div>
+   173→   173→              <span className="text-[10px] font-medium text-white/70 text-center leading-tight">
+   174→   174→                {c.name}
+   175→   175→              </span>
+   176→   176→            </div>
+   177→   177→          ))}
+   178→   178→        </div>
+   179→   179→      </div>
+   180→   180→
+   181→   181→      {/* Bottom: trust line */}
+   182→   182→      <div className="relative z-10 flex items-center gap-2 text-xs text-white/60">
+   183→   183→        <ShieldCheck className="size-4 text-cyan-accent" />
+   184→   184→        <span>Secured by ULSESA · Only pre-registered members can claim</span>
+   185→   185→      </div>
+   186→   186→    </div>
+   187→   187→  )
+   188→   188→}
+   189→   189→
+   190→   190→// ===================== Step Indicator =====================
+   191→   191→
+   192→   192→function StepIndicator({ current }: { current: 1 | 2 | 3 }) {
+   193→   193→  return (
+   194→   194→    <div className="flex items-center justify-between gap-1">
+   195→   195→      {CLAIM_STEPS.map((step, idx) => {
+   196→   196→        const stepNum = idx + 1
+   197→   197→        const isComplete = stepNum < current
+   198→   198→        const isActive = stepNum === current
+   199→   199→        const Icon = step.icon
+   200→   200→        return (
+   201→   201→          <div key={step.label} className="flex flex-1 items-center">
+   202→   202→            <div className="flex flex-col items-center gap-1.5">
+   203→   203→              <div
+   204→   204→                className={[
+   205→   205→                  'flex size-9 items-center justify-center rounded-full text-sm font-semibold transition-all',
+   206→   206→                  isComplete
+   207→   207→                    ? 'bg-primary text-primary-foreground shadow-md shadow-primary/30'
+   208→   208→                    : isActive
+   209→   209→                      ? 'bg-primary text-primary-foreground ring-4 ring-primary/20 shadow-md shadow-primary/30'
+   210→   210→                      : 'bg-muted text-muted-foreground',
+   211→   211→                ].join(' ')}
+   212→   212→              >
+   213→   213→                {isComplete ? (
+   214→   214→                  <CheckCircle2 className="size-5" />
+   215→   215→                ) : (
+   216→   216→                  <Icon className="size-4" />
+   217→   217→                )}
+   218→   218→              </div>
+   219→   219→              <span
+   220→   220→                className={[
+   221→   221→                  'text-[11px] font-medium tracking-wide',
+   222→   222→                  isActive || isComplete
+   223→   223→                    ? 'text-foreground'
+   224→   224→                    : 'text-muted-foreground',
+   225→   225→                ].join(' ')}
+   226→   226→              >
+   227→   227→                {step.label}
+   228→   228→              </span>
+   229→   229→            </div>
+   230→   230→            {idx < CLAIM_STEPS.length - 1 && (
+   231→   231→              <div
+   232→   232→                className={[
+   233→   233→                  'mx-2 h-0.5 flex-1 rounded-full transition-colors',
+   234→   234→                  stepNum < current ? 'bg-primary' : 'bg-border',
+   235→   235→                ].join(' ')}
+   236→   236→              />
+   237→   237→            )}
+   238→   238→          </div>
+   239→   239→        )
+   240→   240→      })}
+   241→   241→    </div>
+   242→   242→  )
+   243→   243→}
+   244→   244→
+   245→   245→// ===================== Detail Row =====================
+   246→   246→
+   247→   247→function DetailRow({
+   248→   248→  label,
+   249→   249→  value,
+   250→   250→  icon,
+   251→   251→}: {
+   252→   252→  label: string
+   253→   253→  value: string
+   254→   254→  icon?: ReactNode
+   255→   255→}) {
+   256→   256→  return (
+   257→   257→    <div className="flex items-center justify-between gap-3">
+   258→   258→      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+   259→   259→        {label}
+   260→   260→      </span>
+   261→   261→      <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground text-right">
+   262→   262→        {icon}
+   263→   263→        {value}
+   264→   264→      </span>
+   265→   265→    </div>
+   266→   266→  )
+   267→   267→}
+   268→   268→
+   269→   269→// ===================== Claim Flow =====================
+   270→   270→
+   271→   271→interface ClaimFlowProps {
+   272→   272→  onSwitchToSignIn: () => void
+   273→   273→  onAuthSuccess: (student: StudentUser, token: string, message: string) => void
+   274→   274→}
+   275→   275→
+   276→   276→function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
+   277→   277→  const [step, setStep] = useState<ClaimStep>(1)
+   278→   278→  const [loading, setLoading] = useState(false)
+   279→   279→
+   280→   280→  // Step 1 state
+   281→   281→  const [matric, setMatric] = useState('')
+   282→   282→
+   283→   283→  // Fetched student
+   284→   284→  const [student, setStudent] = useState<ClaimStudent | null>(null)
+   285→   285→  const [alreadyClaimed, setAlreadyClaimed] = useState(false)
+   286→   286→
+   287→   287→  // Admin-verified flag — when true, the student was manually verified by
+   288→   288→  // an ULSESA admin and can skip the OTP step entirely.
+   289→   289→  const [adminVerified, setAdminVerified] = useState(false)
+   290→   290→
+   291→   291→  // OTP state (step 3)
+   292→   292→  const [otp, setOtp] = useState('')
+   293→   293→  const [maskedEmail, setMaskedEmail] = useState('')
+   294→   294→  const [demoMode, setDemoMode] = useState(false)
+   295→   295→  const [demoOtp, setDemoOtp] = useState<string | null>(null)
+   296→   296→  const [emailSent, setEmailSent] = useState(false)
+   297→   297→
+   298→   298→  // Password state (step 4)
+   299→   299→  const [password, setPassword] = useState('')
+   300→   300→  const [confirm, setConfirm] = useState('')
+   301→   301→  const [showPw, setShowPw] = useState(false)
+   302→   302→  const [showConfirm, setShowConfirm] = useState(false)
+   303→   303→
+   304→   304→  // Map claim step (1..4) → indicator step (1..3)
+   305→   305→  // 1→1, 2→2, 3→2, 4→3
+   306→   306→  const indicatorStep: 1 | 2 | 3 =
+   307→   307→    step === 4 ? 3 : step === 3 ? 2 : step
+   308→   308→
+   309→   309→  // --- Step 1: submit matric ---
+   310→   310→  async function handleMatricSubmit() {
+   311→   311→    const cleaned = matric.trim()
+   312→   312→    if (!cleaned) {
+   313→   313→      toast.error('Please enter your matric number.')
+   314→   314→      return
+   315→   315→    }
+   316→   316→    setLoading(true)
+   317→   317→    setAlreadyClaimed(false)
+   318→   318→    try {
+   319→   319→      const data = await api.post<{
+   320→   320→        student: ClaimStudent
+   321→   321→        adminVerified: boolean
+   322→   322→      }>('/auth/claim', {
+   323→   323→        matricNumber: cleaned,
+   324→   324→      })
+   325→   325→      setStudent(data.student)
+   326→   326→      setMaskedEmail(maskEmail(data.student.email))
+   327→   327→      setAdminVerified(data.adminVerified ?? false)
+   328→   328→      if (data.student.hasPassword) {
+   329→   329→        setAlreadyClaimed(true)
+   330→   330→      } else if (data.adminVerified) {
+   331→   331→        // Admin manually verified this student — skip OTP, go straight
+   332→   332→        // to setting a password.
+   333→   333→        setStep(4)
+   334→   334→      } else {
+   335→   335→        setStep(2)
+   336→   336→      }
+   337→   337→    } catch (err) {
+   338→   338→      const msg = err instanceof Error ? err.message : 'Failed to verify matric number'
+   339→   339→      toast.error(msg)
+   340→   340→    } finally {
+   341→   341→      setLoading(false)
+   342→   342→    }
+   343→   343→  }
+   344→   344→
+   345→   345→  // --- Step 2: send OTP ---
+   346→   346→  async function handleSendOtp() {
+   347→   347→    if (!student) return
+   348→   348→    setLoading(true)
+   349→   349→    try {
+   350→   350→      const data = await api.post<SendOtpResponse>('/auth/send-otp', {
+   351→   351→        matricNumber: student.matricNumber,
+   352→   352→      })
+   353→   353→      setMaskedEmail(data.maskedEmail)
+   354→   354→      setDemoMode(data.demoMode)
+   355→   355→      setDemoOtp(data.demoOtp ?? null)
+   356→   356→      setEmailSent(data.emailSent)
+   357→   357→      setOtp('')
+   358→   358→      setStep(3)
+   359→   359→      if (data.demoMode && data.demoOtp) {
+   360→   360→        toast.info('Demo mode: code shown on screen.')
+   361→   361→      } else if (data.emailSent) {
+   362→   362→        toast.success(`Verification code sent to ${data.maskedEmail}`)
+   363→   363→      } else {
+   364→   364→        toast.message('Code generated. Check your email.')
+   365→   365→      }
+   366→   366→    } catch (err) {
+   367→   367→      const msg = err instanceof Error ? err.message : 'Failed to send code'
+   368→   368→      if (/already been claimed/i.test(msg)) {
+   369→   369→        toast.error('This account has already been claimed. Please sign in.')
+   370→   370→        onSwitchToSignIn()
+   371→   371→      } else {
+   372→   372→        toast.error(msg)
+   373→   373→      }
+   374→   374→    } finally {
+   375→   375→      setLoading(false)
+   376→   376→    }
+   377→   377→  }
+   378→   378→
+   379→   379→  // --- Step 3: verify OTP ---
+   380→   380→  async function handleVerifyOtp() {
+   381→   381→    if (!student) return
+   382→   382→    if (otp.length !== 6) {
+   383→   383→      toast.error('Enter the 6-digit code.')
+   384→   384→      return
+   385→   385→    }
+   386→   386→    setLoading(true)
+   387→   387→    try {
+   388→   388→      await api.post<{ verified: boolean }>('/auth/verify-otp', {
+   389→   389→        matricNumber: student.matricNumber,
+   390→   390→        otp,
+   391→   391→      })
+   392→   392→      setStep(4)
+   393→   393→      toast.success('Email verified!')
+   394→   394→    } catch {
+   395→   395→      toast.error('Invalid or expired code. Try again or resend.')
+   396→   396→    } finally {
+   397→   397→      setLoading(false)
+   398→   398→    }
+   399→   399→  }
+   400→   400→
+   401→   401→  // --- Step 3: resend OTP ---
+   402→   402→  async function handleResendOtp() {
+   403→   403→    if (!student) return
+   404→   404→    try {
+   405→   405→      const data = await api.post<SendOtpResponse>('/auth/send-otp', {
+   406→   406→        matricNumber: student.matricNumber,
+   407→   407→      })
+   408→   408→      setMaskedEmail(data.maskedEmail)
+   409→   409→      setDemoMode(data.demoMode)
+   410→   410→      setDemoOtp(data.demoOtp ?? null)
+   411→   411→      setEmailSent(data.emailSent)
+   412→   412→      setOtp('')
+   413→   413→      toast.success('New code sent.')
+   414→   414→    } catch (err) {
+   415→   415→      const msg = err instanceof Error ? err.message : 'Failed to resend code'
+   416→   416→      toast.error(msg)
+   417→   417→    }
+   418→   418→  }
+   419→   419→
+   420→   420→  // --- Step 4: set password ---
+   421→   421→  async function handleSetPassword() {
+   422→   422→    if (!student) return
+   423→   423→    if (password.length < 6) {
+   424→   424→      toast.error('Password must be at least 6 characters.')
+   425→   425→      return
+   426→   426→    }
+   427→   427→    if (password !== confirm) {
+   428→   428→      toast.error('Passwords do not match.')
+   429→   429→      return
+   430→   430→    }
+   431→   431→    setLoading(true)
+   432→   432→    try {
+   433→   433→      const data = await api.post<SetPasswordResponse>('/auth/set-password', {
+   434→   434→        matricNumber: student.matricNumber,
+   435→   435→        password,
+   436→   436→      })
+   437→   437→      onAuthSuccess(data.student, data.token, data.message)
+   438→   438→    } catch (err) {
+   439→   439→      const msg = err instanceof Error ? err.message : 'Failed to set password'
+   440→   440→      if (/email verification required/i.test(msg)) {
+   441→   441→        toast.error('Email verification required. Please go back and verify.')
+   442→   442→      } else if (/already been claimed/i.test(msg)) {
+   443→   443→        toast.error('Already claimed — sign in instead.')
+   444→   444→        onSwitchToSignIn()
+   445→   445→      } else {
+   446→   446→        toast.error(msg)
+   447→   447→      }
+   448→   448→    } finally {
+   449→   449→      setLoading(false)
+   450→   450→    }
+   451→   451→  }
+   452→   452→
+   453→   453→  function handleReset() {
+   454→   454→    setStep(1)
+   455→   455→    setMatric('')
+   456→   456→    setStudent(null)
+   457→   457→    setAlreadyClaimed(false)
+   458→   458→    setAdminVerified(false)
+   459→   459→    setOtp('')
+   460→   460→    setMaskedEmail('')
+   461→   461→    setDemoMode(false)
+   462→   462→    setDemoOtp(null)
+   463→   463→    setEmailSent(false)
+   464→   464→    setPassword('')
+   465→   465→    setConfirm('')
+   466→   466→    setShowPw(false)
+   467→   467→    setShowConfirm(false)
+   468→   468→  }
+   469→   469→
+   470→   470→  return (
+   471→   471→    <div className="glass-strong overflow-hidden rounded-3xl border border-border/60 p-6 shadow-2xl shadow-primary/5 sm:p-8">
+   472→   472→      <StepIndicator current={indicatorStep} />
+   473→   473→
+   474→   474→      <div className="mt-6 min-h-[320px]">
+   475→   475→        <AnimatePresence mode="wait">
+   476→   476→          {/* ---------- Step 1: Enter Matric ---------- */}
+   477→   477→          {step === 1 && (
+   478→   478→            <motion.div
+   479→   479→              key="step-1"
+   480→   480→              initial={{ opacity: 0, x: 16 }}
+   481→   481→              animate={{ opacity: 1, x: 0 }}
+   482→   482→              exit={{ opacity: 0, x: -16 }}
+   483→   483→              transition={{ duration: 0.25 }}
+   484→   484→              className="space-y-5"
+   485→   485→            >
+   486→   486→              <div>
+   487→   487→                <h2 className="font-display text-2xl font-bold tracking-tight">
+   488→   488→                  Claim your account
+   489→   489→                </h2>
+   490→   490→                <p className="mt-1 text-sm text-muted-foreground">
+   491→   491→                  Enter the matric number your class representative registered
+   492→   492→                  you with.
+   493→   493→                </p>
+   494→   494→              </div>
+   495→   495→
+   496→   496→              <div className="space-y-2">
+   497→   497→                <Label htmlFor="matric" className="text-sm font-medium">
+   498→   498→                  Matric number
+   499→   499→                </Label>
+   500→   500→                <Input
+   501→   501→                  id="matric"
+   502→   502→                  inputMode="numeric"
+   503→   503→                  autoComplete="off"
+   504→   504→                  placeholder="e.g. 230315011"
+   505→   505→                  value={matric}
+   506→   506→                  onChange={(e) =>
+   507→   507→                    setMatric(e.target.value.replace(/[^0-9]/g, ''))
+   508→   508→                  }
+   509→   509→                  onKeyDown={(e) => {
+   510→   510→                    if (e.key === 'Enter' && !loading) handleMatricSubmit()
+   511→   511→                  }}
+   512→   512→                  className="h-12 rounded-xl text-base tracking-wide"
+   513→   513→                  disabled={loading}
+   514→   514→                />
+   515→   515→                <p className="text-xs text-muted-foreground">
+   516→   516→                  Enter the matric number you were registered with.
+   517→   517→                </p>
+   518→   518→              </div>
+   519→   519→
+   520→   520→              {alreadyClaimed && (
+   521→   521→                <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+   522→   522→                  <AlertCircle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+   523→   523→                  <div className="flex-1">
+   524→   524→                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+   525→   525→                      This account has already been claimed
+   526→   526→                    </p>
+   527→   527→                    <p className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-300/80">
+   528→   528→                      Please sign in with your matric number and password.
+   529→   529→                    </p>
+   530→   530→                    <Button
+   531→   531→                      type="button"
+   532→   532→                      size="sm"
+   533→   533→                      variant="secondary"
+   534→   534→                      className="mt-3 h-8"
+   535→   535→                      onClick={onSwitchToSignIn}
+   536→   536→                    >
+   537→   537→                      Go to Sign In
+   538→   538→                      <ArrowRight className="size-3.5" />
+   539→   539→                    </Button>
+   540→   540→                  </div>
+   541→   541→                </div>
+   542→   542→              )}
+   543→   543→
+   544→   544→              <Button
+   545→   545→                type="button"
+   546→   546→                size="lg"
+   547→   547→                className="w-full h-12 rounded-xl text-base font-semibold"
+   548→   548→                onClick={handleMatricSubmit}
+   549→   549→                disabled={loading || !matric.trim()}
+   550→   550→              >
+   551→   551→                {loading ? (
+   552→   552→                  <>
+   553→   553→                    <Loader2 className="size-4 animate-spin" />
+   554→   554→                    Checking…
+   555→   555→                  </>
+   556→   556→                ) : (
+   557→   557→                  <>
+   558→   558→                    Continue
+   559→   559→                    <ArrowRight className="size-4" />
+   560→   560→                  </>
+   561→   561→                )}
+   562→   562→              </Button>
+   563→   563→
+   564→   564→              <p className="text-center text-xs text-muted-foreground">
+   565→   565→                Only pre-registered ULSESA members can claim an account.{' '}
+   566→   566→                <a
+   567→   567→                  href={supportWhatsAppUrl(SUPPORT_MESSAGES.account)}
+   568→   568→                  target="_blank"
+   569→   569→                  rel="noopener noreferrer"
+   570→   570→                  className="font-medium text-primary hover:underline"
+   571→   571→                >
+   572→   572→                  Need help?
+   573→   573→                </a>
+   574→   574→              </p>
+   575→   575→            </motion.div>
+   576→   576→          )}
+   577→   577→
+   578→   578→          {/* ---------- Step 2: Review Details & Send Code ---------- */}
+   579→   579→          {step === 2 && student && (
+   580→   580→            <motion.div
+   581→   581→              key="step-2"
+   582→   582→              initial={{ opacity: 0, x: 16 }}
+   583→   583→              animate={{ opacity: 1, x: 0 }}
+   584→   584→              exit={{ opacity: 0, x: -16 }}
+   585→   585→              transition={{ duration: 0.25 }}
+   586→   586→              className="space-y-5"
+   587→   587→            >
+   588→   588→              <div>
+   589→   589→                <h2 className="font-display text-2xl font-bold tracking-tight">
+   590→   590→                  Confirm your details
+   591→   591→                </h2>
+   592→   592→                <p className="mt-1 text-sm text-muted-foreground">
+   593→   593→                  Review the information we have on file before sending the
+   594→   594→                  verification code.
+   595→   595→                </p>
+   596→   596→              </div>
+   597→   597→
+   598→   598→              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/40 p-4">
+   599→   599→                <DetailRow label="Full name" value={student.fullName} />
+   600→   600→                <DetailRow
+   601→   601→                  label="Matric number"
+   602→   602→                  value={student.matricNumber}
+   603→   603→                />
+   604→   604→                <DetailRow
+   605→   605→                  label="Cohort"
+   606→   606→                  value={`${student.level} Level · ${student.programme}`}
+   607→   607→                />
+   608→   608→                <div className="border-t border-border/60 pt-3">
+   609→   609→                  <DetailRow
+   610→   610→                    label="Email on file"
+   611→   611→                    value={maskedEmail}
+   612→   612→                    icon={<Mail className="size-3.5" />}
+   613→   613→                  />
+   614→   614→                </div>
+   615→   615→              </div>
+   616→   616→
+   617→   617→              <div className="flex items-start gap-3 rounded-xl border border-cyan-accent/30 bg-cyan-accent/5 p-4">
+   618→   618→                <Info className="size-5 shrink-0 text-cyan-accent" />
+   619→   619→                <div className="flex-1">
+   620→   620→                  <p className="text-sm font-medium text-foreground">
+   621→   621→                    A verification code will be sent to the email above.
+   622→   622→                  </p>
+   623→   623→                  <p className="mt-1 text-xs text-muted-foreground">
+   624→   624→                    This is the email your class representative collected — it
+   625→   625→                    cannot be changed. If this email is wrong,{' '}
+   626→   626→                    <a
+   627→   627→                      href={supportWhatsAppUrl(SUPPORT_MESSAGES.account)}
+   628→   628→                      target="_blank"
+   629→   629→                      rel="noopener noreferrer"
+   630→   630→                      className="font-medium text-cyan-accent hover:underline"
+   631→   631→                    >
+   632→   632→                      contact ULSESA support
+   633→   633→                    </a>
+   634→   634→                    .
+   635→   635→                  </p>
+   636→   636→                </div>
+   637→   637→              </div>
+   638→   638→
+   639→   639→              <div className="flex gap-3">
+   640→   640→                <Button
+   641→   641→                  type="button"
+   642→   642→                  variant="outline"
+   643→   643→                  size="lg"
+   644→   644→                  className="h-12 rounded-xl"
+   645→   645→                  onClick={handleReset}
+   646→   646→                  disabled={loading}
+   647→   647→                >
+   648→   648→                  <ArrowLeft className="size-4" />
+   649→   649→                  Back
+   650→   650→                </Button>
+   651→   651→                <Button
+   652→   652→                  type="button"
+   653→   653→                  size="lg"
+   654→   654→                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+   655→   655→                  onClick={handleSendOtp}
+   656→   656→                  disabled={loading}
+   657→   657→                >
+   658→   658→                  {loading ? (
+   659→   659→                    <>
+   660→   660→                      <Loader2 className="size-4 animate-spin" />
+   661→   661→                      Sending…
+   662→   662→                    </>
+   663→   663→                  ) : (
+   664→   664→                    <>
+   665→   665→                      <Mail className="size-4" />
+   666→   666→                      Send Verification Code
+   667→   667→                    </>
+   668→   668→                  )}
+   669→   669→                </Button>
+   670→   670→              </div>
+   671→   671→            </motion.div>
+   672→   672→          )}
+   673→   673→
+   674→   674→          {/* ---------- Step 3: Enter Verification Code ---------- */}
+   675→   675→          {step === 3 && student && (
+   676→   676→            <motion.div
+   677→   677→              key="step-3"
+   678→   678→              initial={{ opacity: 0, x: 16 }}
+   679→   679→              animate={{ opacity: 1, x: 0 }}
+   680→   680→              exit={{ opacity: 0, x: -16 }}
+   681→   681→              transition={{ duration: 0.25 }}
+   682→   682→              className="space-y-5"
+   683→   683→            >
+   684→   684→              <div>
+   685→   685→                <h2 className="font-display text-2xl font-bold tracking-tight">
+   686→   686→                  Enter verification code
+   687→   687→                </h2>
+   688→   688→                <p className="mt-1 text-sm text-muted-foreground">
+   689→   689→                  Code sent to{' '}
+   690→   690→                  <span className="font-semibold text-foreground">
+   691→   691→                    {maskedEmail}
+   692→   692→                  </span>
+   693→   693→                </p>
+   694→   694→              </div>
+   695→   695→
+   696→   696→              {/* Demo mode banner */}
+   697→   697→              {demoMode && demoOtp && (
+   698→   698→                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+   699→   699→                  <div className="flex items-center gap-2">
+   700→   700→                    <Mail className="size-4 text-amber-600 dark:text-amber-400" />
+   701→   701→                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+   702→   702→                      Demo Mode · SMTP not configured
+   703→   703→                    </span>
+   704→   704→                  </div>
+   705→   705→                  <p className="mt-2 text-sm text-amber-900 dark:text-amber-100">
+   706→   706→                    Your verification code is:{' '}
+   707→   707→                    <span className="ml-1 font-mono text-lg font-bold tracking-[0.25em] text-amber-900 dark:text-amber-100">
+   708→   708→                      {demoOtp}
+   709→   709→                    </span>
+   710→   710→                  </p>
+   711→   711→                  <p className="mt-1 text-[11px] text-amber-700/80 dark:text-amber-300/70">
+   712→   712→                    In production this code is delivered only via email.
+   713→   713→                  </p>
+   714→   714→                </div>
+   715→   715→              )}
+   716→   716→
+   717→   717→              {/* Email sent confirmation */}
+   718→   718→              {emailSent && !demoMode && (
+   719→   719→                <div className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+   720→   720→                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+   721→   721→                  <p className="text-xs text-emerald-800 dark:text-emerald-300">
+   722→   722→                    Check your email at {maskedEmail} for the verification code.
+   723→   723→                  </p>
+   724→   724→                </div>
+   725→   725→              )}
+   726→   726→
+   727→   727→              <div className="flex flex-col items-center gap-4 py-2">
+   728→   728→                <InputOTP
+   729→   729→                  maxLength={6}
+   730→   730→                  value={otp}
+   731→   731→                  onChange={(v) => setOtp(v)}
+   732→   732→                  containerClassName="justify-center"
+   733→   733→                >
+   734→   734→                  <InputOTPGroup>
+   735→   735→                    <InputOTPSlot index={0} className="size-12 text-lg" />
+   736→   736→                    <InputOTPSlot index={1} className="size-12 text-lg" />
+   737→   737→                    <InputOTPSlot index={2} className="size-12 text-lg" />
+   738→   738→                  </InputOTPGroup>
+   739→   739→                  <span className="px-1 text-muted-foreground/60">·</span>
+   740→   740→                  <InputOTPGroup>
+   741→   741→                    <InputOTPSlot index={3} className="size-12 text-lg" />
+   742→   742→                    <InputOTPSlot index={4} className="size-12 text-lg" />
+   743→   743→                    <InputOTPSlot index={5} className="size-12 text-lg" />
+   744→   744→                  </InputOTPGroup>
+   745→   745→                </InputOTP>
+   746→   746→
+   747→   747→                <button
+   748→   748→                  type="button"
+   749→   749→                  onClick={handleResendOtp}
+   750→   750→                  className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+   751→   751→                  disabled={loading}
+   752→   752→                >
+   753→   753→                  Resend code
+   754→   754→                </button>
+   755→   755→              </div>
+   756→   756→
+   757→   757→              <div className="flex gap-3">
+   758→   758→                <Button
+   759→   759→                  type="button"
+   760→   760→                  variant="outline"
+   761→   761→                  size="lg"
+   762→   762→                  className="h-12 rounded-xl"
+   763→   763→                  onClick={() => setStep(2)}
+   764→   764→                  disabled={loading}
+   765→   765→                >
+   766→   766→                  <ArrowLeft className="size-4" />
+   767→   767→                  Back
+   768→   768→                </Button>
+   769→   769→                <Button
+   770→   770→                  type="button"
+   771→   771→                  size="lg"
+   772→   772→                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+   773→   773→                  onClick={handleVerifyOtp}
+   774→   774→                  disabled={loading || otp.length !== 6}
+   775→   775→                >
+   776→   776→                  {loading ? (
+   777→   777→                    <>
+   778→   778→                      <Loader2 className="size-4 animate-spin" />
+   779→   779→                      Verifying…
+   780→   780→                    </>
+   781→   781→                  ) : (
+   782→   782→                    <>
+   783→   783→                      <ShieldCheck className="size-4" />
+   784→   784→                      Verify
+   785→   785→                    </>
+   786→   786→                  )}
+   787→   787→                </Button>
+   788→   788→              </div>
+   789→   789→            </motion.div>
+   790→   790→          )}
+   791→   791→
+   792→   792→          {/* ---------- Step 4: Set Password ---------- */}
+   793→   793→          {step === 4 && student && (
+   794→   794→            <motion.div
+   795→   795→              key="step-4"
+   796→   796→              initial={{ opacity: 0, x: 16 }}
+   797→   797→              animate={{ opacity: 1, x: 0 }}
+   798→   798→              exit={{ opacity: 0, x: -16 }}
+   799→   799→              transition={{ duration: 0.25 }}
+   800→   800→              className="space-y-5"
+   801→   801→            >
+   802→   802→              <div>
+   803→   803→                <h2 className="font-display text-2xl font-bold tracking-tight">
+   804→   804→                  Set your password
+   805→   805→                </h2>
+   806→   806→                <p className="mt-1 text-sm text-muted-foreground">
+   807→   807→                  Choose a password you&apos;ll use to sign in next time.
+   808→   808→                </p>
+   809→   809→              </div>
+   810→   810→
+   811→   811→              {/* Admin-verified banner — shown when the student was manually
+   812→   812→                  verified by an ULSESA admin and skipped the OTP step. */}
+   813→   813→              {adminVerified && (
+   814→   814→                <div className="flex items-start gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
+   815→   815→                  <ShieldCheck className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+   816→   816→                  <div className="flex-1">
+   817→   817→                    <p className="text-sm font-medium text-foreground">
+   818→   818→                      Identity verified by ULSESA admin
+   819→   819→                    </p>
+   820→   820→                    <p className="mt-1 text-xs text-muted-foreground">
+   821→   821→                      Your account was manually verified by the ULSESA
+   822→   822→                      administrator, so you can set your password directly
+   823→   823→                      without an email code. Set your password below to
+   824→   824→                      complete your account.
+   825→   825→                    </p>
+   826→   826→                  </div>
+   827→   827→                </div>
+   828→   828→              )}
+   829→   829→
+   830→   830→              <div className="space-y-2">
+   831→   831→                <Label htmlFor="password" className="text-sm font-medium">
+   832→   832→                  Password
+   833→   833→                </Label>
+   834→   834→                <div className="relative">
+   835→   835→                  <Input
+   836→   836→                    id="password"
+   837→   837→                    type={showPw ? 'text' : 'password'}
+   838→   838→                    placeholder="At least 6 characters"
+   839→   839→                    value={password}
+   840→   840→                    onChange={(e) => setPassword(e.target.value)}
+   841→   841→                    className="h-12 rounded-xl pr-12"
+   842→   842→                    autoComplete="new-password"
+   843→   843→                  />
+   844→   844→                  <button
+   845→   845→                    type="button"
+   846→   846→                    onClick={() => setShowPw((v) => !v)}
+   847→   847→                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   848→   848→                    tabIndex={-1}
+   849→   849→                    aria-label={showPw ? 'Hide password' : 'Show password'}
+   850→   850→                  >
+   851→   851→                    {showPw ? (
+   852→   852→                      <EyeOff className="size-4" />
+   853→   853→                    ) : (
+   854→   854→                      <Eye className="size-4" />
+   855→   855→                    )}
+   856→   856→                  </button>
+   857→   857→                </div>
+   858→   858→              </div>
+   859→   859→
+   860→   860→              <div className="space-y-2">
+   861→   861→                <Label htmlFor="confirm" className="text-sm font-medium">
+   862→   862→                  Confirm password
+   863→   863→                </Label>
+   864→   864→                <div className="relative">
+   865→   865→                  <Input
+   866→   866→                    id="confirm"
+   867→   867→                    type={showConfirm ? 'text' : 'password'}
+   868→   868→                    placeholder="Re-enter your password"
+   869→   869→                    value={confirm}
+   870→   870→                    onChange={(e) => setConfirm(e.target.value)}
+   871→   871→                    className="h-12 rounded-xl pr-12"
+   872→   872→                    autoComplete="new-password"
+   873→   873→                  />
+   874→   874→                  <button
+   875→   875→                    type="button"
+   876→   876→                    onClick={() => setShowConfirm((v) => !v)}
+   877→   877→                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   878→   878→                    tabIndex={-1}
+   879→   879→                    aria-label={
+   880→   880→                      showConfirm ? 'Hide password' : 'Show password'
+   881→   881→                    }
+   882→   882→                  >
+   883→   883→                    {showConfirm ? (
+   884→   884→                      <EyeOff className="size-4" />
+   885→   885→                    ) : (
+   886→   886→                      <Eye className="size-4" />
+   887→   887→                    )}
+   888→   888→                  </button>
+   889→   889→                </div>
+   890→   890→                {confirm.length > 0 && (
+   891→   891→                  <div className="flex items-center gap-1.5 text-xs">
+   892→   892→                    {password === confirm ? (
+   893→   893→                      <>
+   894→   894→                        <CheckCircle2 className="size-3.5 text-emerald-500" />
+   895→   895→                        <span className="text-emerald-600 dark:text-emerald-400">
+   896→   896→                          Passwords match
+   897→   897→                        </span>
+   898→   898→                      </>
+   899→   899→                    ) : (
+   900→   900→                      <>
+   901→   901→                        <AlertCircle className="size-3.5 text-destructive" />
+   902→   902→                        <span className="text-destructive">
+   903→   903→                          Passwords do not match
+   904→   904→                        </span>
+   905→   905→                      </>
+   906→   906→                    )}
+   907→   907→                  </div>
+   908→   908→                )}
+   909→   909→              </div>
+   910→   910→
+   911→   911→              <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3">
+   912→   912→                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+   913→   913→                <p className="text-xs text-muted-foreground">
+   914→   914→                  After setting your password, your account will be{' '}
+   915→   915→                  <span className="font-medium text-foreground">
+   916→   916→                    pending admin approval
+   917→   917→                  </span>
+   918→   918→                  . You can explore the portal while you wait.
+   919→   919→                </p>
+   920→   920→              </div>
+   921→   921→
+   922→   922→              <Button
+   923→   923→                type="button"
+   924→   924→                size="lg"
+   925→   925→                className="h-12 w-full rounded-xl text-base font-semibold"
+   926→   926→                onClick={handleSetPassword}
+   927→   927→                disabled={
+   928→   928→                  loading || password.length < 6 || password !== confirm
+   929→   929→                }
+   930→   930→              >
+   931→   931→                {loading ? (
+   932→   932→                  <>
+   933→   933→                    <Loader2 className="size-4 animate-spin" />
+   934→   934→                    Securing…
+   935→   935→                  </>
+   936→   936→                ) : (
+   937→   937→                  <>
+   938→   938→                    <KeyRound className="size-4" />
+   939→   939→                    Complete Registration
+   940→   940→                  </>
+   941→   941→                )}
+   942→   942→              </Button>
+   943→   943→            </motion.div>
+   944→   944→          )}
+   945→   945→        </AnimatePresence>
+   946→   946→      </div>
+   947→   947→    </div>
+   948→   948→  )
+   949→   949→}
+   950→   950→
+   951→   951→// ===================== Sign In Flow =====================
+   952→   952→
+   953→   953→interface SignInFlowProps {
+   954→   954→  onSwitchToClaim: () => void
+   955→   955→  onAuthSuccess: (student: StudentUser, token: string, notice?: string) => void
+   956→   956→}
+   957→   957→
+   958→   958→function SignInFlow({ onSwitchToClaim, onAuthSuccess }: SignInFlowProps) {
+   959→   959→  const [matric, setMatric] = useState('')
+   960→   960→  const [password, setPassword] = useState('')
+   961→   961→  const [showPw, setShowPw] = useState(false)
+   962→   962→  const [loading, setLoading] = useState(false)
+   963→   963→
+   964→   964→  async function handleSignIn() {
+   965→   965→    if (!matric.trim() || !password) {
+   966→   966→      toast.error('Enter your matric number and password.')
+   967→   967→      return
+   968→   968→    }
+   969→   969→    setLoading(true)
+   970→   970→    try {
+   971→   971→      const data = await api.post<LoginResponse>('/auth/login', {
+   972→   972→        matricNumber: matric.trim(),
+   973→   973→        password,
+   974→   974→      })
+   975→   975→      onAuthSuccess(data.student, data.token, data.notice)
+   976→   976→    } catch (err) {
+   977→   977→      const msg = err instanceof Error ? err.message : 'Sign in failed'
+   978→   978→      if (/rejected/i.test(msg)) {
+   979→   979→        toast.error('Your verification was rejected. Contact support.', {
+   980→   980→          action: {
+   981→   981→            label: 'WhatsApp',
+   982→   982→            onClick: () =>
+   983→   983→              window.open(
+   984→   984→                supportWhatsAppUrl(SUPPORT_MESSAGES.account),
+   985→   985→                '_blank',
+   986→   986→                'noopener,noreferrer'
+   987→   987→              ),
+   988→   988→          },
+   989→   989→        })
+   990→   990→      } else if (/Invalid matric/i.test(msg)) {
+   991→   991→        toast.error(
+   992→   992→          "Invalid matric or password. If you haven't claimed your account, tap Claim Account.",
+   993→   993→          {
+   994→   994→            action: {
+   995→   995→              label: 'Claim',
+   996→   996→              onClick: onSwitchToClaim,
+   997→   997→            },
+   998→   998→          }
+   999→   999→        )
+  1000→  1000→      } else {
+  1001→  1001→        toast.error(msg)
+  1002→  1002→      }
+  1003→  1003→    } finally {
+  1004→  1004→      setLoading(false)
+  1005→  1005→    }
+  1006→  1006→  }
+  1007→  1007→
+  1008→  1008→  return (
+  1009→  1009→    <div className="glass-strong overflow-hidden rounded-3xl border border-border/60 p-6 shadow-2xl shadow-primary/5 sm:p-8">
+  1010→  1010→      <div className="space-y-5">
+  1011→  1011→        <div>
+  1012→  1012→          <h2 className="font-display text-2xl font-bold tracking-tight">
+  1013→  1013→            Welcome back
+  1014→  1014→          </h2>
+  1015→  1015→          <p className="mt-1 text-sm text-muted-foreground">
+  1016→  1016→            Sign in to continue to your ULSESA dashboard.
+  1017→  1017→          </p>
+  1018→  1018→        </div>
+  1019→  1019→
+  1020→  1020→        <div className="space-y-2">
+  1021→  1021→          <Label htmlFor="signin-matric" className="text-sm font-medium">
+  1022→  1022→            Matric number
+  1023→  1023→          </Label>
+  1024→  1024→          <Input
+  1025→  1025→            id="signin-matric"
+  1026→  1026→            inputMode="numeric"
+  1027→  1027→            autoComplete="username"
+  1028→  1028→            placeholder="e.g. 230315011"
+  1029→  1029→            value={matric}
+  1030→  1030→            onChange={(e) => setMatric(e.target.value.replace(/[^0-9]/g, ''))}
+  1031→  1031→            onKeyDown={(e) => {
+  1032→  1032→              if (e.key === 'Enter' && !loading) handleSignIn()
+  1033→  1033→            }}
+  1034→  1034→            className="h-12 rounded-xl text-base"
+  1035→  1035→            disabled={loading}
+  1036→  1036→          />
+  1037→  1037→        </div>
+  1038→  1038→
+  1039→  1039→        <div className="space-y-2">
+  1040→  1040→          <div className="flex items-center justify-between">
+  1041→  1041→            <Label htmlFor="signin-password" className="text-sm font-medium">
+  1042→  1042→              Password
+  1043→  1043→            </Label>
+  1044→  1044→            <a
+  1045→  1045→              href={supportWhatsAppUrl(SUPPORT_MESSAGES.password)}
+  1046→  1046→              target="_blank"
+  1047→  1047→              rel="noopener noreferrer"
+  1048→  1048→              className="text-xs font-medium text-primary hover:underline"
+  1049→  1049→            >
+  1050→  1050→              Forgot password?
+  1051→  1051→            </a>
+  1052→  1052→          </div>
+  1053→  1053→          <div className="relative">
+  1054→  1054→            <Input
+  1055→  1055→              id="signin-password"
+  1056→  1056→              type={showPw ? 'text' : 'password'}
+  1057→  1057→              autoComplete="current-password"
+  1058→  1058→              placeholder="Your password"
+  1059→  1059→              value={password}
+  1060→  1060→              onChange={(e) => setPassword(e.target.value)}
+  1061→  1061→              onKeyDown={(e) => {
+  1062→  1062→                if (e.key === 'Enter' && !loading) handleSignIn()
+  1063→  1063→              }}
+  1064→  1064→              className="h-12 rounded-xl pr-12"
+  1065→  1065→              disabled={loading}
+  1066→  1066→            />
+  1067→  1067→            <button
+  1068→  1068→              type="button"
+  1069→  1069→              onClick={() => setShowPw((v) => !v)}
+  1070→  1070→              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+  1071→  1071→              tabIndex={-1}
+  1072→  1072→              aria-label={showPw ? 'Hide password' : 'Show password'}
+  1073→  1073→            >
+  1074→  1074→              {showPw ? (
+  1075→  1075→                <EyeOff className="size-4" />
+  1076→  1076→              ) : (
+  1077→  1077→                <Eye className="size-4" />
+  1078→  1078→              )}
+  1079→  1079→            </button>
+  1080→  1080→          </div>
+  1081→  1081→        </div>
+  1082→  1082→
+  1083→  1083→        <Button
+  1084→  1084→          type="button"
+  1085→  1085→          size="lg"
+  1086→  1086→          className="h-12 w-full rounded-xl text-base font-semibold"
+  1087→  1087→          onClick={handleSignIn}
+  1088→  1088→          disabled={loading || !matric.trim() || !password}
+  1089→  1089→        >
+  1090→  1090→          {loading ? (
+  1091→  1091→            <>
+  1092→  1092→              <Loader2 className="size-4 animate-spin" />
+  1093→  1093→              Signing in…
+  1094→  1094→            </>
+  1095→  1095→          ) : (
+  1096→  1096→            <>
+  1097→  1097→              <Lock className="size-4" />
+  1098→  1098→              Sign In
+  1099→  1099→            </>
+  1100→  1100→          )}
+  1101→  1101→        </Button>
+  1102→  1102→
+  1103→  1103→        <div className="rounded-xl bg-muted/40 p-3 text-center">
+  1104→  1104→          <p className="text-xs text-muted-foreground">
+  1105→  1105→            Haven&apos;t claimed your account yet?{' '}
+  1106→  1106→            <button
+  1107→  1107→              type="button"
+  1108→  1108→              onClick={onSwitchToClaim}
+  1109→  1109→              className="font-semibold text-primary hover:underline"
+  1110→  1110→            >
+  1111→  1111→              Claim it now
+  1112→  1112→            </button>
+  1113→  1113→          </p>
+  1114→  1114→        </div>
+  1115→  1115→      </div>
+  1116→  1116→    </div>
+  1117→  1117→  )
+  1118→  1118→}
+  1119→  1119→
+  1120→  1120→// ===================== Main AuthView =====================
+  1121→  1121→
+  1122→  1122→export function AuthView() {
+  1123→  1123→  const { navigate } = useNav()
+  1124→  1124→  const { setStudent } = useAuth()
+  1125→  1125→  const [mode, setMode] = useState<Mode>('claim')
+  1126→  1126→
+  1127→  1127→  // If already authenticated, send to dashboard
+  1128→  1128→  useEffect(() => {
+  1129→  1129→    if (useAuth.getState().isAuthenticated()) {
+  1130→  1130→      navigate('dashboard')
+  1131→  1131→    }
+  1132→  1132→  }, [navigate])
+  1133→  1133→
+  1134→  1134→  function handleClaimSuccess(
+  1135→  1135→    student: StudentUser,
+  1136→  1136→    token: string,
+  1137→  1137→    message: string
+  1138→  1138→  ) {
+  1139→  1139→    setStudent(student, token)
+  1140→  1140→    toast.success('Account claimed! Pending admin approval.')
+  1141→  1141→    if (message) toast.info(message, { duration: 6000 })
+  1142→  1142→    navigate('dashboard')
+  1143→  1143→  }
+  1144→  1144→
+  1145→  1145→  function handleSignInSuccess(
+  1146→  1146→    student: StudentUser,
+  1147→  1147→    token: string,
+  1148→  1148→    notice?: string
+  1149→  1149→  ) {
+  1150→  1150→    setStudent(student, token)
+  1151→  1151→    if (notice) {
+  1152→  1152→      toast.info(notice, { duration: 6000 })
+  1153→  1153→    } else {
+  1154→  1154→      toast.success(`Welcome back, ${student.fullName.split(' ')[0]}!`)
+  1155→  1155→    }
+  1156→  1156→    navigate('dashboard')
+  1157→  1157→  }
+  1158→  1158→
+  1159→  1159→  return (
+  1160→  1160→    <div className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden px-4 py-8 sm:py-12">
+  1161→  1161→      {/* Background */}
+  1162→  1162→      <div className="pointer-events-none absolute inset-0 bg-grid opacity-60" />
+  1163→  1163→      <div className="pointer-events-none absolute -top-24 left-1/2 h-72 w-[60rem] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
+  1164→  1164→      <div className="pointer-events-none absolute -bottom-24 right-0 h-56 w-56 rounded-full bg-cyan-accent/15 blur-3xl" />
+  1165→  1165→
+  1166→  1166→      <div className="relative w-full max-w-4xl animate-slide-up">
+  1167→  1167→        <div className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-2xl shadow-primary/10 lg:grid lg:grid-cols-[1fr_1.1fr]">
+  1168→  1168→          <BrandPanel mode={mode} />
+  1169→  1169→
+  1170→  1170→          {/* Right side: form */}
+  1171→  1171→          <div className="p-6 sm:p-8">
+  1172→  1172→            {/* Mobile-only logo header */}
+  1173→  1173→            <div className="mb-5 flex items-center gap-2.5 lg:hidden">
+  1174→  1174→              <div className="relative size-10 shrink-0 overflow-hidden rounded-xl ring-1 ring-primary/20">
+  1175→  1175→                <Image
+  1176→  1176→                  src="/ulsesa-logo.jpg"
+  1177→  1177→                  alt="ULSESA logo"
+  1178→  1178→                  fill
+  1179→  1179→                  sizes="40px"
+  1180→  1180→                  className="object-cover"
+  1181→  1181→                />
+  1182→  1182→              </div>
+  1183→  1183→              <div>
+  1184→  1184→                <p className="font-display text-sm font-bold leading-tight">
+  1185→  1185→                  ULSESA Portal
+  1186→  1186→                </p>
+  1187→  1187→                <p className="text-[10px] text-muted-foreground leading-tight">
+  1188→  1188→                  Faculty of Education · UNILAG
+  1189→  1189→                </p>
+  1190→  1190→              </div>
+  1191→  1191→            </div>
+  1192→  1192→
+  1193→  1193→            <Tabs
+  1194→  1194→              value={mode}
+  1195→  1195→              onValueChange={(v) => setMode(v as Mode)}
+  1196→  1196→              className="w-full"
+  1197→  1197→            >
+  1198→  1198→              <TabsList className="grid h-11 w-full grid-cols-2 rounded-xl bg-muted/70 backdrop-blur">
+  1199→  1199→                <TabsTrigger
+  1200→  1200→                  value="claim"
+  1201→  1201→                  className="rounded-lg text-sm font-semibold"
+  1202→  1202→                >
+  1203→  1203→                  <UserCheck className="size-4" />
+  1204→  1204→                  Claim Account
+  1205→  1205→                </TabsTrigger>
+  1206→  1206→                <TabsTrigger
+  1207→  1207→                  value="signin"
+  1208→  1208→                  className="rounded-lg text-sm font-semibold"
+  1209→  1209→                >
+  1210→  1210→                  <Lock className="size-4" />
+  1211→  1211→                  Sign In
+  1212→  1212→                </TabsTrigger>
+  1213→  1213→              </TabsList>
+  1214→  1214→
+  1215→  1215→              <TabsContent value="claim" className="mt-6">
+  1216→  1216→                <ClaimFlow
+  1217→  1217→                  onSwitchToSignIn={() => setMode('signin')}
+  1218→  1218→                  onAuthSuccess={handleClaimSuccess}
+  1219→  1219→                />
+  1220→  1220→              </TabsContent>
+  1221→  1221→
+  1222→  1222→              <TabsContent value="signin" className="mt-6">
+  1223→  1223→                <SignInFlow
+  1224→  1224→                  onSwitchToClaim={() => setMode('claim')}
+  1225→  1225→                  onAuthSuccess={handleSignInSuccess}
+  1226→  1226→                />
+  1227→  1227→              </TabsContent>
+  1228→  1228→            </Tabs>
+  1229→  1229→          </div>
+  1230→  1230→        </div>
+  1231→  1231→      </div>
+  1232→  1232→    </div>
+  1233→  1233→  )
+  1234→  1234→}
+  1235→  1235→
+  1236→  1236→export default AuthView
+  1237→  1237→

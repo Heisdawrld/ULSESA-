@@ -29,6 +29,9 @@ import {
   Loader2,
   KeyRound,
   UserPlus,
+  IdCard,
+  FileCheck,
+  Maximize2,
 } from 'lucide-react'
 
 import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
@@ -294,6 +297,99 @@ function auditActionBadge(action: string) {
     <Badge className={cn('capitalize', map[action] || '')}>
       {action.replace(/_/g, ' ')}
     </Badge>
+  )
+}
+
+// ===================== ID Document Preview =====================
+//
+// The student-uploaded ID is stored as a base64 data URL on
+// `Student.idDocumentUrl`. This component renders a small thumbnail that,
+// when clicked, opens a Dialog with the full-size image so the admin can
+// actually inspect the photo, name, matric number, and programme on the
+// card/biodata form before deciding to approve or reject.
+//
+// `studentName` / `studentMatric` are used as Dialog titles so the admin
+// always knows whose document they're looking at.
+function IdDocumentPreview({
+  dataUrl,
+  studentName,
+  studentMatric,
+  compact = false,
+}: {
+  dataUrl: string
+  studentName: string
+  studentMatric: string
+  compact?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={[
+          'group relative block w-full overflow-hidden rounded-xl border border-border bg-muted/30 text-left transition-all hover:border-primary/50 hover:ring-2 hover:ring-primary/20',
+          compact ? '' : '',
+        ].join(' ')}
+        aria-label={`View ${studentName}'s uploaded ID document`}
+      >
+        <div className="flex items-center gap-3 p-2.5">
+          {/* Thumbnail — using a plain <img> because the src is a runtime
+              base64 data URL, not a known path that next/image can optimize. */}
+          <img
+            src={dataUrl}
+            alt={`Uploaded student ID for ${studentName} (${studentMatric})`}
+            className="size-16 shrink-0 rounded-lg object-cover ring-1 ring-border"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+              <IdCard className="size-3.5" />
+              Uploaded ID Document
+            </div>
+            <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+              {studentName}
+            </p>
+            <p className="truncate font-mono text-[11px] text-muted-foreground">
+              {studentMatric}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2 py-1.5 text-[11px] font-medium text-primary">
+            <Maximize2 className="size-3" />
+            View ID
+          </div>
+        </div>
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-display">
+              <FileCheck className="size-5 text-primary" />
+              Uploaded ID Document
+            </DialogTitle>
+            <DialogDescription>
+              {studentName} ·{' '}
+              <span className="font-mono">{studentMatric}</span> — compare
+              the photo and details on this document against the registered
+              info above before approving.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
+            <img
+              src={dataUrl}
+              alt={`Uploaded student ID for ${studentName} (${studentMatric})`}
+              className="max-h-[70vh] w-full object-contain"
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -1225,21 +1321,30 @@ function StudentsSection() {
                       {formatDateTime(selected.createdAt)}
                     </p>
                   </div>
-                  {selected.idDocumentUrl && (
-                    <a
-                      href={selected.idDocumentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="col-span-2 flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
-                    >
-                      <span className="flex items-center gap-2">
-                        <FileText className="size-4 text-primary" />
-                        View ID document
-                      </span>
-                      <ExternalLink className="size-4 text-muted-foreground" />
-                    </a>
-                  )}
                 </div>
+
+                {/* Uploaded ID document — render the actual image (base64
+                    data URL) with a clickable thumbnail + Dialog preview.
+                    This is what the admin uses to verify the student's
+                    identity for the manual-upload fallback path. */}
+                {selected.idDocumentUrl && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                      <IdCard className="size-3.5" />
+                      Uploaded ID Document
+                    </div>
+                    <IdDocumentPreview
+                      dataUrl={selected.idDocumentUrl}
+                      studentName={selected.fullName}
+                      studentMatric={selected.matricNumber}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Tap the card above to view the full-size image. Compare
+                      the photo, name, and matric number on the document
+                      against the details shown above before approving.
+                    </p>
+                  </div>
+                )}
 
                 {(selected.verificationStatus === 'submitted' ||
                   selected.verificationStatus === 'pending' ||
@@ -1268,13 +1373,14 @@ function StudentsSection() {
                         <ShieldCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                            Manual verification (skip OTP)
+                            {selected.idDocumentUrl
+                              ? 'Approve (verify identity)'
+                              : 'Manual verification (skip OTP)'}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Use this when the student&apos;s email OTP fails or
-                            they can&apos;t access their email. The student can
-                            then claim their account and set a password without
-                            the email code.
+                            {selected.idDocumentUrl
+                              ? "You've reviewed the uploaded ID document and confirmed it matches the student's registered details. Approving lets the student set a password and sign in without an email code."
+                              : "Use this when the student's email OTP fails or they can't access their email. The student can then claim their account and set a password without the email code."}
                           </p>
                         </div>
                       </div>
@@ -1287,7 +1393,9 @@ function StudentsSection() {
                         onClick={() => setShowManualVerifyConfirm(true)}
                       >
                         <ShieldCheck className="size-4" />
-                        Manually Verify (Skip OTP)
+                        {selected.idDocumentUrl
+                          ? 'Approve (Verify Identity)'
+                          : 'Manually Verify (Skip OTP)'}
                       </Button>
                     </div>
                   )}
@@ -1382,11 +1490,14 @@ function StudentsSection() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Manually verify this student without OTP?
+              {selected?.idDocumentUrl
+                ? 'Approve — verify this student\u2019s identity?'
+                : 'Manually verify this student without OTP?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This will verify the student&apos;s identity without an email OTP
-              code. They will be able to set a password immediately. Continue?
+              {selected?.idDocumentUrl
+                ? "You've reviewed the uploaded ID document. This will verify the student's identity without an email OTP code. They will be able to set a password immediately. Continue?"
+                : "This will verify the student's identity without an email OTP code. They will be able to set a password immediately. Continue?"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1645,11 +1756,28 @@ function VerificationSection() {
   async function approve(r: VerificationRequest) {
     setActingId(r.id)
     try {
-      await api.post(`/admin/students/${r.id}/verify`, {
-        action: 'approve',
-        notes: notes.trim() || undefined,
-      })
-      toast.success(`${r.fullName} approved`)
+      // Two approve paths depending on how the student reached 'submitted':
+      //   - idDocumentUrl present → student uploaded an ID via the manual
+      //     fallback. Use the manual-verify endpoint so they get
+      //     `admin_verified` status and can set a password without OTP.
+      //   - no idDocumentUrl     → student went through the OTP path and
+      //     already set a password. Use the regular verify/approve endpoint
+      //     to flip their status to 'approved' so they can vote.
+      if (r.idDocumentUrl) {
+        await api.post(`/admin/students/${r.id}/manual-verify`, {
+          notes: notes.trim() || undefined,
+        })
+      } else {
+        await api.post(`/admin/students/${r.id}/verify`, {
+          action: 'approve',
+          notes: notes.trim() || undefined,
+        })
+      }
+      toast.success(
+        r.idDocumentUrl
+          ? `${r.fullName}'s identity verified`
+          : `${r.fullName} approved`
+      )
       setRequests((prev) => prev.filter((x) => x.id !== r.id))
       setNotes('')
     } catch (err) {
@@ -1782,18 +1910,22 @@ function VerificationSection() {
                   </div>
                 </div>
                 {r.idDocumentUrl && (
-                  <a
-                    href={r.idDocumentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between rounded-lg border border-dashed border-border p-3 text-sm transition-colors hover:bg-muted/50"
-                  >
-                    <span className="flex items-center gap-2">
-                      <FileText className="size-4 text-primary" />
-                      View ID document
-                    </span>
-                    <ExternalLink className="size-4 text-muted-foreground" />
-                  </a>
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                      <IdCard className="size-3.5" />
+                      Uploaded ID Document
+                    </div>
+                    <IdDocumentPreview
+                      dataUrl={r.idDocumentUrl}
+                      studentName={r.fullName}
+                      studentMatric={r.matricNumber}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Tap to inspect the full image. Verify the photo, name,
+                      and matric number match the details above before
+                      approving.
+                    </p>
+                  </div>
                 )}
               </CardContent>
               <CardFooter className="gap-2">
@@ -1818,7 +1950,7 @@ function VerificationSection() {
                   ) : (
                     <CheckCircle2 className="size-4" />
                   )}
-                  Approve
+                  {r.idDocumentUrl ? 'Approve (Verify Identity)' : 'Approve'}
                 </Button>
               </CardFooter>
             </Card>
@@ -1845,18 +1977,26 @@ function VerificationSection() {
                 </DialogTitle>
                 <DialogDescription>
                   {rejectTarget.fullName} ({rejectTarget.matricNumber}) will be
-                  marked as rejected and won&apos;t be able to vote.
+                  marked as rejected and won&apos;t be able to vote. They will
+                  see your reason and can re-upload a clearer image.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-2">
                 <Label htmlFor="reject-notes">
-                  Reason <span className="text-muted-foreground">(optional)</span>
+                  Reason{' '}
+                  <span className="text-muted-foreground">
+                    (shown to the student)
+                  </span>
                 </Label>
                 <Textarea
                   id="reject-notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. ID document not legible…"
+                  placeholder={
+                    rejectTarget.idDocumentUrl
+                      ? 'e.g. The photo on the ID is too dark to verify. Please upload a clearer, well-lit image showing your name and matric number.'
+                      : 'e.g. Please contact ULSESA support to verify your identity.'
+                  }
                   rows={3}
                 />
               </div>

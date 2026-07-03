@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNav } from '@/lib/stores/nav-store'
@@ -37,6 +37,15 @@ import {
   Sigma,
   Microscope,
   Info,
+  Upload,
+  IdCard,
+  Clock,
+  Hourglass,
+  RotateCcw,
+  FileUp,
+  ImagePlus,
+  Camera,
+  X,
 } from 'lucide-react'
 
 // ===================== Types =====================
@@ -73,7 +82,18 @@ interface LoginResponse {
   notice?: string
 }
 
-type ClaimStep = 1 | 2 | 3 | 4
+// Claim flow steps. Numeric steps 1-4 are the OTP-based path; the string
+// steps ('upload', 'pending', 'rejected') are the manual ID-upload fallback
+// path used when the student can't receive the email code.
+//
+//   1 → enter matric
+//   2 → review details & send OTP                  (also offers "upload ID instead")
+//   3 → enter OTP code
+//   4 → set password
+//   'upload'   → upload student ID / biodata image
+//   'pending'  → ID uploaded, waiting for admin review
+//   'rejected' → admin rejected the uploaded ID, can re-upload
+type ClaimStep = 1 | 2 | 3 | 4 | 'upload' | 'pending' | 'rejected'
 type Mode = 'claim' | 'signin'
 
 // ===================== Helpers =====================
@@ -288,6 +308,14 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
   // an ULSESA admin and can skip the OTP step entirely.
   const [adminVerified, setAdminVerified] = useState(false)
 
+  // Manual-upload flags (returned from /auth/claim)
+  const [pendingManualReview, setPendingManualReview] = useState(false)
+  const [rejectedInfo, setRejectedInfo] = useState<{
+    rejected: boolean
+    reason: string | null
+  }>({ rejected: false, reason: null })
+  const [idUploaded, setIdUploaded] = useState(false)
+
   // OTP state (step 3)
   const [otp, setOtp] = useState('')
   const [maskedEmail, setMaskedEmail] = useState('')
@@ -301,10 +329,28 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
   const [showPw, setShowPw] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
-  // Map claim step (1..4) → indicator step (1..3)
-  // 1→1, 2→2, 3→2, 4→3
-  const indicatorStep: 1 | 2 | 3 =
-    step === 4 ? 3 : step === 3 ? 2 : step
+  // Upload state (step 'upload')
+  const [documentData, setDocumentData] = useState<string | null>(null)
+  const [documentName, setDocumentName] = useState<string>('')
+  const [documentType, setDocumentType] = useState<'student_id' | 'biodata'>(
+    'student_id'
+  )
+  const [uploading, setUploading] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Map claim step (1..4) → indicator step (1..3) for the OTP path.
+  // For the manual-upload path ('upload' | 'pending' | 'rejected') the
+  // StepIndicator is hidden entirely — those screens have their own visual
+  // language (status cards) that don't fit the 3-dot progression.
+  const indicatorStep: 1 | 2 | 3 | null =
+    typeof step === 'number'
+      ? step === 4
+        ? 3
+        : step === 3
+          ? 2
+          : step
+      : null
 
   // --- Step 1: submit matric ---
   async function handleMatricSubmit() {
@@ -319,18 +365,36 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
       const data = await api.post<{
         student: ClaimStudent
         adminVerified: boolean
+        pendingManualReview?: boolean
+        rejected?: boolean
+        rejectionReason?: string | null
+        idUploaded?: boolean
       }>('/auth/claim', {
         matricNumber: cleaned,
       })
       setStudent(data.student)
       setMaskedEmail(maskEmail(data.student.email))
       setAdminVerified(data.adminVerified ?? false)
+      setPendingManualReview(data.pendingManualReview ?? false)
+      setRejectedInfo({
+        rejected: data.rejected ?? false,
+        reason: data.rejectionReason ?? null,
+      })
+      setIdUploaded(data.idUploaded ?? false)
+
       if (data.student.hasPassword) {
+        // Already claimed — show the "go to sign in" card on step 1.
         setAlreadyClaimed(true)
       } else if (data.adminVerified) {
         // Admin manually verified this student — skip OTP, go straight
         // to setting a password.
         setStep(4)
+      } else if (data.pendingManualReview) {
+        // Student already uploaded an ID — show the pending-review screen.
+        setStep('pending')
+      } else if (data.rejected) {
+        // Admin rejected the previous upload — show the rejection screen.
+        setStep('rejected')
       } else {
         setStep(2)
       }
@@ -450,12 +514,86 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     }
   }
 
+  // --- Step 'upload': handle file selection from input or drag-drop ----
+  // Reads the file as a base64 data URL and stashes it in state. The actual
+  // upload happens when the student clicks "Submit for review".
+  function handleFileSelected(file: File) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file (JPG, PNG, or HEIC).')
+      return
+    }
+    // 8 MB cap matches the server-side limit. We check pre-read so we don't
+    // try to cram a 50 MB file through FileReader.
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('Image is too large. Maximum size is 8 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result === 'string' && result.startsWith('data:image/')) {
+        setDocumentData(result)
+        setDocumentName(file.name)
+      } else {
+        toast.error('Could not read the selected image.')
+      }
+    }
+    reader.onerror = () => {
+      toast.error('Could not read the selected image.')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) handleFileSelected(file)
+    // Clear the input value so selecting the same file twice still fires.
+    e.target.value = ''
+  }
+
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleFileSelected(file)
+  }
+
+  // --- Step 'upload': submit the data URL to the server ---
+  async function handleUploadId() {
+    if (!student) return
+    if (!documentData) {
+      toast.error('Please select an image of your student ID first.')
+      return
+    }
+    setUploading(true)
+    try {
+      await api.post<{ success: boolean; message: string }>('/auth/upload-id', {
+        matricNumber: student.matricNumber,
+        documentData,
+        documentType,
+      })
+      toast.success('ID uploaded — pending admin review.')
+      setDocumentData(null)
+      setDocumentName('')
+      setStep('pending')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to upload ID'
+      toast.error(msg)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   function handleReset() {
     setStep(1)
     setMatric('')
     setStudent(null)
     setAlreadyClaimed(false)
     setAdminVerified(false)
+    setPendingManualReview(false)
+    setRejectedInfo({ rejected: false, reason: null })
+    setIdUploaded(false)
     setOtp('')
     setMaskedEmail('')
     setDemoMode(false)
@@ -465,13 +603,18 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     setConfirm('')
     setShowPw(false)
     setShowConfirm(false)
+    setDocumentData(null)
+    setDocumentName('')
+    setDocumentType('student_id')
+    setUploading(false)
+    setDragging(false)
   }
 
   return (
     <div className="glass-strong overflow-hidden rounded-3xl border border-border/60 p-6 shadow-2xl shadow-primary/5 sm:p-8">
-      <StepIndicator current={indicatorStep} />
+      {indicatorStep && <StepIndicator current={indicatorStep} />}
 
-      <div className="mt-6 min-h-[320px]">
+      <div className={indicatorStep ? 'mt-6 min-h-[320px]' : 'mt-0 min-h-[320px]'}>
         <AnimatePresence mode="wait">
           {/* ---------- Step 1: Enter Matric ---------- */}
           {step === 1 && (
@@ -667,6 +810,37 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                     </>
                   )}
                 </Button>
+              </div>
+
+              {/* Manual-verification fallback — for students whose email is
+                  wrong, blocked, or whose OTP never arrives (Gmail 500/day
+                  cap). Uploads a photo of their student ID / biodata form
+                  for an ULSESA admin to review. */}
+              <div className="pt-1">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    or
+                  </span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  className="h-12 w-full rounded-xl border-dashed text-sm font-medium text-muted-foreground hover:text-foreground"
+                  onClick={() => setStep('upload')}
+                  disabled={loading}
+                >
+                  <IdCard className="size-4" />
+                  Can&apos;t access email? Upload Student ID instead
+                </Button>
+                {idUploaded && (
+                  <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+                    You&apos;ve previously uploaded an ID — you can re-upload a
+                    clearer image if needed.
+                  </p>
+                )}
               </div>
             </motion.div>
           )}
@@ -940,6 +1114,328 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                   </>
                 )}
               </Button>
+            </motion.div>
+          )}
+
+          {/* ---------- Step 'upload': Manual ID upload ---------- */}
+          {step === 'upload' && student && (
+            <motion.div
+              key="step-upload"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -16 }}
+              transition={{ duration: 0.25 }}
+              className="space-y-5"
+            >
+              <div>
+                <div className="mb-2 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                  <IdCard className="size-5" />
+                </div>
+                <h2 className="font-display text-2xl font-bold tracking-tight">
+                  Upload your student ID
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  If you can&apos;t receive the email code, upload a clear
+                  photo of your student ID card or biodata form. An ULSESA
+                  admin will review it and verify your account manually.
+                </p>
+              </div>
+
+              {/* Document type toggle */}
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => setDocumentType('student_id')}
+                  className={[
+                    'flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    documentType === 'student_id'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  ].join(' ')}
+                >
+                  <IdCard className="size-4" />
+                  Student ID card
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDocumentType('biodata')}
+                  className={[
+                    'flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    documentType === 'biodata'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  ].join(' ')}
+                >
+                  <FileUp className="size-4" />
+                  Biodata form
+                </button>
+              </div>
+
+              {/* Dropzone / preview */}
+              {documentData ? (
+                <div className="space-y-3">
+                  <div className="relative overflow-hidden rounded-2xl border border-border bg-muted/30">
+                    {/* Using a plain <img> instead of next/image because the
+                        src is a runtime base64 data URL, not a known path. */}
+                    <img
+                      src={documentData}
+                      alt="Selected student ID preview"
+                      className="max-h-72 w-full object-contain"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocumentData(null)
+                        setDocumentName('')
+                      }}
+                      className="absolute right-2 top-2 grid size-8 place-items-center rounded-full bg-background/90 text-foreground shadow-md ring-1 ring-border hover:bg-background"
+                      aria-label="Remove selected image"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground">
+                    <ImagePlus className="mr-1 inline size-3.5" />
+                    {documentName || 'Selected image'}
+                  </p>
+                </div>
+              ) : (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      fileInputRef.current?.click()
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    setDragging(true)
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={onDrop}
+                  className={[
+                    'flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 text-center transition-colors',
+                    dragging
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:border-primary/50 hover:bg-muted/40',
+                  ].join(' ')}
+                >
+                  <div className="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                    <Upload className="size-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      Tap to upload or drag &amp; drop
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      JPG, PNG, or HEIC · up to 8 MB
+                    </p>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Camera className="size-3.5" />
+                    <span>You can use your phone camera</span>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={onFileInputChange}
+                    className="hidden"
+                  />
+                </div>
+              )}
+
+              {/* Tips */}
+              <div className="flex items-start gap-2 rounded-xl bg-cyan-accent/5 p-3 ring-1 ring-cyan-accent/20">
+                <Info className="mt-0.5 size-4 shrink-0 text-cyan-accent" />
+                <p className="text-xs text-muted-foreground">
+                  Make sure your <span className="font-medium text-foreground">name, matric number, photograph, and programme</span> are
+                  all clearly visible. A clear, well-lit photo speeds up
+                  verification.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  className="h-12 rounded-xl"
+                  onClick={() => setStep(2)}
+                  disabled={uploading}
+                >
+                  <ArrowLeft className="size-4" />
+                  Back
+                </Button>
+                <Button
+                  type="button"
+                  size="lg"
+                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+                  onClick={handleUploadId}
+                  disabled={uploading || !documentData}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <FileUp className="size-4" />
+                      Submit for review
+                    </>
+                  )}
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ---------- Step 'pending': waiting for admin ---------- */}
+          {step === 'pending' && student && (
+            <motion.div
+              key="step-pending"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.3 }}
+              className="flex flex-col items-center gap-5 py-6 text-center"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1, duration: 0.3 }}
+                className="grid size-20 place-items-center rounded-3xl bg-gradient-to-br from-cyan-accent/20 to-primary/20 text-primary ring-1 ring-primary/20"
+              >
+                <Hourglass className="size-9" />
+              </motion.div>
+              <div className="space-y-2">
+                <h2 className="font-display text-2xl font-bold tracking-tight">
+                  Your ID is pending admin review
+                </h2>
+                <p className="mx-auto max-w-sm text-sm text-muted-foreground">
+                  An ULSESA administrator will compare the uploaded photo
+                  against your registered name, level, and programme, then
+                  either approve or reject it.
+                </p>
+              </div>
+              <div className="w-full max-w-sm space-y-3 rounded-2xl border border-border bg-muted/30 p-4 text-left">
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="size-4 text-cyan-accent" />
+                  <span className="font-medium text-foreground">
+                    What happens next?
+                  </span>
+                </div>
+                <ol className="ml-6 list-decimal space-y-1.5 text-xs text-muted-foreground">
+                  <li>
+                    Once approved, come back here and re-enter your matric
+                    number (
+                    <span className="font-mono font-semibold text-foreground">
+                      {student.matricNumber}
+                    </span>
+                    ).
+                  </li>
+                  <li>
+                    You&apos;ll skip the email code and go straight to
+                    setting your password.
+                  </li>
+                  <li>
+                    If your upload is rejected, you&apos;ll see the reason
+                    and can re-upload a clearer image.
+                  </li>
+                </ol>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="h-12 rounded-xl"
+                onClick={handleReset}
+              >
+                <RotateCcw className="size-4" />
+                Start over
+              </Button>
+            </motion.div>
+          )}
+
+          {/* ---------- Step 'rejected': admin rejected ---------- */}
+          {step === 'rejected' && student && (
+            <motion.div
+              key="step-rejected"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -16 }}
+              transition={{ duration: 0.25 }}
+              className="space-y-5"
+            >
+              <div>
+                <div className="mb-2 flex size-11 items-center justify-center rounded-2xl bg-red-500/10 text-red-600 dark:text-red-400 ring-1 ring-red-500/20">
+                  <AlertCircle className="size-5" />
+                </div>
+                <h2 className="font-display text-2xl font-bold tracking-tight">
+                  Your ID was rejected
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  An ULSESA admin reviewed your uploaded ID and couldn&apos;t
+                  verify it. Please re-upload a clearer image and try again.
+                </p>
+              </div>
+
+              {rejectedInfo.reason && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                  <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
+                    <AlertCircle className="size-3.5" />
+                    Reason from admin
+                  </p>
+                  <p className="mt-2 text-sm text-foreground">
+                    &ldquo;{rejectedInfo.reason}&rdquo;
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3">
+                <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">
+                  Common reasons: photo is blurry or too dark, name or matric
+                  number isn&apos;t visible, or the document doesn&apos;t
+                  match the registered details for{' '}
+                  <span className="font-medium text-foreground">
+                    {student.fullName}
+                  </span>
+                  .
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  className="h-12 rounded-xl"
+                  onClick={handleReset}
+                  disabled={uploading}
+                >
+                  <RotateCcw className="size-4" />
+                  Start over
+                </Button>
+                <Button
+                  type="button"
+                  size="lg"
+                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+                  onClick={() => {
+                    setDocumentData(null)
+                    setDocumentName('')
+                    setStep('upload')
+                  }}
+                  disabled={uploading}
+                >
+                  <Upload className="size-4" />
+                  Re-upload ID
+                </Button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
