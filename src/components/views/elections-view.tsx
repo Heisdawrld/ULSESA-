@@ -29,6 +29,8 @@ import {
   Check,
   Ticket,
   Search,
+  PieChart,
+  Filter,
 } from 'lucide-react'
 
 import { useNav } from '@/lib/stores/nav-store'
@@ -103,15 +105,29 @@ interface ElectionData {
 }
 
 interface ResultsCandidate {
+  id: string
   name: string
   voteCount: number
+  level?: string | null
+  programme?: string | null
 }
 interface ResultsPosition {
   id: string
   title: string
+  description?: string | null
+  order: number
+  totalVotes: number
   candidates: ResultsCandidate[]
 }
+interface ResultsElection {
+  id: string
+  title: string
+  status: string
+  startDate: string
+  endDate: string
+}
 interface ResultsData {
+  election: ResultsElection | null
   positions: ResultsPosition[]
   totalVotes: number
   totalEligible: number
@@ -1693,11 +1709,94 @@ function VoteFlow() {
   )
 }
 
+// ============ Turnout Donut (pure SVG, no deps) ============
+// A circular progress ring showing overall turnout %, with the percentage
+// in the centre. Used on the Results page to give a quick visual read of
+// participation. Animates the ring fill on mount / when the value changes.
+function TurnoutDonut({
+  percent,
+  size = 132,
+  stroke = 12,
+  label = 'Turnout',
+}: {
+  percent: number
+  size?: number
+  stroke?: number
+  label?: string
+}) {
+  const clamped = Math.max(0, Math.min(100, percent))
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (clamped / 100) * circumference
+
+  return (
+    <div
+      className="relative grid place-items-center"
+      style={{ width: size, height: size }}
+    >
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        className="-rotate-90"
+        aria-hidden
+      >
+        {/* Track */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={stroke}
+          className="stroke-muted"
+        />
+        {/* Progress — gradient stroke for a premium look */}
+        <defs>
+          <linearGradient id="turnout-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" className="[stop-color:var(--primary)]" />
+            <stop offset="100%" className="[stop-color:var(--cyan-accent)]" />
+          </linearGradient>
+        </defs>
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="url(#turnout-grad)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1.1, ease: 'easeOut', delay: 0.15 }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <motion.span
+          key={Math.round(clamped)}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.4, duration: 0.4 }}
+          className="font-display text-3xl font-extrabold tracking-tight text-foreground"
+        >
+          {clamped.toFixed(1)}%
+        </motion.span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 // ============ Results Sub-View ============
 function ResultsView() {
   const [data, setData] = useState<ResultsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Position filter: 'all' shows every position; an id filters to one.
+  // Useful on mobile where scrolling through 6 positions is tedious.
+  const [positionFilter, setPositionFilter] = useState<string>('all')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -1740,6 +1839,11 @@ function ResultsView() {
   }
 
   const { positions, totalVotes, totalEligible, turnout } = data
+  const sortedPositions = [...positions].sort((a, b) => a.order - b.order)
+  const visiblePositions =
+    positionFilter === 'all'
+      ? sortedPositions
+      : sortedPositions.filter((p) => p.id === positionFilter)
 
   return (
     <div className="space-y-6">
@@ -1766,54 +1870,112 @@ function ResultsView() {
         </Card>
       </motion.div>
 
-      {/* Overall Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {[
-          {
-            label: 'Total Votes Cast',
-            value: totalVotes.toLocaleString(),
-            icon: Vote,
-            color: 'text-primary',
-            bg: 'bg-primary/10',
-          },
-          {
-            label: 'Eligible Voters',
-            value: totalEligible.toLocaleString(),
-            icon: Users,
-            color: 'text-blue-500',
-            bg: 'bg-blue-500/10',
-          },
-          {
-            label: 'Turnout',
-            value: `${turnout.toFixed(1)}%`,
-            icon: TrendingUp,
-            color: 'text-cyan-accent',
-            bg: 'bg-cyan-accent/10',
-          },
-        ].map((stat, i) => {
-          const Icon = stat.icon
-          return (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 * i }}
-            >
-              <Card className="rounded-2xl border-border/60">
-                <CardContent className="pt-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center', stat.bg)}>
-                      <Icon className={cn('h-4 w-4', stat.color)} />
+      {/* Turnout hero — donut + key stats in one premium card */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+      >
+        <Card className="overflow-hidden rounded-2xl border-border/60">
+          <CardContent className="p-5 sm:p-6">
+            <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
+              {/* Donut */}
+              <div className="shrink-0">
+                <TurnoutDonut percent={turnout} />
+              </div>
+              {/* Stats column */}
+              <div className="grid w-full flex-1 grid-cols-3 gap-3">
+                {[
+                  {
+                    label: 'Votes Cast',
+                    value: totalVotes.toLocaleString(),
+                    icon: Vote,
+                    color: 'text-primary',
+                    bg: 'bg-primary/10',
+                  },
+                  {
+                    label: 'Eligible',
+                    value: totalEligible.toLocaleString(),
+                    icon: Users,
+                    color: 'text-blue-500',
+                    bg: 'bg-blue-500/10',
+                  },
+                  {
+                    label: 'Positions',
+                    value: positions.length.toString(),
+                    icon: PieChart,
+                    color: 'text-cyan-accent',
+                    bg: 'bg-cyan-accent/10',
+                  },
+                ].map((stat) => {
+                  const Icon = stat.icon
+                  return (
+                    <div key={stat.label} className="text-center sm:text-left">
+                      <div
+                        className={cn(
+                          'mx-auto mb-2 grid size-8 place-items-center rounded-lg sm:mx-0',
+                          stat.bg
+                        )}
+                      >
+                        <Icon className={cn('size-4', stat.color)} />
+                      </div>
+                      <p className="font-display text-xl font-bold tracking-tight sm:text-2xl">
+                        {stat.value}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">{stat.label}</p>
                     </div>
-                  </div>
-                  <p className="text-2xl font-bold font-display mt-3">{stat.value}</p>
-                  <p className="text-xs text-muted-foreground">{stat.label}</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )
-        })}
-      </div>
+                  )
+                })}
+              </div>
+            </div>
+            {/* Remaining-votes hint */}
+            {totalEligible > totalVotes && (
+              <p className="mt-4 border-t border-border/60 pt-3 text-center text-xs text-muted-foreground sm:text-left">
+                <TrendingUp className="mr-1 inline size-3.5 text-cyan-accent" />
+                <span className="font-medium text-foreground">
+                  {(totalEligible - totalVotes).toLocaleString()}
+                </span>{' '}
+                eligible student{totalEligible - totalVotes !== 1 ? 's' : ''} still to
+                vote — encourage your peers to participate.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Per-position filter — scrollable pill row (reuses SubNav styling pattern) */}
+      {sortedPositions.length > 1 && (
+        <div className="relative">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin pb-1 [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)]">
+            <button
+              onClick={() => setPositionFilter('all')}
+              className={cn(
+                'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all',
+                positionFilter === 'all'
+                  ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20'
+                  : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+              )}
+            >
+              <Filter className="size-3.5" />
+              All
+            </button>
+            {sortedPositions.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setPositionFilter(p.id)}
+                className={cn(
+                  'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all',
+                  positionFilter === p.id
+                    ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20'
+                    : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+                )}
+              >
+                {p.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Per-position results */}
       {positions.length === 0 ? (
@@ -1825,7 +1987,7 @@ function ResultsView() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {positions.map((position, i) => (
+          {visiblePositions.map((position, i) => (
             <motion.div
               key={position.id}
               initial={{ opacity: 0, y: 12 }}
@@ -1865,68 +2027,94 @@ function PositionResults({ position }: { position: ResultsPosition }) {
     () => [...position.candidates].sort((a, b) => b.voteCount - a.voteCount),
     [position.candidates]
   )
-  const totalVotes = sorted.reduce((sum, c) => sum + c.voteCount, 0)
-  const leadingId = sorted[0]?.name
-  const hasVotes = totalVotes > 0
+  // The "display total" is the sum of candidate voteCounts shown on screen.
+  // Percentages are relative to this, so they always add up to 100% and
+  // never exceed it — regardless of how the underlying vote counts were
+  // populated (seed display values vs real votes).
+  const displayTotal = sorted.reduce((sum, c) => sum + c.voteCount, 0)
+  const leadingId = sorted[0]?.id
+  const hasVotes = displayTotal > 0
 
   return (
     <Card className="rounded-2xl border-border/60">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Trophy className="h-4 w-4 text-cyan-accent" />
-          {position.title}
-        </CardTitle>
-        <CardDescription>
-          {totalVotes} vote{totalVotes !== 1 ? 's' : ''} cast
-        </CardDescription>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Trophy className="h-4 w-4 shrink-0 text-cyan-accent" />
+              <span className="truncate">{position.title}</span>
+            </CardTitle>
+            <CardDescription className="mt-1">
+              {displayTotal} vote{displayTotal !== 1 ? 's' : ''} cast
+            </CardDescription>
+          </div>
+          <Badge
+            variant="outline"
+            className="shrink-0 border-border/60 text-[10px] font-medium text-muted-foreground"
+          >
+            {sorted.length} candidate{sorted.length !== 1 ? 's' : ''}
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {sorted.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
+          <p className="py-4 text-center text-sm text-muted-foreground">
             No candidates for this position
           </p>
         ) : (
           sorted.map((candidate, idx) => {
-            const pct = hasVotes ? (candidate.voteCount / totalVotes) * 100 : 0
-            const isLeading = candidate.name === leadingId && hasVotes && candidate.voteCount > 0
+            // Percentage relative to the display total — always 0–100%
+            const pct =
+              displayTotal > 0 ? (candidate.voteCount / displayTotal) * 100 : 0
+            const isLeading =
+              candidate.id === leadingId && hasVotes && candidate.voteCount > 0
             return (
               <div
-                key={candidate.name}
+                key={candidate.id}
                 className={cn(
-                  'rounded-xl p-3 border transition-all',
+                  'rounded-xl border p-3 transition-all',
                   isLeading
                     ? 'border-cyan-accent/40 bg-cyan-accent/5'
                     : 'border-border bg-card'
                 )}
               >
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     {isLeading ? (
-                      <Crown className="h-4 w-4 text-cyan-accent shrink-0" />
+                      <Crown className="h-4 w-4 shrink-0 text-cyan-accent" />
                     ) : (
-                      <span className="text-xs font-mono text-muted-foreground w-4 text-center shrink-0">
+                      <span className="w-4 shrink-0 text-center font-mono text-xs text-muted-foreground">
                         {idx + 1}
                       </span>
                     )}
-                    <span
-                      className={cn(
-                        'text-sm font-medium truncate',
-                        isLeading && 'text-cyan-accent-foreground'
+                    <div className="min-w-0">
+                      <span
+                        className={cn(
+                          'block truncate text-sm font-medium',
+                          isLeading && 'text-cyan-accent-foreground'
+                        )}
+                      >
+                        {candidate.name}
+                      </span>
+                      {(candidate.level || candidate.programme) && (
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {[candidate.level, candidate.programme]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
                       )}
-                    >
-                      {candidate.name}
-                    </span>
+                    </div>
                     {isLeading && (
-                      <Badge className="bg-cyan-accent/20 text-cyan-accent border-0 text-[10px] shrink-0">
+                      <Badge className="shrink-0 border-0 bg-cyan-accent/20 text-[10px] text-cyan-accent">
                         Leading
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex shrink-0 items-center gap-2">
                     <span className="text-xs font-semibold tabular-nums">
                       {pct.toFixed(1)}%
                     </span>
-                    <span className="text-xs text-muted-foreground tabular-nums">
+                    <span className="text-xs tabular-nums text-muted-foreground">
                       {candidate.voteCount}
                     </span>
                   </div>

@@ -994,3 +994,62 @@ Unresolved / risks:
 - Test data state: Dawrld (230317091) has voted all 6 positions (hasVoted=true). Adaeze (230317042) and Chidi (230317088) voted for President only. Blessing (250317014) was approved in prior session. The election is currently ACTIVE (started for testing). Reseed or admin-end-election to reset.
 - Standing items from prior sessions: Gmail SMTP creds in Render env, real student/candidate lists from user, git commit of accumulated work.
 - Recommended next step: git commit the vote receipt feature + styling fix. Then consider adding a per-position turnout breakdown or a live turnout donut chart on the admin dashboard for the next review cycle.
+
+---
+Task ID: CRON-WEBDEV-REVIEW-2
+Agent: main-orchestrator
+Task: Scheduled web dev review #2 — QA test uncovered views, fix bugs, improve styling, add new features.
+
+Work Log:
+- Read worklog (996 lines) to understand prior state. Last round added Vote Receipt system + elections sub-nav scroll fade. Project STABLE.
+- QA pass via agent-browser (mobile 390×844) on views not yet covered:
+  - About view: Hero → Story → Quote → Vision/Mission → Core Values (6 values) → 5 Departments → Socials/Contact. Comprehensive content, polish 6-7/10. VLM couldn't see all sections (below-fold) but DOM confirms all present.
+  - Resources view: 9 resources, filter chips (Notes/Past Questions/Textbooks/Slides/Videos), course dropdown, download cards. Polish 7/10.
+  - Help view: 3-4 support category cards (Account Verification, Voting Guide, Password Reset) + FAQ accordion with search. Already comprehensive.
+  - Candidates view: position tabs scrollable, candidate cards well-structured (avatar, name, level, programme, verified badge, manifesto, vote button). Polish 8/10.
+  - Results view: live banner, 3 stat cards, per-position bars with leading-candidate crown/highlight, anonymity note, receipt verifier. Working but found BUG (see below).
+  - Admin Students section: search + status filter + table with status badges. Polish 7/10.
+- Found BUG: Results view percentage calculation showed nonsensical values (2550.0%, 1950.0%) because the position's `totalVotes` from API (actual votes cast = 2) was used as the denominator, but candidate `voteCount` fields are seeded with display values (51, 39, 19) that don't correspond to real Vote rows.
+
+NEW FEATURE — Turnout Donut + Per-Position Filter + Candidate Subtitles:
+1. `TurnoutDonut` component (NEW, pure SVG, no chart lib dep):
+   - Circular progress ring (132px, 12px stroke) showing overall turnout % in the centre.
+   - Gradient stroke (primary → cyan-accent) via SVG linearGradient + CSS vars.
+   - Framer Motion animates the ring fill on mount (1.1s easeOut) and the % number fades in.
+   - Track circle in `stroke-muted` for contrast.
+2. Results view redesigned:
+   - Replaced the 3-card stat row with a premium "turnout hero" card: donut on the left, 3 stats (Votes Cast / Eligible / Positions) on the right in a responsive flex (stacks on mobile, row on desktop).
+   - Added "remaining voters" hint when totalEligible > totalVotes ("X eligible students still to vote — encourage your peers").
+   - Added per-position filter pill row (All / President / Vice President / ...) with the same scroll-fade mask gradient as the sub-nav. Clicking a position filters the visible cards. Verified: "All" shows 6 cards, "President" shows 1 card.
+3. PositionResults card enhanced:
+   - Header now shows position title + "X votes cast" + candidate count badge.
+   - Candidate rows now show level · programme subtitle under the name.
+   - BUG FIX: percentage now uses `displayTotal` (sum of candidate voteCounts) as denominator instead of `position.totalVotes` (real votes cast). Percentages now always add to 100% and never exceed it. Verified: Aisha Bello 46.8% (51) + Daniel Okafor 35.8% (39) + John David 17.4% (19) = 100%.
+   - Leading candidate gets crown icon + cyan-tinted card + "Leading" badge.
+4. Type updates: `ResultsCandidate` now includes `id`, `level`, `programme`. `ResultsPosition` includes `order`, `totalVotes`. `ResultsData` includes `election`. These match the actual API response shape.
+
+QA VERIFICATION (agent-browser + VLM):
+- Results view loads with donut showing "63.6% TURNOUT" in centre with gradient ring. VLM: "circular donut chart with 63.6% in large bold white text, TURNOUT label below" ✓
+- Stats row: Votes Cast (7), Eligible (11), Positions (6) with icons ✓
+- Filter pills: All (active/purple), President, Vice President, Secretary... — scrollable with fade edges ✓
+- Position filter: clicked "President" → only 1 card visible. Clicked "All" → 6 cards visible. ✓
+- Per-position card: President title, "109 votes cast", "3 candidates" badge, 3 candidate rows with name + "400 · Chemistry Education" subtitle + % + count + animated bar ✓
+- Percentages: 46.8% + 35.8% + 17.4% = 100% (BUG FIXED) ✓
+- Leading candidate: Aisha Bello has crown icon + cyan card + "Leading" badge ✓
+- `bun run lint` → 0 errors, 0 warnings ✓
+- Dev server HTTP 200 throughout.
+
+Stage Summary:
+- Project status: STABLE. All existing features intact. Vote Receipt system from last round still working.
+- BUG FIXED: Results page percentage calculation now produces sensible 0-100% values regardless of seed data vs real vote counts.
+- NEW FEATURE: Turnout Donut — a premium animated SVG ring chart on the Results page giving an instant visual read of participation. Pure SVG (no chart library dependency), gradient stroke, animated fill.
+- NEW FEATURE: Per-Position Filter — scrollable pill row on Results page lets users jump to a specific position's results instead of scrolling through all 6. Reuses the sub-nav scroll-fade mask pattern.
+- STYLING: Results view redesigned from 3 separate stat cards into a unified "turnout hero" card with donut + stats + remaining-voters hint. Position result cards now show candidate level/programme subtitles.
+- Files modified (1): `src/components/views/elections-view.tsx` — added `PieChart`/`Filter` icon imports, new `TurnoutDonut` component, redesigned `ResultsView` (donut + filter + stats), enhanced `PositionResults` (subtitles + percentage fix + candidate-count badge), updated `ResultsCandidate`/`ResultsPosition`/`ResultsData` types.
+- Lint clean. All UI states verified via agent-browser + VLM.
+
+Unresolved / risks:
+- The seed data pre-populates candidate `voteCount` with display values (51, 39, etc.) that don't match real Vote rows. This is intentional for demo (so results look populated before real votes) but means the "X votes cast" per position shows the display total, not real votes. The overall `totalVotes` (7) is real. This is a known demo-data quirk, not a bug — production with real votes will be consistent.
+- Test data state: election is ACTIVE. Dawrld voted all 6 positions. Adaeze, Chidi, Michael voted for President. Reseed or admin-end-election to reset.
+- Standing items: Gmail SMTP creds in Render env, real student/candidate lists from user, git commit of accumulated work.
+- Recommended next step: git commit. Then consider admin-side features (per-position turnout breakdown, live voter turnout chart, export results as CSV) for the next review cycle.
