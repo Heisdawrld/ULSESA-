@@ -839,3 +839,45 @@ Unresolved / risks:
 - Test data in local DB: student 999999999 is admin_verified (no pw), 250317014 is submitted (has uploaded test image). These are test accounts, safe to reset/reseed.
 - Still not committed to git: this fix + all prior session work (theme transition, rate limiting, manual verify feature). Recommend committing.
 - Production TODO (unchanged from prior sessions): set up Gmail SMTP creds in Render env, get real student list + candidate list from user.
+
+---
+Task ID: QA-MANUAL-VERIFY
+Agent: main-orchestrator
+Task: End-to-end QA verification of the manual admin ID-verification fallback feature (the 6-task plan from the prior session). User explicitly said NOT to add new features — only verify the manual verification flow is correctly implemented.
+
+Work Log:
+- Read worklog + inspected actual code in upload-id/route.ts, claim/route.ts, admin/page.tsx, auth-view.tsx (upload/pending/rejected steps), admin-view.tsx (IdDocumentPreview component with image dialog).
+- Found dev server was NOT running (port 3000 not listening) — prior nohup processes were reaped by the sandbox between bash calls.
+- Built a persistent watchdog (/tmp/dev-watchdog.sh) launched via `setsid -f` so it reparents to PID 1 (tini) and survives across bash tool calls. Watchdog auto-restarts `bun run dev` if it dies. Confirmed stable across multiple separate bash invocations.
+- Ran full end-to-end QA via agent-browser (Chrome headless shares the host network namespace; localhost:3000 reachable once server is stable). Had to `pkill chrome` + restart the agent-browser daemon once to clear a stale about:blank session.
+- APPROVE FLOW (happy path) — verified end to end:
+  1. Student Blessing Nwankwo (matric 250317014) already had an uploaded ID in 'submitted' state.
+  2. Logged into /admin as admin (admin / ulsesa-admin-2026). Verification Queue showed Blessing with "View … uploaded ID document" + "Approve (Verify Identity)" + "Reject" buttons.
+  3. Clicked "View ID document" → Dialog opened with "Uploaded ID Document" heading. Confirmed the <img> has a `data:image/jpeg;base64,...` src and `naturalWidth > 0` (image actually loaded, not broken). Screenshot 170KB (vs 3KB blank) confirms image renders.
+  4. Clicked "Approve (Verify Identity)" → toast "Blessing Nwankwo's identity verified". Queue cleared. DB: verificationStatus → 'admin_verified'.
+  5. Opened main site → Claim Account → entered 250317014 → flow SKIPPED OTP and went straight to "Set your password" (adminVerified bypass confirmed).
+  6. Set password "TestPass123!" → "Complete Registration" → student logged into dashboard ("Blessing 👋" greeting, avatar "BN"). DB: verificationStatus → 'approved', isVerified: true, hasPassword: true.
+- REJECT FLOW — verified end to end:
+  1. Uploaded a test ID image (SVG→JPEG via sharp, 9.4KB) for Zainab Mohammed (matric 240317019) via POST /api/auth/upload-id. Response 200 "pending admin review". DB: verificationStatus → 'submitted', hasIdDoc: true.
+  2. As admin, Verification Queue showed Zainab with the same three buttons.
+  3. Clicked "Reject" → dialog "Reject verification?" with "Reason (shown to the student)" textarea.
+  4. Entered reason "The photo is blurry and the matric number is not clearly readable. Please re-upload a sharper, well-lit image." → "Confirm Reject" → toast "Zainab Mohammed rejected". DB: verificationStatus → 'rejected'. VerificationLog created with action='rejected' + the reason text.
+  5. Opened main site (fresh session) → Claim Account → entered 240317019 → "Your ID was rejected" screen rendered with "REASON FROM ADMIN" label + the reason text + "Common reasons…" helper mentioning Zainab Mohammed by name.
+  6. Clicked "Re-upload ID" → navigated to the upload step (dropzone with "Student ID card / Biodata form" toggle, "Tap to upload or drag & drop", camera hint, "Submit for review" button). Re-upload path confirmed.
+- Ran `bun run lint` → clean (no errors, no warnings).
+
+Stage Summary:
+- Manual admin verification fallback feature is FULLY FUNCTIONAL and verified end-to-end via agent-browser. Both the approve path (upload → admin sees image → approve → student skips OTP → sets password → logged in) and the reject path (upload → admin rejects with reason → student sees reason → can re-upload) work exactly as designed.
+- Standalone /admin page renders correctly with its own portal header (ULSESA logo + "Admin Portal" label + "Back to main site" link), no main-site Navbar/Footer.
+- Image storage strategy confirmed working: sharp-compressed JPEG (~9-400KB) stored as base64 data URL in Student.idDocumentUrl, rendered directly via <img src={dataUrl}> in both the queue thumbnail and the click-to-zoom Dialog.
+- OTP bypass confirmed: claim endpoint returns adminVerified=true when status='admin_verified'; frontend jumps straight to set-password step.
+- Rejection audit trail confirmed: VerificationLog rows created for both 'submitted' and 'rejected' actions with notes; latest rejection note surfaced to the student on the rejection screen.
+- Test data state after QA: Blessing Nwankwo (250317014) = approved + has password (fully claimed); Zainab Mohammed (240317019) = rejected (can re-upload). These are seed-data students — safe to reset via reseed if a clean state is needed.
+- Dev server persistence fix: use `setsid -f bash -c '...watchdog...'` so the process reparents to PID 1 (tini) and survives bash tool call boundaries. Plain nohup/setsid without `-f` gets reaped.
+- NO new features were added (per user's explicit instruction). Only QA verification of the existing manual verification implementation.
+
+Unresolved / risks:
+- Dev server still needs the watchdog wrapper to stay alive across bash tool calls in this sandbox (production on Render is unaffected).
+- Test students Blessing (approved+claimed) and Zainab (rejected) are in non-pristine state — reseed if a clean demo state is needed.
+- Still not committed to git. Recommend committing the manual verification feature + this QA pass.
+- Production TODO (unchanged): Gmail SMTP creds in Render env, real student/candidate lists from user.
