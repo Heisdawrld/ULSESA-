@@ -334,9 +334,11 @@
 
 ::view-transition-new(root) {
   /* Start as a zero-radius circle at the click point, expand to
-     full coverage over 650ms with a smooth ease-out curve. */
+     full coverage over 1100ms with a smooth ease-out curve.
+     Slower than typical UI transitions (650ms) so users can actually
+     see the reveal sweep across the page — it's a signature moment. */
   clip-path: circle(0% at var(--theme-x) var(--theme-y));
-  animation: theme-reveal 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: theme-reveal 1100ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 ::view-transition-old(root) {

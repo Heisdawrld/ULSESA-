@@ -779,22 +779,22 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                 </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex min-w-0 gap-2 sm:gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   size="lg"
-                  className="h-12 rounded-xl"
+                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
                   onClick={handleReset}
                   disabled={loading}
                 >
                   <ArrowLeft className="size-4" />
-                  Back
+                  <span className="sm:inline">Back</span>
                 </Button>
                 <Button
                   type="button"
                   size="lg"
-                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
                   onClick={handleSendOtp}
                   disabled={loading}
                 >
@@ -828,12 +828,15 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                   type="button"
                   variant="outline"
                   size="lg"
-                  className="h-12 w-full rounded-xl border-dashed text-sm font-medium text-muted-foreground hover:text-foreground"
+                  className="h-12 w-full rounded-xl border-dashed text-xs font-medium text-muted-foreground hover:text-foreground sm:text-sm"
                   onClick={() => setStep('upload')}
                   disabled={loading}
                 >
-                  <IdCard className="size-4" />
-                  Can&apos;t access email? Upload Student ID instead
+                  <IdCard className="size-4 shrink-0" />
+                  <span className="text-center leading-tight">
+                    Can&apos;t access email?{' '}
+                    <span className="font-semibold text-foreground">Upload Student ID</span>
+                  </span>
                 </Button>
                 {idUploaded && (
                   <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
@@ -928,22 +931,22 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                 </button>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex min-w-0 gap-2 sm:gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   size="lg"
-                  className="h-12 rounded-xl"
+                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
                   onClick={() => setStep(2)}
                   disabled={loading}
                 >
                   <ArrowLeft className="size-4" />
-                  Back
+                  <span className="sm:inline">Back</span>
                 </Button>
                 <Button
                   type="button"
                   size="lg"
-                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
                   onClick={handleVerifyOtp}
                   disabled={loading || otp.length !== 6}
                 >
@@ -1259,22 +1262,22 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                 </p>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex min-w-0 gap-2 sm:gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   size="lg"
-                  className="h-12 rounded-xl"
+                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
                   onClick={() => setStep(2)}
                   disabled={uploading}
                 >
                   <ArrowLeft className="size-4" />
-                  Back
+                  <span className="sm:inline">Back</span>
                 </Button>
                 <Button
                   type="button"
                   size="lg"
-                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
                   onClick={handleUploadId}
                   disabled={uploading || !documentData}
                 >
@@ -1409,22 +1412,22 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                 </p>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex min-w-0 gap-2 sm:gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   size="lg"
-                  className="h-12 rounded-xl"
+                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
                   onClick={handleReset}
                   disabled={uploading}
                 >
                   <RotateCcw className="size-4" />
-                  Start over
+                  <span className="sm:inline">Start over</span>
                 </Button>
                 <Button
                   type="button"
                   size="lg"
-                  className="h-12 flex-1 rounded-xl text-base font-semibold"
+                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
                   onClick={() => {
                     setDocumentData(null)
                     setDocumentName('')
