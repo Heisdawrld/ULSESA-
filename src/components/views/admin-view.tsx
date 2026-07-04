@@ -37,6 +37,16 @@ import {
   Clock,
   TrendingUp,
   Users2,
+  ClipboardList,
+  AlertTriangle,
+  Upload,
+  Trash2,
+  FileUp,
+  Flag,
+  Gavel,
+  Inbox,
+  Database,
+  ShieldAlert,
 } from 'lucide-react'
 
 import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
@@ -101,14 +111,21 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
 // ===================== Types =====================
 type Section =
   | 'dashboard'
+  | 'allowlist'
   | 'students'
   | 'verification'
   | 'election'
+  | 'disputes'
   | 'audit'
   | 'settings'
 
@@ -181,6 +198,70 @@ interface Election {
   startDate: string
   endDate: string | null
   positions?: ElectionPosition[]
+}
+
+// ===================== Allowlist / Disputes types =====================
+interface AllowlistEntry {
+  id: string
+  matricNumber: string
+  fullName: string
+  programme: string
+  level: string
+  cohort: string | null
+  isClaimed: boolean
+  claimedAt: string | null
+  uploadedAt: string
+}
+
+interface CohortStat {
+  programme: string
+  level: string
+  total: number
+  claimed: number
+}
+
+interface AllowlistResponse {
+  entries: AllowlistEntry[]
+  total: number
+  page: number
+  pageSize: number
+  stats: CohortStat[]
+}
+
+interface UploadSummary {
+  success: boolean
+  summary: {
+    total: number
+    inserted: number
+    updated: number
+    skippedClaimed: number
+    duplicates: string[]
+  }
+  batchId: string
+}
+
+interface DisputeAccused {
+  id: string
+  fullName: string
+  matricNumber: string
+  deviceFingerprint: string | null
+  claimIp: string | null
+  createdAt: string
+  hasVoted: boolean
+}
+
+interface Dispute {
+  id: string
+  matricNumber: string
+  expectedName: string
+  reporterName: string
+  reporterContact: string
+  reason: string
+  status: 'pending' | 'resolved_revoked' | 'resolved_dismissed'
+  createdAt: string
+  resolvedAt: string | null
+  resolutionNote?: string | null
+  accused: DisputeAccused | null
 }
 
 // ===================== Helpers =====================
@@ -511,9 +592,11 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
 // ===================== Sidebar =====================
 const NAV_ITEMS: { id: Section; label: string; icon: typeof Users }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'allowlist', label: 'Voter Register', icon: ClipboardList },
   { id: 'students', label: 'Students', icon: Users },
   { id: 'verification', label: 'Verification', icon: ShieldCheck },
   { id: 'election', label: 'Election', icon: Vote },
+  { id: 'disputes', label: 'Disputes', icon: AlertTriangle },
   { id: 'audit', label: 'Audit Logs', icon: ScrollText },
   { id: 'settings', label: 'Settings', icon: Settings },
 ]
@@ -523,11 +606,13 @@ function SidebarContent({
   active,
   onSelect,
   onLogout,
+  pendingDisputesCount = 0,
 }: {
   admin: AdminUser
   active: Section
   onSelect: (s: Section) => void
   onLogout: () => void
+  pendingDisputesCount?: number
 }) {
   return (
     <div className="flex h-full flex-col gap-2 p-4">
@@ -569,6 +654,8 @@ function SidebarContent({
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
           const isActive = active === item.id
+          const showBadge =
+            item.id === 'disputes' && pendingDisputesCount > 0
           return (
             <button
               key={item.id}
@@ -582,13 +669,19 @@ function SidebarContent({
             >
               <Icon
                 className={cn(
-                  'size-4 transition-transform',
+                  'size-4 shrink-0 transition-transform',
                   isActive
                     ? 'text-primary-foreground'
                     : 'group-hover:scale-110'
                 )}
               />
-              {item.label}
+              <span className="flex-1 truncate text-left">{item.label}</span>
+              {showBadge && (
+                <span className="relative flex size-2 items-center justify-center">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-red-500" />
+                </span>
+              )}
             </button>
           )
         })}
@@ -739,10 +832,6 @@ function DashboardSection() {
   const [election, setElection] = useState<Election | null>(null)
   const [acting, setActing] = useState(false)
   const [pendingId, setPendingId] = useState<string | null>(null)
-  const [editDatesOpen, setEditDatesOpen] = useState(false)
-  const [editStart, setEditStart] = useState('')
-  const [editEnd, setEditEnd] = useState('')
-  const [savingDates, setSavingDates] = useState(false)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -769,37 +858,6 @@ function DashboardSection() {
   useEffect(() => {
     void fetchAll()
   }, [fetchAll])
-
-  async function updateElectionDates() {
-    setSavingDates(true)
-    try {
-      const res = await api.put<{ election: Election }>('/admin/election', {
-        startDate: editStart,
-        endDate: editEnd || undefined,
-      })
-      setElection(res.election)
-      toast.success('Election dates updated')
-      setEditDatesOpen(false)
-      void fetchAll()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update dates')
-    } finally {
-      setSavingDates(false)
-    }
-  }
-
-  function openEditDates() {
-    if (!election) return
-    // Convert ISO string to datetime-local format (YYYY-MM-DDTHH:MM)
-    const fmt = (d: string) => {
-      const dt = new Date(d)
-      const pad = (n: number) => String(n).padStart(2, '0')
-      return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
-    }
-    setEditStart(election.startDate ? fmt(election.startDate) : '')
-    setEditEnd(election.endDate ? fmt(election.endDate) : '')
-    setEditDatesOpen(true)
-  }
 
   async function toggleElection(action: 'start' | 'end') {
     setActing(true)
@@ -2180,6 +2238,10 @@ function ElectionSection() {
   const [refreshing, setRefreshing] = useState(false)
   const [acting, setActing] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [editDatesOpen, setEditDatesOpen] = useState(false)
+  const [editStart, setEditStart] = useState('')
+  const [editEnd, setEditEnd] = useState('')
+  const [savingDates, setSavingDates] = useState(false)
 
   const fetchElection = useCallback(
     async (silent = false) => {
@@ -2237,6 +2299,39 @@ function ElectionSection() {
     } finally {
       setActing(false)
     }
+  }
+
+  async function updateElectionDates() {
+    setSavingDates(true)
+    try {
+      const res = await api.put<{ election: Election }>('/admin/election', {
+        startDate: editStart,
+        endDate: editEnd || undefined,
+      })
+      setElection((prev) => ({
+        ...res.election,
+        positions: prev?.positions ?? res.election.positions,
+      }))
+      toast.success('Election dates updated')
+      setEditDatesOpen(false)
+      void fetchElection(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update dates')
+    } finally {
+      setSavingDates(false)
+    }
+  }
+
+  function openEditDates() {
+    if (!election) return
+    const fmt = (d: string) => {
+      const dt = new Date(d)
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+    }
+    setEditStart(election.startDate ? fmt(election.startDate) : '')
+    setEditEnd(election.endDate ? fmt(election.endDate) : '')
+    setEditDatesOpen(true)
   }
 
   // BUG FIX: use sum of candidate voteCounts (displayTotal) instead of
@@ -3066,16 +3161,1237 @@ function AdminInfoCard() {
   )
 }
 
+// ===================== Allowlist (Voter Register) Section =====================
+const ALLOWLIST_PROGRAMMES = [
+  'Physics Education',
+  'Biology Education',
+  'Chemistry Education',
+  'Mathematics Education',
+  'Integrated Science Education',
+] as const
+
+const ALLOWLIST_LEVELS = ['100', '200', '300', '400'] as const
+
+function AllowlistSection() {
+  const { adminToken } = useAuth()
+  const [entries, setEntries] = useState<AllowlistEntry[]>([])
+  const [stats, setStats] = useState<CohortStat[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // Filters
+  const [search, setSearch] = useState('')
+  const [programme, setProgramme] = useState<string>('all')
+  const [level, setLevel] = useState<string>('all')
+  const [claimed, setClaimed] = useState<string>('all')
+
+  // Upload panel
+  const [uploadProgramme, setUploadProgramme] = useState<string>('')
+  const [uploadLevel, setUploadLevel] = useState<string>('')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState<UploadSummary | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  // Delete confirmation
+  const [deletingMatric, setDeletingMatric] = useState<string | null>(null)
+  const [deletePending, setDeletePending] = useState(false)
+
+  const fetchAllowlist = useCallback(
+    async (silent = false) => {
+      if (silent) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
+      try {
+        const params = new URLSearchParams()
+        if (programme !== 'all') params.set('programme', programme)
+        if (level !== 'all') params.set('level', level)
+        if (search.trim()) params.set('search', search.trim())
+        if (claimed !== 'all') params.set('claimed', claimed)
+        params.set('page', String(page))
+        params.set('pageSize', String(pageSize))
+        const res = await api.get<AllowlistResponse>(
+          `/admin/allowlist?${params.toString()}`
+        )
+        setEntries(res.entries)
+        setTotal(res.total)
+        setStats(res.stats)
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to load allowlist'
+        )
+      } finally {
+        setLoading(false)
+        setRefreshing(false)
+      }
+    },
+    [programme, level, search, claimed, page]
+  )
+
+  useEffect(() => {
+    void fetchAllowlist()
+  }, [fetchAllowlist])
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1)
+  }, [programme, level, search, claimed])
+
+  async function handleUpload() {
+    if (!uploadFile) {
+      toast.error('Please select a file to upload')
+      return
+    }
+    if (!uploadProgramme || !uploadLevel) {
+      toast.error('Select programme and level')
+      return
+    }
+    setUploading(true)
+    setUploadResult(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      formData.append('programme', uploadProgramme)
+      formData.append('level', uploadLevel)
+      // NOTE: don't set Content-Type — the browser sets it with the multipart
+      // boundary automatically. Just attach the admin token manually since
+      // the JSON-based api client can't handle FormData.
+      const res = await fetch('/api/admin/allowlist/upload', {
+        method: 'POST',
+        headers: { 'x-admin-token': adminToken! },
+        body: formData,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(
+          (data as { error?: string }).error || 'Upload failed'
+        )
+      }
+      const summary = data as UploadSummary
+      setUploadResult(summary)
+      toast.success(
+        `Uploaded ${summary.summary.total} matrics — ${summary.summary.inserted} new, ${summary.summary.updated} updated, ${summary.summary.skippedClaimed} skipped (already claimed)`
+      )
+      // Reset form + refresh list
+      setUploadFile(null)
+      setUploadProgramme('')
+      setUploadLevel('')
+      void fetchAllowlist(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!deletingMatric) return
+    setDeletePending(true)
+    try {
+      await api.delete(`/admin/allowlist?matric=${deletingMatric}`)
+      toast.success(`Removed ${deletingMatric} from allowlist`)
+      setDeletingMatric(null)
+      void fetchAllowlist(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeletePending(false)
+    }
+  }
+
+  // Aggregate totals from stats
+  const totals = useMemo(() => {
+    let totalMatrics = 0
+    let totalClaimed = 0
+    for (const s of stats) {
+      totalMatrics += s.total
+      totalClaimed += s.claimed
+    }
+    return {
+      totalMatrics,
+      totalClaimed,
+      totalUnclaimed: totalMatrics - totalClaimed,
+      cohorts: stats.length,
+    }
+  }, [stats])
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Voter Register
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Upload attendance lists and manage the matric allowlist
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void fetchAllowlist(true)}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Stats overview */}
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <StatCard
+          icon={ClipboardList}
+          label="Total Matrics"
+          value={totals.totalMatrics}
+          subtitle="Across all cohorts"
+          accent="primary"
+          loading={loading}
+        />
+        <StatCard
+          icon={BadgeCheck}
+          label="Claimed"
+          value={totals.totalClaimed}
+          subtitle="Accounts created"
+          accent="emerald"
+          loading={loading}
+        />
+        <StatCard
+          icon={Users}
+          label="Unclaimed"
+          value={totals.totalUnclaimed}
+          subtitle="Available to claim"
+          accent="cyan-accent"
+          loading={loading}
+        />
+        <StatCard
+          icon={Database}
+          label="Cohorts"
+          value={totals.cohorts}
+          subtitle="Programme × level groups"
+          accent="primary"
+          loading={loading}
+        />
+      </div>
+
+      {/* Upload panel */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-display text-lg flex items-center gap-2">
+            <Upload className="size-5 text-primary" />
+            Upload Attendance List
+          </CardTitle>
+          <CardDescription>
+            Upload a .docx, .csv, or .txt file. The system extracts 9-digit
+            matrics and the following names automatically.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="upload-programme">Programme</Label>
+              <Select
+                value={uploadProgramme}
+                onValueChange={setUploadProgramme}
+              >
+                <SelectTrigger id="upload-programme">
+                  <SelectValue placeholder="Select programme" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALLOWLIST_PROGRAMMES.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="upload-level">Level</Label>
+              <Select value={uploadLevel} onValueChange={setUploadLevel}>
+                <SelectTrigger id="upload-level">
+                  <SelectValue placeholder="Select level" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALLOWLIST_LEVELS.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {l}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragOver(true)
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              const f = e.dataTransfer.files?.[0]
+              if (f) setUploadFile(f)
+            }}
+            className={cn(
+              'rounded-xl border-2 border-dashed p-6 text-center transition-colors',
+              dragOver
+                ? 'border-primary bg-primary/5'
+                : 'border-border bg-muted/30 hover:border-primary/40'
+            )}
+          >
+            <input
+              id="allowlist-file"
+              type="file"
+              accept=".docx,.csv,.txt"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) setUploadFile(f)
+              }}
+            />
+            <FileUp className="mx-auto size-8 text-muted-foreground" />
+            {uploadFile ? (
+              <div className="mt-3">
+                <p className="text-sm font-medium">{uploadFile.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(uploadFile.size / 1024).toFixed(1)} KB
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => setUploadFile(null)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <p className="text-sm font-medium">
+                  Drag a file here, or{' '}
+                  <label
+                    htmlFor="allowlist-file"
+                    className="cursor-pointer text-primary underline-offset-2 hover:underline"
+                  >
+                    browse
+                  </label>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  .docx, .csv, or .txt — matric + name pairs
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => void handleUpload()}
+              disabled={
+                uploading || !uploadFile || !uploadProgramme || !uploadLevel
+              }
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Uploading…
+                </>
+              ) : (
+                <>
+                  <Upload className="size-4" /> Upload
+                </>
+              )}
+            </Button>
+          </div>
+
+          {uploadResult && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                    Upload complete · batch {uploadResult.batchId.slice(-8)}
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                    <div>
+                      <p className="text-muted-foreground">Total parsed</p>
+                      <p className="font-semibold">
+                        {uploadResult.summary.total}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">New</p>
+                      <p className="font-semibold text-emerald-600 dark:text-emerald-400">
+                        {uploadResult.summary.inserted}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Updated</p>
+                      <p className="font-semibold text-cyan-accent">
+                        {uploadResult.summary.updated}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Skipped (claimed)</p>
+                      <p className="font-semibold text-amber-600 dark:text-amber-400">
+                        {uploadResult.summary.skippedClaimed}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Search + filter */}
+      <Card>
+        <CardHeader className="gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <div className="relative min-w-[200px] flex-1">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by matric or name…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setPage(1)
+                    void fetchAllowlist(true)
+                  }
+                }}
+              />
+            </div>
+            <Select value={programme} onValueChange={setProgramme}>
+              <SelectTrigger className="w-full sm:w-56">
+                <Filter className="size-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All programmes</SelectItem>
+                {ALLOWLIST_PROGRAMMES.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={level} onValueChange={setLevel}>
+              <SelectTrigger className="w-full sm:w-32">
+                <SelectValue placeholder="Level" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All levels</SelectItem>
+                {ALLOWLIST_LEVELS.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={claimed} onValueChange={setClaimed}>
+              <SelectTrigger className="w-full sm:w-36">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="true">Claimed</SelectItem>
+                <SelectItem value="false">Unclaimed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <div className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+                <ClipboardList className="size-6" />
+              </div>
+              <p className="font-medium">No matrics found</p>
+              <p className="text-sm text-muted-foreground">
+                Upload an attendance list or adjust filters.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matric</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Programme
+                    </TableHead>
+                    <TableHead>Level</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Claimed
+                    </TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {entries.map((e) => (
+                    <TableRow key={e.id}>
+                      <TableCell className="font-mono text-xs">
+                        {e.matricNumber}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {e.fullName}
+                      </TableCell>
+                      <TableCell className="hidden max-w-48 truncate text-muted-foreground md:table-cell">
+                        {e.programme}
+                      </TableCell>
+                      <TableCell>{e.level}</TableCell>
+                      <TableCell>
+                        {e.isClaimed ? (
+                          <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                            Claimed
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="secondary"
+                            className="text-muted-foreground"
+                          >
+                            Unclaimed
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
+                        {e.claimedAt ? formatDateTime(e.claimedAt) : '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {e.isClaimed ? (
+                          <span className="text-xs text-muted-foreground">
+                            —
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-600 hover:bg-red-500/10 hover:text-red-600"
+                            onClick={() => setDeletingMatric(e.matricNumber)}
+                            aria-label={`Remove ${e.matricNumber}`}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {total > pageSize && (
+            <div className="flex flex-col gap-2 border-t border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">
+                Page {page} of {totalPages} · {total} total
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cohort breakdown */}
+      {stats.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-display text-lg flex items-center gap-2">
+              <Database className="size-5 text-primary" />
+              Cohort Breakdown
+            </CardTitle>
+            <CardDescription>
+              Per-programme × level matric counts and claim progress
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Programme</TableHead>
+                    <TableHead>Level</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Claimed</TableHead>
+                    <TableHead className="text-right">Unclaimed</TableHead>
+                    <TableHead className="w-32">Progress</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stats.map((s) => {
+                    const pct =
+                      s.total > 0
+                        ? Math.round((s.claimed / s.total) * 100)
+                        : 0
+                    return (
+                      <TableRow key={`${s.programme}-${s.level}`}>
+                        <TableCell className="font-medium">
+                          {s.programme}
+                        </TableCell>
+                        <TableCell>{s.level}</TableCell>
+                        <TableCell className="text-right">{s.total}</TableCell>
+                        <TableCell className="text-right text-emerald-600 dark:text-emerald-400">
+                          {s.claimed}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {s.total - s.claimed}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress value={pct} className="h-1.5 flex-1" />
+                            <span className="text-[11px] tabular-nums text-muted-foreground">
+                              {pct}%
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Delete confirmation */}
+      <AlertDialog
+        open={!!deletingMatric}
+        onOpenChange={(o) => {
+          if (!o) setDeletingMatric(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove this matric from the allowlist?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete{' '}
+              <span className="font-mono font-semibold">
+                {deletingMatric}
+              </span>{' '}
+              from the voter register. The student will not be able to claim an
+              account with this matric until it is re-uploaded. This action is
+              logged.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletePending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deletePending}
+              onClick={(e) => {
+                e.preventDefault()
+                void handleDelete()
+              }}
+            >
+              {deletePending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Removing…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-4" /> Remove
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}
+
+// ===================== Disputes Section =====================
+function DisputeCard({
+  dispute,
+  onRevoke,
+  onDismiss,
+  acting,
+}: {
+  dispute: Dispute
+  onRevoke: () => void
+  onDismiss: () => void
+  acting: boolean
+}) {
+  const isPending = dispute.status === 'pending'
+  const isRevoked = dispute.status === 'resolved_revoked'
+  const isDismissed = dispute.status === 'resolved_dismissed'
+  const fingerprint = dispute.accused?.deviceFingerprint
+    ? dispute.accused.deviceFingerprint.slice(0, 8)
+    : '—'
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      <Card
+        className={cn(
+          'flex h-full flex-col overflow-hidden',
+          isPending && 'border-amber-500/30',
+          isRevoked && 'border-red-500/30',
+          isDismissed && 'border-emerald-500/30'
+        )}
+      >
+        <CardHeader className="gap-2 pb-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <CardTitle className="font-display text-base">
+                <span className="font-mono">{dispute.matricNumber}</span>
+              </CardTitle>
+              <CardDescription className="truncate">
+                Expected: {dispute.expectedName}
+              </CardDescription>
+            </div>
+            {isPending && (
+              <Badge className="gap-1 border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Pending
+              </Badge>
+            )}
+            {isRevoked && (
+              <Badge className="border-transparent bg-red-500/15 text-red-600 dark:text-red-400">
+                <Gavel className="size-3" />
+                Revoked
+              </Badge>
+            )}
+            {isDismissed && (
+              <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="size-3" />
+                Dismissed
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1 space-y-3 text-sm">
+          {/* Reporter info */}
+          <div className="space-y-1.5 rounded-lg bg-muted/40 p-3">
+            <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Flag className="size-3" />
+              Reported by
+            </p>
+            <p className="font-medium">{dispute.reporterName}</p>
+            <p className="text-xs text-muted-foreground">
+              {dispute.reporterContact}
+            </p>
+          </div>
+
+          {/* Reason */}
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Reason
+            </p>
+            <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-sm leading-relaxed">
+              {dispute.reason}
+            </p>
+          </div>
+
+          {/* Accused student details */}
+          {dispute.accused ? (
+            <div className="space-y-2">
+              <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <ShieldAlert className="size-3" />
+                Accused claim
+              </p>
+              <div className="space-y-2 rounded-lg border border-border/60 p-3">
+                <div className="flex items-center gap-2">
+                  <Avatar className="size-8 shrink-0">
+                    <AvatarFallback className="bg-red-500/10 text-[10px] text-red-600 dark:text-red-400">
+                      {getInitials(dispute.accused.fullName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {dispute.accused.fullName}
+                    </p>
+                    <p className="truncate font-mono text-[11px] text-muted-foreground">
+                      {dispute.accused.matricNumber}
+                    </p>
+                  </div>
+                  {dispute.accused.hasVoted && (
+                    <Badge className="text-[10px] border-transparent bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                      <Vote className="size-3" />
+                      Voted
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">Device</p>
+                    <p className="font-mono">{fingerprint}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Claim IP</p>
+                    <p className="truncate font-mono">
+                      {dispute.accused.claimIp || '—'}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">Claimed at</p>
+                    <p>{formatDateTime(dispute.accused.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border/60 p-3 text-center text-xs text-muted-foreground">
+              No accused student record attached
+            </div>
+          )}
+
+          {/* Resolution meta */}
+          {!isPending && (
+            <div className="space-y-1 text-xs">
+              <p className="text-muted-foreground">
+                Resolved{' '}
+                {dispute.resolvedAt
+                  ? formatRelativeTime(dispute.resolvedAt)
+                  : ''}
+              </p>
+              {dispute.resolutionNote && (
+                <p className="italic text-muted-foreground">
+                  &ldquo;{dispute.resolutionNote}&rdquo;
+                </p>
+              )}
+            </div>
+          )}
+
+          <p className="text-[11px] text-muted-foreground">
+            Filed {formatRelativeTime(dispute.createdAt)}
+          </p>
+        </CardContent>
+        {isPending && (
+          <CardFooter className="gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              disabled={acting}
+              onClick={onDismiss}
+            >
+              <XCircle className="size-4" /> Dismiss
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              disabled={acting}
+              onClick={onRevoke}
+            >
+              {acting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Gavel className="size-4" />
+              )}
+              Revoke Claim
+            </Button>
+          </CardFooter>
+        )}
+      </Card>
+    </motion.div>
+  )
+}
+
+function DisputesSection() {
+  const [disputes, setDisputes] = useState<Dispute[]>([])
+  const [loading, setLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'pending' | 'resolved'
+  >('pending')
+  const [actingId, setActingId] = useState<string | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<Dispute | null>(null)
+  const [dismissTarget, setDismissTarget] = useState<Dispute | null>(null)
+  const [resolutionNote, setResolutionNote] = useState('')
+
+  const fetchDisputes = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<{ disputes: Dispute[] }>(
+        `/admin/disputes?status=${statusFilter}`
+      )
+      setDisputes(res.disputes)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load disputes'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [statusFilter])
+
+  useEffect(() => {
+    void fetchDisputes()
+  }, [fetchDisputes])
+
+  const pendingCount = disputes.filter((d) => d.status === 'pending').length
+  const resolvedCount = disputes.filter((d) => d.status !== 'pending').length
+
+  async function resolveDispute(
+    dispute: Dispute,
+    action: 'revoke' | 'dismiss'
+  ) {
+    setActingId(dispute.id)
+    try {
+      await api.post('/admin/disputes', {
+        disputeId: dispute.id,
+        action,
+        note: resolutionNote.trim() || undefined,
+      })
+      toast.success(
+        action === 'revoke'
+          ? `Claim revoked — ${dispute.matricNumber} is free to re-claim`
+          : 'Dispute dismissed — original claim remains valid'
+      )
+      setRevokeTarget(null)
+      setDismissTarget(null)
+      setResolutionNote('')
+      void fetchDisputes()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Disputes
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Review reports of fraudulent account claims
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void fetchDisputes()}
+        >
+          <RefreshCw className="size-4" /> Refresh
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+        <StatCard
+          icon={AlertTriangle}
+          label="Pending"
+          value={pendingCount}
+          subtitle="Awaiting review"
+          accent="primary"
+          loading={loading}
+        />
+        <StatCard
+          icon={CheckCircle2}
+          label="Resolved"
+          value={resolvedCount}
+          subtitle="Revoked or dismissed"
+          accent="emerald"
+          loading={loading}
+        />
+        <StatCard
+          icon={Inbox}
+          label="In Current View"
+          value={disputes.length}
+          subtitle={`Showing ${statusFilter}`}
+          accent="cyan-accent"
+          loading={loading}
+        />
+      </div>
+
+      {/* Status filter tabs */}
+      <Tabs
+        value={statusFilter}
+        onValueChange={(v) =>
+          setStatusFilter(v as 'all' | 'pending' | 'resolved')
+        }
+      >
+        <TabsList>
+          <TabsTrigger value="pending">
+            <AlertTriangle className="size-3.5" />
+            Pending
+          </TabsTrigger>
+          <TabsTrigger value="resolved">
+            <CheckCircle2 className="size-3.5" />
+            Resolved
+          </TabsTrigger>
+          <TabsTrigger value="all">All</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Disputes list */}
+      {loading ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="space-y-3 p-5">
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-9 w-28" />
+                  <Skeleton className="h-9 w-24" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : disputes.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
+            <div className="grid size-14 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+              <CheckCircle2 className="size-7" />
+            </div>
+            <p className="font-display text-lg font-semibold">
+              No {statusFilter !== 'all' ? statusFilter : ''} disputes
+            </p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              {statusFilter === 'pending'
+                ? 'When a student reports a fraudulent claim, it will appear here for review.'
+                : 'No disputes match this filter.'}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {disputes.map((d) => (
+            <DisputeCard
+              key={d.id}
+              dispute={d}
+              onRevoke={() => {
+                setRevokeTarget(d)
+                setResolutionNote('')
+              }}
+              onDismiss={() => {
+                setDismissTarget(d)
+                setResolutionNote('')
+              }}
+              acting={actingId === d.id}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Revoke confirmation */}
+      <AlertDialog
+        open={!!revokeTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRevokeTarget(null)
+            setResolutionNote('')
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="size-5 text-destructive" />
+              Revoke this claim?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  This will <strong>permanently delete</strong> the student
+                  account for{' '}
+                  <strong>{revokeTarget?.accused?.fullName}</strong> (matric{' '}
+                  <span className="font-mono">
+                    {revokeTarget?.accused?.matricNumber ??
+                      revokeTarget?.matricNumber}
+                  </span>
+                  ) and free the allowlist entry so the legitimate student can
+                  re-claim.
+                </p>
+                {revokeTarget?.accused?.hasVoted && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-300">
+                    <p className="flex items-start gap-1.5 text-xs">
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                      <span>
+                        <strong>Warning:</strong> This student has already cast
+                        a vote. Their vote will remain in the tally but their
+                        account will be deleted.
+                      </span>
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="revoke-note">
+                    Resolution note{' '}
+                    <span className="text-muted-foreground">(optional)</span>
+                  </Label>
+                  <Textarea
+                    id="revoke-note"
+                    rows={2}
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="e.g. Reporter provided ID; account belonged to a different student."
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!actingId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={!!actingId}
+              onClick={(e) => {
+                e.preventDefault()
+                if (revokeTarget) void resolveDispute(revokeTarget, 'revoke')
+              }}
+            >
+              {actingId ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Revoking…
+                </>
+              ) : (
+                <>
+                  <Gavel className="size-4" /> Confirm Revoke
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dismiss confirmation */}
+      <AlertDialog
+        open={!!dismissTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDismissTarget(null)
+            setResolutionNote('')
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Dismiss this dispute?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  This will mark the dispute as dismissed — the original claim
+                  on{' '}
+                  <span className="font-mono">
+                    {dismissTarget?.matricNumber}
+                  </span>{' '}
+                  remains valid. The reporter will be able to file future
+                  disputes if needed.
+                </p>
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="dismiss-note">
+                    Resolution note{' '}
+                    <span className="text-muted-foreground">(optional)</span>
+                  </Label>
+                  <Textarea
+                    id="dismiss-note"
+                    rows={2}
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="e.g. Reporter's evidence was insufficient; claim verified."
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!actingId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!actingId}
+              onClick={(e) => {
+                e.preventDefault()
+                if (dismissTarget) void resolveDispute(dismissTarget, 'dismiss')
+              }}
+            >
+              {actingId ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Dismissing…
+                </>
+              ) : (
+                <>Dismiss Dispute</>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}
+
 // ===================== Main AdminView =====================
 export function AdminView() {
   const { admin, isAdminAuthenticated, logoutAdmin } = useAuth()
   const [mounted, setMounted] = useState(false)
   const [section, setSection] = useState<Section>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [pendingDisputes, setPendingDisputes] = useState(0)
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Best-effort: fetch pending disputes count for the sidebar badge.
+  // Re-fetches when the user navigates between sections and every 60s.
+  useEffect(() => {
+    if (!mounted || !isAdminAuthenticated()) return
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await api.get<{ disputes: Dispute[] }>(
+          '/admin/disputes?status=pending'
+        )
+        if (!cancelled) setPendingDisputes(res.disputes.length)
+      } catch {
+        // Best-effort — ignore.
+      }
+    }
+    void load()
+    const id = window.setInterval(load, 60000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [mounted, isAdminAuthenticated, section])
 
   const isAuthed = mounted && isAdminAuthenticated() && !!admin
 
@@ -3110,6 +4426,7 @@ export function AdminView() {
           active={section}
           onSelect={handleSelect}
           onLogout={handleLogout}
+          pendingDisputesCount={pendingDisputes}
         />
       </aside>
 
@@ -3134,6 +4451,7 @@ export function AdminView() {
               active={section}
               onSelect={handleSelect}
               onLogout={handleLogout}
+              pendingDisputesCount={pendingDisputes}
             />
           </div>
         </SheetContent>
@@ -3151,9 +4469,11 @@ export function AdminView() {
               transition={{ duration: 0.25 }}
             >
               {section === 'dashboard' && <DashboardSection />}
+              {section === 'allowlist' && <AllowlistSection />}
               {section === 'students' && <StudentsSection />}
               {section === 'verification' && <VerificationSection />}
               {section === 'election' && <ElectionSection />}
+              {section === 'disputes' && <DisputesSection />}
               {section === 'audit' && <AuditLogsSection />}
               {section === 'settings' && <SettingsSection />}
             </motion.div>

@@ -28,12 +28,56 @@ model Student {
   verificationStatus  String   @default("pending") // pending, submitted, approved, rejected
   idDocumentUrl       String?
   hasVoted            Boolean  @default(false)
+  // Device fingerprint of the browser that claimed this account. Used to
+  // prevent one device from claiming multiple matrics (mass fraud defence).
+  deviceFingerprint   String?
+  // IP address recorded at claim time for audit / dispute resolution.
+  claimIp             String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
   activities          Activity[]
   verificationLogs    VerificationLog[]
   votes               Vote[]
+  allowlistEntry      MatricAllowlist?
+}
+
+// Pre-loaded voter register: every valid matric + name uploaded by class reps
+// via attendance lists. A student can only claim an account if their matric
+// exists here AND is unclaimed. This replaces the old "pre-seeded Student
+// rows" model and the email-OTP flow.
+model MatricAllowlist {
+  id           String   @id @default(cuid())
+  matricNumber String   @unique
+  fullName     String
+  programme    String   // Physics Education, Biology Education, etc.
+  level        String   // 100, 200, 300, 400
+  cohort       String   // e.g. "Physics Education" — derived from programme
+  isClaimed    Boolean  @default(false)
+  claimedAt    DateTime?
+  claimedByStudentId String? @unique // links to Student once claimed
+  uploadBatch  String   // groups entries from the same upload
+  uploadedAt   DateTime @default(now())
+
+  student      Student? @relation(fields: [claimedByStudentId], references: [id], onDelete: SetNull)
+}
+
+// Fraud reports. When a student finds their matric already claimed by someone
+// else, they file a dispute. The admin reviews and can revoke the fraudulent
+// claim, freeing the matric for the real student to re-claim.
+model Dispute {
+  id            String   @id @default(cuid())
+  matricNumber  String   // the disputed matric
+  expectedName  String   // the real student's name (from allowlist)
+  reporterName  String   // who is reporting (self-reported)
+  reporterContact String? // optional email/phone for follow-up
+  reason        String   // free text
+  status        String   @default("pending") // pending, resolved_revoked, resolved_dismissed
+  accusedStudentId String? // the student who fraudulently claimed
+  createdAt     DateTime @default(now())
+  resolvedAt    DateTime?
+  resolvedBy    String?  // admin id
+  resolutionNote String?
 }
 
 model Admin {

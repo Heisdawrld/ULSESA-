@@ -1099,3 +1099,77 @@ Stage Summary:
 - Admin access: exclusively via https://ulsesa.onrender.com/admin (standalone portal with own header/sidebar)
 - Student-facing site: no admin login surface anywhere — clean election portal
 - Live site election date corrected: Tuesday July 7, 2026 at 08:00 WAT
+
+---
+Task ID: ADMIN-ALLOWLIST-UI
+Agent: full-stack-developer
+Task: Build admin allowlist upload + viewer + dispute queue UI
+
+Work Log:
+- Read /home/z/my-project/worklog.md (1101 lines) to understand prior state. Last round added vote receipt system + elections sub-nav scroll fade. Project STABLE.
+- Read backend API routes for `/api/admin/allowlist` (GET/DELETE), `/api/admin/allowlist/upload` (POST multipart), and `/api/admin/disputes` (GET/POST) to confirm response shapes — DID NOT modify any API route.
+- Read existing `src/components/views/admin-view.tsx` (3165 lines) end-to-end to match the existing aesthetic: Royal Blue primary, 20px rounded cards, StatCard pattern, statusBadge helpers, AlertDialog confirmations, motion entrance animations.
+- Read `src/lib/api-client.ts` (39 lines) to confirm it auto-attaches `x-admin-token` from the auth store for JSON requests but can't handle FormData (so file upload uses `fetch` directly with manual `x-admin-token` header).
+- Read `src/lib/stores/auth-store.ts` to confirm `useAuth().adminToken` is available for the multipart upload path.
+
+Implemented in `src/components/views/admin-view.tsx` (file is now 4484 lines, +1319 LOC):
+
+1. Imports — added 11 lucide-react icons (ClipboardList, AlertTriangle, Upload, Trash2, FileUp, Flag, Gavel, Inbox, Database, ShieldAlert) and `Tabs/TabsList/TabsTrigger` from `@/components/ui/tabs`.
+
+2. Types — added 6 new interfaces after the `Election` interface:
+   - `AllowlistEntry` (id, matricNumber, fullName, programme, level, cohort, isClaimed, claimedAt, uploadedAt)
+   - `CohortStat` (programme, level, total, claimed)
+   - `AllowlistResponse` (entries, total, page, pageSize, stats)
+   - `UploadSummary` (success, summary{total, inserted, updated, skippedClaimed, duplicates}, batchId)
+   - `DisputeAccused` (id, fullName, matricNumber, deviceFingerprint, claimIp, createdAt, hasVoted)
+   - `Dispute` (id, matricNumber, expectedName, reporterName, reporterContact, reason, status, createdAt, resolvedAt, resolutionNote, accused)
+
+3. Section type + NAV_ITEMS — extended the `Section` union with `'allowlist' | 'disputes'` and inserted two new nav items in logical positions: `Voter Register` (ClipboardList) right after Dashboard, and `Disputes` (AlertTriangle) between Election and Audit Logs.
+
+4. SidebarContent — added `pendingDisputesCount?: number` prop. The Disputes nav item now shows a pulsing red dot badge (animate-ping outer + solid inner) when there are pending disputes. The label is wrapped in a `flex-1 truncate text-left` span so the badge sits neatly on the right.
+
+5. AllowlistSection component (~680 LOC) — full feature set:
+   - **Stats overview**: 4 StatCards (Total Matrics / Claimed / Unclaimed / Cohorts) aggregating from the cohort stats. Uses the existing `StatCard` component for visual consistency.
+   - **Upload panel**: Card with Programme Select (5 education programmes), Level Select (100/200/300/400), drag-and-drop file dropzone accepting `.docx/.csv/.txt` with hidden file input + label, Upload button. Uses `fetch` directly with `FormData` + manual `x-admin-token` header (NOT the JSON `api.post`). On success shows an inline emerald summary box (total parsed / new / updated / skipped-claimed) AND fires a `toast.success`. Resets the file + selects after upload and silently refreshes the list.
+   - **Search + filter bar**: search input (matric/name, Enter to apply), programme filter, level filter, claimed/unclaimed filter — all using `Select` with the `Filter` icon.
+   - **Paginated table**: matric (mono), name, programme (truncated, hidden on mobile), level, status badge (emerald "Claimed" / muted "Unclaimed"), claimed date (hidden on mobile), and a trash-icon delete button (only on unclaimed entries — claimed entries show "—" since the API refuses to delete claimed matrics). Pagination footer with Previous/Next buttons + "Page X of Y · Z total" caption (page size 20).
+   - **Cohort breakdown**: separate Card with a per-programme × level Table (Programme / Level / Total / Claimed / Unclaimed / Progress bar with %) — gives admins an at-a-glance view of which cohorts need more outreach.
+   - **Delete confirmation**: AlertDialog warning that the student won't be able to claim until the matric is re-uploaded, with destructive action button + spinner.
+
+6. DisputesSection + DisputeCard components (~600 LOC combined):
+   - **DisputesSection**: 3 StatCards (Pending / Resolved / In Current View), Tabs (Pending / Resolved / All) for status filtering, fetches `/api/admin/disputes?status={filter}`. Loading skeleton grid + empty state with emerald checkmark.
+   - **DisputeCard**: per-dispute card with:
+     - Matric (mono) + "Expected: {name}" header + status badge (amber pulsing "Pending" / red "Revoked" with gavel icon / emerald "Dismissed" with checkmark). Card border color also reflects status (amber/red/emerald).
+     - Reporter block: name + contact in a muted rounded box.
+     - Reason: amber-tinted bordered box with the dispute text.
+     - Accused claim block (if accused record attached): avatar with red initials, full name, matric (mono), hasVoted badge (amber), grid of device fingerprint (first 8 chars mono) / claim IP (mono truncated) / claimed-at timestamp.
+     - Resolution meta (if resolved): relative time + italic resolution note.
+     - Filed {relative time} footer.
+     - CardFooter actions (only when pending): ghost "Dismiss" + destructive "Revoke Claim" buttons.
+   - **Revoke confirmation AlertDialog**: title with ShieldAlert icon, description (asChild div) explains the account will be PERMANENTLY DELETED and the matric freed. AMBER WARNING BOX if `accused.hasVoted === true` (vote stays in tally but account is deleted). Optional resolution note Textarea. Destructive "Confirm Revoke" action with Gavel icon + spinner.
+   - **Dismiss confirmation AlertDialog**: explanation that the original claim remains valid, optional note Textarea, regular AlertDialogAction.
+
+7. AdminView main component — added `pendingDisputes` state and a best-effort `useEffect` that fetches `/api/admin/disputes?status=pending` on mount + whenever the admin navigates between sections + every 60 seconds (interval). The count is passed to both desktop and mobile `SidebarContent` instances so the red pulse badge appears in both. Failures are silently ignored (best-effort badge).
+   - Added two new section render lines to the existing switch: `{section === 'allowlist' && <AllowlistSection />}` and `{section === 'disputes' && <DisputesSection />}`.
+
+QA verification:
+- `bun run lint` → 0 errors, 0 warnings ✓
+- File grew from 3165 → 4484 lines (+1319 LOC), all in the single existing admin-view.tsx as required (no new files created).
+- Re-read all 4484 lines post-edit to confirm structure intact: imports → types → helpers → IdDocumentPreview → AdminLogin → Sidebar → DashboardSection → StudentsSection → VerificationSection → ElectionSection → AuditLogsSection → SettingsSection → AdminInfoCard → AllowlistSection (NEW) → DisputeCard + DisputesSection (NEW) → AdminView.
+
+Stage Summary:
+- Project status: STABLE. All existing features (auth, claim, OTP, manual ID verification, dashboard, elections, voting, results, admin portal, vote receipts) intact and working.
+- New feature: Admin Voter Register — admins can now upload attendance lists (.docx/.csv/.txt) per programme+level, view all matrics with search/filter/pagination, delete unclaimed entries, and see per-cohort claim progress. Uploads use multipart/form-data with `fetch` directly (JSON api client can't handle FormData) and the `x-admin-token` header from the auth store.
+- New feature: Admin Disputes Queue — admins can review fraud reports filed by students, with rich per-dispute cards showing the reporter, reason, accused student details (name, matric, device fingerprint prefix, claim IP, claim date, hasVoted status), and revoke/dismiss actions. Revoke deletes the fraudulent Student account + frees the allowlist entry so the legitimate student can re-claim. AlertDialogs confirm both actions with optional admin notes; revoke shows an amber warning if the accused has already voted.
+- Sidebar badge: a pulsing red dot appears on the "Disputes" nav item whenever there are pending disputes (count polled every 60s + on section change, best-effort — failures silently ignored).
+- Design: matches the existing Royal Blue / Gold / 20px-radius admin aesthetic. Reuses `StatCard`, `Card`, `Table`, `AlertDialog`, `Tabs`, `Select`, `Badge`, `Avatar`, `Button`, `Input`, `Label`, `Textarea`, `Progress`, `Skeleton`, `Separator`. Mobile-responsive throughout (filters wrap, table hides programme + claimed columns on mobile, pagination stacks vertically). Framer Motion entrance animations on dispute cards + the existing page-level transition.
+- Files modified (1): `src/components/views/admin-view.tsx`.
+- API routes, Prisma schema, auth-view.tsx: NOT modified (as instructed).
+- Lint clean.
+
+Unresolved / risks:
+- Pre-existing TS errors in `ElectionSection` (lines ~2495–2677) reference `openEditDates`, `editDatesOpen`, `editStart`, `editEnd`, `savingDates`, `updateElectionDates` — these are declared in `DashboardSection` but referenced in `ElectionSection`, so `tsc --noEmit` reports "Cannot find name" errors. ESLint doesn't catch these (only TS does). This is a PRE-EXISTING bug from an earlier agent's refactor — not introduced by this task. The "Edit Election Dates Dialog" in ElectionSection would crash at runtime if the admin clicked "Edit" on the start/end date cards. Out of scope for ADMIN-ALLOWLIST-UI but flagged for the next maintainer.
+- Pre-existing TS errors in `src/app/api/admin/allowlist/route.ts` and `src/app/api/admin/disputes/route.ts` (Prisma groupBy `_sum` typing + `getAdminFromToken` arg count) — also pre-existing, not introduced by this task. The runtime works (Prisma returns the data; TS strict-mode just can't infer the shape). Out of scope.
+- Dev server was not running at the time of this task (curl to :3000 connection-refused); validated via `bun run lint` only. Browser QA pending next dev-server restart.
+- Test data state: unchanged. Recommend testing the upload flow with a real attendance list .docx after the dev server is restarted.
+

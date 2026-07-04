@@ -287,116 +287,93 @@ function DetailRow({
   )
 }
 
-// ===================== Claim Flow =====================
+// ===================== Claim Flow (allowlist-based, no OTP) =====================
 
 interface ClaimFlowProps {
   onSwitchToSignIn: () => void
   onAuthSuccess: (student: StudentUser, token: string, message: string) => void
 }
 
+// Steps: 1 = enter matric, 2 = confirm name, 3 = set password
+// Plus: 'dispute' = matric already claimed, file a report
+type ClaimStep = 1 | 2 | 3 | 'dispute'
+
+// Response from POST /auth/claim
+interface ClaimLookup {
+  matricNumber: string
+  fullName?: string
+  programme?: string
+  level?: string
+  cohort?: string
+  expectedName?: string // only when alreadyClaimed
+  alreadyClaimed: boolean
+}
+
+// Response from POST /auth/register
+interface RegisterResponse {
+  student: StudentUser
+  token: string
+  message: string
+}
+
+// Response from POST /disputes
+interface DisputeResponse {
+  success: boolean
+  message: string
+  disputeId?: string
+}
+
 function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
   const [step, setStep] = useState<ClaimStep>(1)
   const [loading, setLoading] = useState(false)
 
-  // Step 1 state
+  // Step 1
   const [matric, setMatric] = useState('')
 
-  // Fetched student
-  const [student, setStudent] = useState<ClaimStudent | null>(null)
-  const [alreadyClaimed, setAlreadyClaimed] = useState(false)
+  // Step 2 — looked-up entry from allowlist
+  const [lookup, setLookup] = useState<ClaimLookup | null>(null)
 
-  // Admin-verified flag — when true, the student was manually verified by
-  // an ULSESA admin and can skip the OTP step entirely.
-  const [adminVerified, setAdminVerified] = useState(false)
-
-  // Manual-upload flags (returned from /auth/claim)
-  const [pendingManualReview, setPendingManualReview] = useState(false)
-  const [rejectedInfo, setRejectedInfo] = useState<{
-    rejected: boolean
-    reason: string | null
-  }>({ rejected: false, reason: null })
-  const [idUploaded, setIdUploaded] = useState(false)
-
-  // OTP state (step 3)
-  const [otp, setOtp] = useState('')
-  const [maskedEmail, setMaskedEmail] = useState('')
-  const [demoMode, setDemoMode] = useState(false)
-  const [demoOtp, setDemoOtp] = useState<string | null>(null)
-  const [emailSent, setEmailSent] = useState(false)
-
-  // Password state (step 4)
+  // Step 3 — password + optional contact
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
 
-  // Upload state (step 'upload')
-  const [documentData, setDocumentData] = useState<string | null>(null)
-  const [documentName, setDocumentName] = useState<string>('')
-  const [documentType, setDocumentType] = useState<'student_id' | 'biodata'>(
-    'student_id'
-  )
-  const [uploading, setUploading] = useState(false)
-  const [dragging, setDragging] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
+  // Dispute form
+  const [disputeName, setDisputeName] = useState('')
+  const [disputeContact, setDisputeContact] = useState('')
+  const [disputeReason, setDisputeReason] = useState('')
+  const [disputeFiled, setDisputeFiled] = useState(false)
 
-  // Map claim step (1..4) → indicator step (1..3) for the OTP path.
-  // For the manual-upload path ('upload' | 'pending' | 'rejected') the
-  // StepIndicator is hidden entirely — those screens have their own visual
-  // language (status cards) that don't fit the 3-dot progression.
-  const indicatorStep: 1 | 2 | 3 | null =
-    typeof step === 'number'
-      ? step === 4
-        ? 3
-        : step === 3
-          ? 2
-          : step
-      : null
+  // Password strength meter
+  const pwStrength = (() => {
+    let s = 0
+    if (password.length >= 6) s++
+    if (password.length >= 10) s++
+    if (/[A-Z]/.test(password) && /[a-z]/.test(password)) s++
+    if (/\d/.test(password) || /[^a-zA-Z0-9]/.test(password)) s++
+    return s
+  })()
+  const pwLabels = ['Too short', 'Weak', 'Fair', 'Good', 'Strong']
+  const pwColors = ['bg-muted', 'bg-red-500', 'bg-amber-500', 'bg-blue-500', 'bg-emerald-500']
 
-  // --- Step 1: submit matric ---
+  // --- Step 1: look up matric in allowlist ---
   async function handleMatricSubmit() {
-    const cleaned = matric.trim()
-    if (!cleaned) {
-      toast.error('Please enter your matric number.')
+    const cleaned = matric.trim().replace(/[^0-9]/g, '')
+    if (cleaned.length !== 9) {
+      toast.error('Matric number must be 9 digits.')
       return
     }
     setLoading(true)
-    setAlreadyClaimed(false)
     try {
-      const data = await api.post<{
-        student: ClaimStudent
-        adminVerified: boolean
-        pendingManualReview?: boolean
-        rejected?: boolean
-        rejectionReason?: string | null
-        idUploaded?: boolean
-      }>('/auth/claim', {
+      const data = await api.post<ClaimLookup>('/auth/claim', {
         matricNumber: cleaned,
       })
-      setStudent(data.student)
-      setMaskedEmail(maskEmail(data.student.email))
-      setAdminVerified(data.adminVerified ?? false)
-      setPendingManualReview(data.pendingManualReview ?? false)
-      setRejectedInfo({
-        rejected: data.rejected ?? false,
-        reason: data.rejectionReason ?? null,
-      })
-      setIdUploaded(data.idUploaded ?? false)
-
-      if (data.student.hasPassword) {
-        // Already claimed — show the "go to sign in" card on step 1.
-        setAlreadyClaimed(true)
-      } else if (data.adminVerified) {
-        // Admin manually verified this student — skip OTP, go straight
-        // to setting a password.
-        setStep(4)
-      } else if (data.pendingManualReview) {
-        // Student already uploaded an ID — show the pending-review screen.
-        setStep('pending')
-      } else if (data.rejected) {
-        // Admin rejected the previous upload — show the rejection screen.
-        setStep('rejected')
+      setLookup(data)
+      if (data.alreadyClaimed) {
+        setStep('dispute')
       } else {
         setStep(2)
       }
@@ -408,84 +385,20 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     }
   }
 
-  // --- Step 2: send OTP ---
-  async function handleSendOtp() {
-    if (!student) return
-    setLoading(true)
-    try {
-      const data = await api.post<SendOtpResponse>('/auth/send-otp', {
-        matricNumber: student.matricNumber,
-      })
-      setMaskedEmail(data.maskedEmail)
-      setDemoMode(data.demoMode)
-      setDemoOtp(data.demoOtp ?? null)
-      setEmailSent(data.emailSent)
-      setOtp('')
-      setStep(3)
-      if (data.demoMode && data.demoOtp) {
-        toast.info('Demo mode: code shown on screen.')
-      } else if (data.emailSent) {
-        toast.success(`Verification code sent to ${data.maskedEmail}`)
-      } else {
-        toast.message('Code generated. Check your email.')
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to send code'
-      if (/already been claimed/i.test(msg)) {
-        toast.error('This account has already been claimed. Please sign in.')
-        onSwitchToSignIn()
-      } else {
-        toast.error(msg)
-      }
-    } finally {
-      setLoading(false)
-    }
+  // --- Step 2: confirm "Is this you?" ---
+  function handleConfirmYes() {
+    setStep(3)
   }
 
-  // --- Step 3: verify OTP ---
-  async function handleVerifyOtp() {
-    if (!student) return
-    if (otp.length !== 6) {
-      toast.error('Enter the 6-digit code.')
-      return
-    }
-    setLoading(true)
-    try {
-      await api.post<{ verified: boolean }>('/auth/verify-otp', {
-        matricNumber: student.matricNumber,
-        otp,
-      })
-      setStep(4)
-      toast.success('Email verified!')
-    } catch {
-      toast.error('Invalid or expired code. Try again or resend.')
-    } finally {
-      setLoading(false)
-    }
+  function handleConfirmNo() {
+    toast.message(
+      'If this is not you, contact your class rep or the ULSESA electoral committee to verify your matric number.'
+    )
   }
 
-  // --- Step 3: resend OTP ---
-  async function handleResendOtp() {
-    if (!student) return
-    try {
-      const data = await api.post<SendOtpResponse>('/auth/send-otp', {
-        matricNumber: student.matricNumber,
-      })
-      setMaskedEmail(data.maskedEmail)
-      setDemoMode(data.demoMode)
-      setDemoOtp(data.demoOtp ?? null)
-      setEmailSent(data.emailSent)
-      setOtp('')
-      toast.success('New code sent.')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to resend code'
-      toast.error(msg)
-    }
-  }
-
-  // --- Step 4: set password ---
-  async function handleSetPassword() {
-    if (!student) return
+  // --- Step 3: set password + register ---
+  async function handleRegister() {
+    if (!lookup) return
     if (password.length < 6) {
       toast.error('Password must be at least 6 characters.')
       return
@@ -494,131 +407,128 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
       toast.error('Passwords do not match.')
       return
     }
+
+    // Get device fingerprint (client-side, persisted in localStorage + cookie)
+    const { getDeviceFingerprint } = await import('@/lib/device-fingerprint')
+    const deviceFingerprint = getDeviceFingerprint()
+
     setLoading(true)
     try {
-      const data = await api.post<SetPasswordResponse>('/auth/set-password', {
-        matricNumber: student.matricNumber,
+      const data = await api.post<RegisterResponse>('/auth/register', {
+        matricNumber: lookup.matricNumber,
         password,
+        deviceFingerprint,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
       })
+      toast.success(data.message)
       onAuthSuccess(data.student, data.token, data.message)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to set password'
-      if (/email verification required/i.test(msg)) {
-        toast.error('Email verification required. Please go back and verify.')
-      } else if (/already been claimed/i.test(msg)) {
-        toast.error('Already claimed — sign in instead.')
-        onSwitchToSignIn()
-      } else {
-        toast.error(msg)
+      const msg = err instanceof Error ? err.message : 'Registration failed'
+      toast.error(msg)
+      // If device-blocked or already-claimed, go back to step 1
+      if (/already been claimed|one account per device/i.test(msg)) {
+        setStep(1)
+        setLookup(null)
+        setMatric('')
       }
     } finally {
       setLoading(false)
     }
   }
 
-  // --- Step 'upload': handle file selection from input or drag-drop ----
-  // Reads the file as a base64 data URL and stashes it in state. The actual
-  // upload happens when the student clicks "Submit for review".
-  function handleFileSelected(file: File) {
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file (JPG, PNG, or HEIC).')
+  // --- Dispute: file a fraud report ---
+  async function handleFileDispute() {
+    if (!lookup) return
+    if (!disputeName.trim()) {
+      toast.error('Please enter your name.')
       return
     }
-    // 8 MB cap matches the server-side limit. We check pre-read so we don't
-    // try to cram a 50 MB file through FileReader.
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error('Image is too large. Maximum size is 8 MB.')
+    if (disputeReason.trim().length < 10) {
+      toast.error('Please explain the situation (at least 10 characters).')
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result
-      if (typeof result === 'string' && result.startsWith('data:image/')) {
-        setDocumentData(result)
-        setDocumentName(file.name)
-      } else {
-        toast.error('Could not read the selected image.')
-      }
-    }
-    reader.onerror = () => {
-      toast.error('Could not read the selected image.')
-    }
-    reader.readAsDataURL(file)
-  }
-
-  function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) handleFileSelected(file)
-    // Clear the input value so selecting the same file twice still fires.
-    e.target.value = ''
-  }
-
-  function onDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault()
-    setDragging(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) handleFileSelected(file)
-  }
-
-  // --- Step 'upload': submit the data URL to the server ---
-  async function handleUploadId() {
-    if (!student) return
-    if (!documentData) {
-      toast.error('Please select an image of your student ID first.')
-      return
-    }
-    setUploading(true)
+    setLoading(true)
     try {
-      await api.post<{ success: boolean; message: string }>('/auth/upload-id', {
-        matricNumber: student.matricNumber,
-        documentData,
-        documentType,
+      const data = await api.post<DisputeResponse>('/disputes', {
+        matricNumber: lookup.matricNumber,
+        reporterName: disputeName.trim(),
+        reporterContact: disputeContact.trim() || undefined,
+        reason: disputeReason.trim(),
       })
-      toast.success('ID uploaded — pending admin review.')
-      setDocumentData(null)
-      setDocumentName('')
-      setStep('pending')
+      setDisputeFiled(true)
+      toast.success(data.message)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to upload ID'
+      const msg = err instanceof Error ? err.message : 'Failed to file dispute'
       toast.error(msg)
     } finally {
-      setUploading(false)
+      setLoading(false)
     }
   }
 
   function handleReset() {
     setStep(1)
     setMatric('')
-    setStudent(null)
-    setAlreadyClaimed(false)
-    setAdminVerified(false)
-    setPendingManualReview(false)
-    setRejectedInfo({ rejected: false, reason: null })
-    setIdUploaded(false)
-    setOtp('')
-    setMaskedEmail('')
-    setDemoMode(false)
-    setDemoOtp(null)
-    setEmailSent(false)
+    setLookup(null)
     setPassword('')
     setConfirm('')
-    setShowPw(false)
-    setShowConfirm(false)
-    setDocumentData(null)
-    setDocumentName('')
-    setDocumentType('student_id')
-    setUploading(false)
-    setDragging(false)
+    setEmail('')
+    setPhone('')
+    setDisputeName('')
+    setDisputeContact('')
+    setDisputeReason('')
+    setDisputeFiled(false)
   }
 
   return (
     <div className="glass-strong overflow-hidden rounded-3xl border border-border/60 p-6 shadow-2xl shadow-primary/5 sm:p-8">
-      {indicatorStep && <StepIndicator current={indicatorStep} />}
+      <div className="space-y-5">
+        {/* Header */}
+        <div>
+          <h2 className="font-display text-2xl font-bold tracking-tight">
+            Claim your account
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Enter your matric number to verify you&apos;re on the ULSESA voter register, then set a password to activate your account.
+          </p>
+        </div>
 
-      <div className={indicatorStep ? 'mt-6 min-h-[320px]' : 'mt-0 min-h-[320px]'}>
+        {/* Step indicator */}
+        {step !== 'dispute' && (
+          <div className="flex items-center justify-center gap-2 text-xs">
+            {[
+              { n: 1, label: 'Matric' },
+              { n: 2, label: 'Confirm' },
+              { n: 3, label: 'Secure' },
+            ].map((s, i) => {
+              const current = step === s.n
+              const done = typeof step === 'number' && step > s.n
+              return (
+                <div key={s.n} className="flex items-center gap-2">
+                  <div
+                    className={[
+                      'flex size-7 items-center justify-center rounded-full text-[11px] font-bold transition-colors',
+                      current
+                        ? 'bg-primary text-primary-foreground'
+                        : done
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-muted text-muted-foreground',
+                    ].join(' ')}
+                  >
+                    {done ? <CheckCircle2 className="size-3.5" /> : s.n}
+                  </div>
+                  <span className={current ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                    {s.label}
+                  </span>
+                  {i < 2 && <div className="h-px w-6 bg-border" />}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
-          {/* ---------- Step 1: Enter Matric ---------- */}
+          {/* ---------- Step 1: Enter matric ---------- */}
           {step === 1 && (
             <motion.div
               key="step-1"
@@ -626,102 +536,67 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -16 }}
               transition={{ duration: 0.25 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <div>
-                <h2 className="font-display text-2xl font-bold tracking-tight">
-                  Claim your account
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Enter the matric number your class representative registered
-                  you with.
-                </p>
-              </div>
-
               <div className="space-y-2">
-                <Label htmlFor="matric" className="text-sm font-medium">
+                <Label htmlFor="claim-matric" className="text-sm font-medium">
                   Matric number
                 </Label>
                 <Input
-                  id="matric"
+                  id="claim-matric"
                   inputMode="numeric"
                   autoComplete="off"
-                  placeholder="e.g. 230315099"
+                  placeholder="e.g. 230315011"
                   value={matric}
-                  onChange={(e) =>
-                    setMatric(e.target.value.replace(/[^0-9]/g, ''))
-                  }
+                  onChange={(e) => setMatric(e.target.value.replace(/[^0-9]/g, '').slice(0, 9))}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !loading) handleMatricSubmit()
+                    if (e.key === 'Enter' && !loading && matric.length === 9) handleMatricSubmit()
                   }}
-                  className="h-12 rounded-xl text-base tracking-wide"
+                  className="h-12 rounded-xl text-base tracking-wider"
                   disabled={loading}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Enter the matric number you were registered with.
+                  Enter the 9 digits exactly as they appear on your student ID. No slashes or spaces.
                 </p>
               </div>
-
-              {alreadyClaimed && (
-                <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-                  <AlertCircle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                      This account has already been claimed
-                    </p>
-                    <p className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-300/80">
-                      Please sign in with your matric number and password.
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="mt-3 h-8"
-                      onClick={onSwitchToSignIn}
-                    >
-                      Go to Sign In
-                      <ArrowRight className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
 
               <Button
                 type="button"
                 size="lg"
-                className="w-full h-12 rounded-xl text-base font-semibold"
+                className="h-12 w-full rounded-xl text-base font-semibold"
                 onClick={handleMatricSubmit}
-                disabled={loading || !matric.trim()}
+                disabled={loading || matric.length !== 9}
               >
                 {loading ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Checking…
+                    Checking register…
                   </>
                 ) : (
                   <>
-                    Continue
-                    <ArrowRight className="size-4" />
+                    <UserCheck className="size-4" />
+                    Check my matric
                   </>
                 )}
               </Button>
 
-              <p className="text-center text-xs text-muted-foreground">
-                Only pre-registered ULSESA members can claim an account.{' '}
-                <a
-                  href={supportWhatsAppUrl(SUPPORT_MESSAGES.account)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-primary hover:underline"
-                >
-                  Need help?
-                </a>
-              </p>
+              <div className="rounded-xl bg-muted/40 p-3 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Already claimed your account?{' '}
+                  <button
+                    type="button"
+                    onClick={onSwitchToSignIn}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    Sign in
+                  </button>
+                </p>
+              </div>
             </motion.div>
           )}
 
-          {/* ---------- Step 2: Review Details & Send Code ---------- */}
-          {step === 2 && student && (
+          {/* ---------- Step 2: Confirm name ---------- */}
+          {step === 2 && lookup && (
             <motion.div
               key="step-2"
               initial={{ opacity: 0, x: 16 }}
@@ -730,301 +605,93 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
               transition={{ duration: 0.25 }}
               className="space-y-5"
             >
-              <div>
-                <h2 className="font-display text-2xl font-bold tracking-tight">
-                  Confirm your details
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Review the information we have on file before sending the
-                  verification code.
+              <div className="flex flex-col items-center text-center py-2">
+                <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20">
+                  <UserCheck className="size-8" />
+                </div>
+                <p className="text-sm text-muted-foreground">We found you on the register:</p>
+                <p className="mt-1 font-display text-xl font-bold tracking-tight">
+                  {lookup.fullName}
                 </p>
-              </div>
-
-              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/40 p-4">
-                <DetailRow label="Full name" value={student.fullName} />
-                <DetailRow
-                  label="Matric number"
-                  value={student.matricNumber}
-                />
-                <DetailRow
-                  label="Cohort"
-                  value={`${student.level} Level · ${student.programme}`}
-                />
-                <div className="border-t border-border/60 pt-3">
-                  <DetailRow
-                    label="Email on file"
-                    value={maskedEmail}
-                    icon={<Mail className="size-3.5" />}
-                  />
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                    {lookup.programme}
+                  </span>
+                  <span className="rounded-full bg-cyan-accent/10 px-3 py-1 text-xs font-medium text-cyan-accent-foreground dark:text-cyan-accent">
+                    {lookup.level} Level
+                  </span>
+                  <span className="rounded-full bg-muted px-3 py-1 font-mono text-xs text-muted-foreground">
+                    {lookup.matricNumber}
+                  </span>
                 </div>
               </div>
 
-              <div className="flex items-start gap-3 rounded-xl border border-cyan-accent/30 bg-cyan-accent/5 p-4">
-                <Info className="size-5 shrink-0 text-cyan-accent" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">
-                    A verification code will be sent to the email above.
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    This is the email your class representative collected — it
-                    cannot be changed. If this email is wrong,{' '}
-                    <a
-                      href={supportWhatsAppUrl(SUPPORT_MESSAGES.account)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-cyan-accent hover:underline"
-                    >
-                      contact ULSESA support
-                    </a>
-                    .
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex min-w-0 gap-2 sm:gap-3">
+              <div className="flex flex-col gap-2">
                 <Button
                   type="button"
-                  variant="outline"
                   size="lg"
-                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
+                  className="h-12 w-full rounded-xl text-base font-semibold"
+                  onClick={handleConfirmYes}
+                >
+                  <CheckCircle2 className="size-4" />
+                  Yes, that&apos;s me — continue
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-10 w-full rounded-xl text-sm"
+                  onClick={handleConfirmNo}
+                >
+                  That&apos;s not me
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-10 w-full rounded-xl text-xs text-muted-foreground"
                   onClick={handleReset}
-                  disabled={loading}
-                  aria-label="Go back"
                 >
-                  <ArrowLeft className="size-4" />
-                  <span className="hidden sm:inline">Back</span>
+                  ← Use a different matric
                 </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
-                  onClick={handleSendOtp}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      <span className="truncate">Sending…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="size-4 shrink-0" />
-                      <span className="truncate">
-                        <span className="sm:hidden">Send Code</span>
-                        <span className="hidden sm:inline">
-                          Send Verification Code
-                        </span>
-                      </span>
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {/* Manual-verification fallback — for students whose email is
-                  wrong, blocked, or whose OTP never arrives (Gmail 500/day
-                  cap). Uploads a photo of their student ID / biodata form
-                  for an ULSESA admin to review. */}
-              <div className="pt-1">
-                <div className="mb-2 flex items-center gap-2">
-                  <div className="h-px flex-1 bg-border" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    or
-                  </span>
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  className="h-12 w-full rounded-xl border-dashed text-xs font-medium text-muted-foreground hover:text-foreground sm:text-sm"
-                  onClick={() => setStep('upload')}
-                  disabled={loading}
-                >
-                  <IdCard className="size-4 shrink-0" />
-                  <span className="text-center leading-tight">
-                    Can&apos;t access email?{' '}
-                    <span className="font-semibold text-foreground">Upload Student ID</span>
-                  </span>
-                </Button>
-                {idUploaded && (
-                  <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
-                    You&apos;ve previously uploaded an ID — you can re-upload a
-                    clearer image if needed.
-                  </p>
-                )}
               </div>
             </motion.div>
           )}
 
-          {/* ---------- Step 3: Enter Verification Code ---------- */}
-          {step === 3 && student && (
+          {/* ---------- Step 3: Set password ---------- */}
+          {step === 3 && lookup && (
             <motion.div
               key="step-3"
               initial={{ opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -16 }}
               transition={{ duration: 0.25 }}
-              className="space-y-5"
+              className="space-y-4"
             >
-              <div>
-                <h2 className="font-display text-2xl font-bold tracking-tight">
-                  Enter verification code
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Code sent to{' '}
-                  <span className="font-semibold text-foreground">
-                    {maskedEmail}
-                  </span>
+              <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                    Identity confirmed — {lookup.fullName}
+                  </p>
+                </div>
+                <p className="mt-1 pl-6 text-xs text-muted-foreground">
+                  Set a password to secure your account. You&apos;ll use this with your matric number to sign in and vote.
                 </p>
               </div>
-
-              {/* Demo mode banner */}
-              {demoMode && demoOtp && (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
-                  <div className="flex items-center gap-2">
-                    <Mail className="size-4 text-amber-600 dark:text-amber-400" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                      Demo Mode · SMTP not configured
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm text-amber-900 dark:text-amber-100">
-                    Your verification code is:{' '}
-                    <span className="ml-1 font-mono text-lg font-bold tracking-[0.25em] text-amber-900 dark:text-amber-100">
-                      {demoOtp}
-                    </span>
-                  </p>
-                  <p className="mt-1 text-[11px] text-amber-700/80 dark:text-amber-300/70">
-                    In production this code is delivered only via email.
-                  </p>
-                </div>
-              )}
-
-              {/* Email sent confirmation */}
-              {emailSent && !demoMode && (
-                <div className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
-                  <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <p className="text-xs text-emerald-800 dark:text-emerald-300">
-                    Check your email at {maskedEmail} for the verification code.
-                  </p>
-                </div>
-              )}
-
-              <div className="flex flex-col items-center gap-4 py-2">
-                <InputOTP
-                  maxLength={6}
-                  value={otp}
-                  onChange={(v) => setOtp(v)}
-                  containerClassName="justify-center"
-                >
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} className="size-12 text-lg" />
-                    <InputOTPSlot index={1} className="size-12 text-lg" />
-                    <InputOTPSlot index={2} className="size-12 text-lg" />
-                  </InputOTPGroup>
-                  <span className="px-1 text-muted-foreground/60">·</span>
-                  <InputOTPGroup>
-                    <InputOTPSlot index={3} className="size-12 text-lg" />
-                    <InputOTPSlot index={4} className="size-12 text-lg" />
-                    <InputOTPSlot index={5} className="size-12 text-lg" />
-                  </InputOTPGroup>
-                </InputOTP>
-
-                <button
-                  type="button"
-                  onClick={handleResendOtp}
-                  className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
-                  disabled={loading}
-                >
-                  Resend code
-                </button>
-              </div>
-
-              <div className="flex min-w-0 gap-2 sm:gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
-                  onClick={() => setStep(2)}
-                  disabled={loading}
-                >
-                  <ArrowLeft className="size-4" />
-                  <span className="sm:inline">Back</span>
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
-                  onClick={handleVerifyOtp}
-                  disabled={loading || otp.length !== 6}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Verifying…
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="size-4" />
-                      Verify
-                    </>
-                  )}
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ---------- Step 4: Set Password ---------- */}
-          {step === 4 && student && (
-            <motion.div
-              key="step-4"
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -16 }}
-              transition={{ duration: 0.25 }}
-              className="space-y-5"
-            >
-              <div>
-                <h2 className="font-display text-2xl font-bold tracking-tight">
-                  Set your password
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Choose a password you&apos;ll use to sign in next time.
-                </p>
-              </div>
-
-              {/* Admin-verified banner — shown when the student was manually
-                  verified by an ULSESA admin and skipped the OTP step. */}
-              {adminVerified && (
-                <div className="flex items-start gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
-                  <ShieldCheck className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                      Identity verified by ULSESA admin
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Your account was manually verified by the ULSESA
-                      administrator, so you can set your password directly
-                      without an email code. Set your password below to
-                      complete your account.
-                    </p>
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium">
+                <Label htmlFor="claim-password" className="text-sm font-medium">
                   Password
                 </Label>
                 <div className="relative">
                   <Input
-                    id="password"
+                    id="claim-password"
                     type={showPw ? 'text' : 'password'}
+                    autoComplete="new-password"
                     placeholder="At least 6 characters"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-12 rounded-xl pr-12"
-                    autoComplete="new-password"
+                    disabled={loading}
                   />
                   <button
                     type="button"
@@ -1033,468 +700,261 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                     tabIndex={-1}
                     aria-label={showPw ? 'Hide password' : 'Show password'}
                   >
-                    {showPw ? (
-                      <EyeOff className="size-4" />
-                    ) : (
-                      <Eye className="size-4" />
-                    )}
+                    {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
+                {/* Strength meter */}
+                {password.length > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    {[0, 1, 2, 3].map((i) => (
+                      <div
+                        key={i}
+                        className={`h-1.5 flex-1 rounded-full transition-colors ${
+                          i < pwStrength ? pwColors[pwStrength] : 'bg-muted'
+                        }`}
+                      />
+                    ))}
+                    <span className="text-[10px] font-medium text-muted-foreground w-12 text-right">
+                      {pwLabels[pwStrength]}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirm" className="text-sm font-medium">
+                <Label htmlFor="claim-confirm" className="text-sm font-medium">
                   Confirm password
                 </Label>
                 <div className="relative">
                   <Input
-                    id="confirm"
+                    id="claim-confirm"
                     type={showConfirm ? 'text' : 'password'}
+                    autoComplete="new-password"
                     placeholder="Re-enter your password"
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     className="h-12 rounded-xl pr-12"
-                    autoComplete="new-password"
+                    disabled={loading}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !loading && password.length >= 6 && password === confirm) {
+                        handleRegister()
+                      }
+                    }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirm((v) => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     tabIndex={-1}
-                    aria-label={
-                      showConfirm ? 'Hide password' : 'Show password'
-                    }
+                    aria-label={showConfirm ? 'Hide password' : 'Show password'}
                   >
-                    {showConfirm ? (
-                      <EyeOff className="size-4" />
-                    ) : (
-                      <Eye className="size-4" />
-                    )}
+                    {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
-                {confirm.length > 0 && (
-                  <div className="flex items-center gap-1.5 text-xs">
-                    {password === confirm ? (
-                      <>
-                        <CheckCircle2 className="size-3.5 text-emerald-500" />
-                        <span className="text-emerald-600 dark:text-emerald-400">
-                          Passwords match
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <AlertCircle className="size-3.5 text-destructive" />
-                        <span className="text-destructive">
-                          Passwords do not match
-                        </span>
-                      </>
-                    )}
-                  </div>
+                {confirm.length > 0 && password !== confirm && (
+                  <p className="text-xs text-red-500">Passwords don&apos;t match</p>
                 )}
               </div>
 
-              <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-                <p className="text-xs text-muted-foreground">
-                  After setting your password, your account will be{' '}
-                  <span className="font-medium text-foreground">
-                    pending admin approval
-                  </span>
-                  . You can explore the portal while you wait.
-                </p>
+              {/* Optional contact — not required, no OTP */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="claim-email" className="text-sm font-medium">
+                    Email <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    id="claim-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="h-10 rounded-xl"
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="claim-phone" className="text-sm font-medium">
+                    Phone <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    id="claim-phone"
+                    type="tel"
+                    autoComplete="tel"
+                    placeholder="0801 234 5678"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="h-10 rounded-xl"
+                    disabled={loading}
+                  />
+                </div>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Email/phone are optional — only used if you need account recovery help. We won&apos;t send verification codes.
+              </p>
 
               <Button
                 type="button"
                 size="lg"
                 className="h-12 w-full rounded-xl text-base font-semibold"
-                onClick={handleSetPassword}
-                disabled={
-                  loading || password.length < 6 || password !== confirm
-                }
+                onClick={handleRegister}
+                disabled={loading || password.length < 6 || password !== confirm}
               >
                 {loading ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Securing…
+                    Activating account…
                   </>
                 ) : (
                   <>
-                    <KeyRound className="size-4" />
-                    Complete Registration
+                    <ShieldCheck className="size-4" />
+                    Activate my account
                   </>
                 )}
               </Button>
-            </motion.div>
-          )}
-
-          {/* ---------- Step 'upload': Manual ID upload ---------- */}
-          {step === 'upload' && student && (
-            <motion.div
-              key="step-upload"
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -16 }}
-              transition={{ duration: 0.25 }}
-              className="space-y-5"
-            >
-              <div>
-                <div className="mb-2 flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
-                  <IdCard className="size-5" />
-                </div>
-                <h2 className="font-display text-2xl font-bold tracking-tight">
-                  Upload your student ID
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  If you can&apos;t receive the email code, upload a clear
-                  photo of your student ID card or biodata form. An ULSESA
-                  admin will review it and verify your account manually.
-                </p>
-              </div>
-
-              {/* Document type toggle */}
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/40 p-1">
-                <button
-                  type="button"
-                  onClick={() => setDocumentType('student_id')}
-                  className={[
-                    'flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                    documentType === 'student_id'
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  ].join(' ')}
-                >
-                  <IdCard className="size-4" />
-                  Student ID card
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDocumentType('biodata')}
-                  className={[
-                    'flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                    documentType === 'biodata'
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  ].join(' ')}
-                >
-                  <FileUp className="size-4" />
-                  Biodata form
-                </button>
-              </div>
-
-              {/* Dropzone / preview */}
-              {documentData ? (
-                <div className="space-y-3">
-                  <div className="relative overflow-hidden rounded-2xl border border-border bg-muted/30">
-                    {/* Using a plain <img> instead of next/image because the
-                        src is a runtime base64 data URL, not a known path. */}
-                    <img
-                      src={documentData}
-                      alt="Selected student ID preview"
-                      className="max-h-72 w-full object-contain"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDocumentData(null)
-                        setDocumentName('')
-                      }}
-                      className="absolute right-2 top-2 grid size-8 place-items-center rounded-full bg-background/90 text-foreground shadow-md ring-1 ring-border hover:bg-background"
-                      aria-label="Remove selected image"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                  <p className="truncate text-xs text-muted-foreground">
-                    <ImagePlus className="mr-1 inline size-3.5" />
-                    {documentName || 'Selected image'}
-                  </p>
-                </div>
-              ) : (
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    setDragging(true)
-                  }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={onDrop}
-                  className="space-y-3"
-                >
-                  {/* Drag & drop hint zone (visual only — actual picking is
-                      done via the two explicit buttons below so the user
-                      always has a clear choice between file and camera). */}
-                  <div
-                    className={[
-                      'flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center transition-colors',
-                      dragging
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border bg-muted/20',
-                    ].join(' ')}
-                  >
-                    <div className="grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
-                      <Upload className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {dragging
-                          ? 'Drop the image to upload'
-                          : 'Drag & drop an image here'}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        JPG, PNG, or HEIC · up to 8 MB
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Explicit choice: upload from file OR take a photo.
-                      The file input has NO `capture` attribute so the OS
-                      file picker opens (Photo Library / Browse / Files).
-                      The camera input has `capture="environment"` so it
-                      opens the device camera directly. */}
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="group flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20 transition-colors group-hover:bg-primary/15">
-                        <FolderUp className="size-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">
-                          Upload from device
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          Choose a photo from your files
-                        </p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => cameraInputRef.current?.click()}
-                      className="group flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-cyan-accent/10 text-cyan-accent ring-1 ring-cyan-accent/20 transition-colors group-hover:bg-cyan-accent/15">
-                        <Camera className="size-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">
-                          Take a photo
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          Use your device camera
-                        </p>
-                      </div>
-                    </button>
-                  </div>
-
-                  {/* Hidden inputs — one for file picking, one for camera */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={onFileInputChange}
-                    className="hidden"
-                  />
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={onFileInputChange}
-                    className="hidden"
-                  />
-                </div>
-              )}
-
-              {/* Tips */}
-              <div className="flex items-start gap-2 rounded-xl bg-cyan-accent/5 p-3 ring-1 ring-cyan-accent/20">
-                <Info className="mt-0.5 size-4 shrink-0 text-cyan-accent" />
-                <p className="text-xs text-muted-foreground">
-                  Make sure your <span className="font-medium text-foreground">name, matric number, photograph, and programme</span> are
-                  all clearly visible. A clear, well-lit photo speeds up
-                  verification.
-                </p>
-              </div>
-
-              <div className="flex min-w-0 gap-2 sm:gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
-                  onClick={() => setStep(2)}
-                  disabled={uploading}
-                  aria-label="Go back"
-                >
-                  <ArrowLeft className="size-4" />
-                  <span className="hidden sm:inline">Back</span>
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
-                  onClick={handleUploadId}
-                  disabled={uploading || !documentData}
-                >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Uploading…
-                    </>
-                  ) : (
-                    <>
-                      <FileUp className="size-4" />
-                      Submit for review
-                    </>
-                  )}
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ---------- Step 'pending': waiting for admin ---------- */}
-          {step === 'pending' && student && (
-            <motion.div
-              key="step-pending"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ duration: 0.3 }}
-              className="flex flex-col items-center gap-5 py-6 text-center"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.3 }}
-                className="grid size-20 place-items-center rounded-3xl bg-gradient-to-br from-cyan-accent/20 to-primary/20 text-primary ring-1 ring-primary/20"
-              >
-                <Hourglass className="size-9" />
-              </motion.div>
-              <div className="space-y-2">
-                <h2 className="font-display text-2xl font-bold tracking-tight">
-                  Your ID is pending admin review
-                </h2>
-                <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-                  An ULSESA administrator will compare the uploaded photo
-                  against your registered name, level, and programme, then
-                  either approve or reject it.
-                </p>
-              </div>
-              <div className="w-full max-w-sm space-y-3 rounded-2xl border border-border bg-muted/30 p-4 text-left">
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="size-4 text-cyan-accent" />
-                  <span className="font-medium text-foreground">
-                    What happens next?
-                  </span>
-                </div>
-                <ol className="ml-6 list-decimal space-y-1.5 text-xs text-muted-foreground">
-                  <li>
-                    Once approved, come back here and re-enter your matric
-                    number (
-                    <span className="font-mono font-semibold text-foreground">
-                      {student.matricNumber}
-                    </span>
-                    ).
-                  </li>
-                  <li>
-                    You&apos;ll skip the email code and go straight to
-                    setting your password.
-                  </li>
-                  <li>
-                    If your upload is rejected, you&apos;ll see the reason
-                    and can re-upload a clearer image.
-                  </li>
-                </ol>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                className="h-12 rounded-xl"
-                onClick={handleReset}
-              >
-                <RotateCcw className="size-4" />
-                Start over
-              </Button>
-            </motion.div>
-          )}
-
-          {/* ---------- Step 'rejected': admin rejected ---------- */}
-          {step === 'rejected' && student && (
-            <motion.div
-              key="step-rejected"
-              initial={{ opacity: 0, x: 16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -16 }}
-              transition={{ duration: 0.25 }}
-              className="space-y-5"
-            >
-              <div>
-                <div className="mb-2 flex size-11 items-center justify-center rounded-2xl bg-red-500/10 text-red-600 dark:text-red-400 ring-1 ring-red-500/20">
-                  <AlertCircle className="size-5" />
-                </div>
-                <h2 className="font-display text-2xl font-bold tracking-tight">
-                  Your ID was rejected
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  An ULSESA admin reviewed your uploaded ID and couldn&apos;t
-                  verify it. Please re-upload a clearer image and try again.
-                </p>
-              </div>
-
-              {rejectedInfo.reason && (
-                <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
-                  <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
-                    <AlertCircle className="size-3.5" />
-                    Reason from admin
-                  </p>
-                  <p className="mt-2 text-sm text-foreground">
-                    &ldquo;{rejectedInfo.reason}&rdquo;
-                  </p>
-                </div>
-              )}
 
               <div className="flex items-start gap-2 rounded-xl bg-muted/40 p-3">
-                <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">
-                  Common reasons: photo is blurry or too dark, name or matric
-                  number isn&apos;t visible, or the document doesn&apos;t
-                  match the registered details for{' '}
-                  <span className="font-medium text-foreground">
-                    {student.fullName}
-                  </span>
-                  .
+                  One account per device. Your device is linked to this matric to prevent fraud. If someone else claimed your matric, use the dispute option.
                 </p>
               </div>
+            </motion.div>
+          )}
 
-              <div className="flex min-w-0 gap-2 sm:gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  className="h-12 shrink-0 rounded-xl px-3 sm:px-4"
-                  onClick={handleReset}
-                  disabled={uploading}
-                >
-                  <RotateCcw className="size-4" />
-                  <span className="sm:inline">Start over</span>
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-12 min-w-0 flex-1 rounded-xl text-sm font-semibold sm:text-base"
-                  onClick={() => {
-                    setDocumentData(null)
-                    setDocumentName('')
-                    setStep('upload')
-                  }}
-                  disabled={uploading}
-                >
-                  <Upload className="size-4" />
-                  Re-upload ID
-                </Button>
-              </div>
+          {/* ---------- Dispute: matric already claimed ---------- */}
+          {step === 'dispute' && lookup && (
+            <motion.div
+              key="step-dispute"
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -16 }}
+              transition={{ duration: 0.25 }}
+              className="space-y-4"
+            >
+              {!disputeFiled ? (
+                <>
+                  <div className="flex flex-col items-center text-center py-2">
+                    <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20">
+                      <AlertCircle className="size-8" />
+                    </div>
+                    <h3 className="font-display text-xl font-bold tracking-tight">
+                      This matric is already claimed
+                    </h3>
+                    <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                      The matric <span className="font-mono font-semibold text-foreground">{lookup.matricNumber}</span> belongs to{' '}
+                      <span className="font-semibold text-foreground">{lookup.expectedName}</span> on the voter register, but someone has already set up an account with it.
+                    </p>
+                    <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                      If this is your matric and you didn&apos;t claim it, file a dispute below. The electoral committee will revoke the fraudulent claim and free the matric for you.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="dispute-name" className="text-sm font-medium">
+                        Your full name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="dispute-name"
+                        placeholder="As it appears on the register"
+                        value={disputeName}
+                        onChange={(e) => setDisputeName(e.target.value)}
+                        className="h-10 rounded-xl"
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="dispute-contact" className="text-sm font-medium">
+                        Contact <span className="text-muted-foreground font-normal">(email or WhatsApp)</span>
+                      </Label>
+                      <Input
+                        id="dispute-contact"
+                        placeholder="So we can reach you"
+                        value={disputeContact}
+                        onChange={(e) => setDisputeContact(e.target.value)}
+                        className="h-10 rounded-xl"
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="dispute-reason" className="text-sm font-medium">
+                        What happened? <span className="text-red-500">*</span>
+                      </Label>
+                      <textarea
+                        id="dispute-reason"
+                        placeholder="e.g. I just tried to claim my matric and found it was already taken. I did not authorise anyone to use my matric."
+                        value={disputeReason}
+                        onChange={(e) => setDisputeReason(e.target.value)}
+                        rows={3}
+                        disabled={loading}
+                        className="w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="h-12 w-full rounded-xl text-base font-semibold"
+                    onClick={handleFileDispute}
+                    disabled={loading || !disputeName.trim() || disputeReason.trim().length < 10}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Filing dispute…
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="size-4" />
+                        File dispute
+                      </>
+                    )}
+                  </Button>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <button
+                      type="button"
+                      onClick={handleReset}
+                      className="font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      ← Try a different matric
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onSwitchToSignIn}
+                      className="font-semibold text-primary hover:underline"
+                    >
+                      Sign in instead
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center text-center py-6">
+                  <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20">
+                    <CheckCircle2 className="size-8" />
+                  </div>
+                  <h3 className="font-display text-xl font-bold tracking-tight">
+                    Dispute filed
+                  </h3>
+                  <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                    The electoral committee has been notified. They&apos;ll review the claim on{' '}
+                    <span className="font-mono font-semibold text-foreground">{lookup.matricNumber}</span> and revoke it if it&apos;s fraudulent.
+                  </p>
+                  <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                    Check back in a few minutes — once the matric is freed, you can claim it from the start.
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-5 h-10 rounded-xl"
+                    onClick={handleReset}
+                  >
+                    <RotateCcw className="size-4" />
+                    Back to start
+                  </Button>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
