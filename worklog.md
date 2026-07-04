@@ -1208,3 +1208,50 @@ Stage Summary:
 - New npm dep: fflate (for .docx zip extraction)
 - Test data: 113 400L Maths Ed students in allowlist (includes 1 carryover from 2013, 1 from 2019, 9 direct entry from 2023)
 - Next steps: user collects remaining 19 attendance lists from class reps, uploads via admin panel; test full flow on live site after Render deploys
+
+---
+Task ID: LIVE-ALLOWLIST-FIX
+Agent: main (Z.ai Code)
+Task: User reported that matric lookup "FAILED" on live site — fix the root cause and verify the claim flow works end-to-end on https://ulsesa.onrender.com/
+
+Work Log:
+- User tested one of the matrics from the 400L Maths Ed attendance list on the live site and it returned "Failed to verify matric number"
+- Reproduced: `curl -X POST https://ulsesa.onrender.com/api/auth/claim -d '{"matricNumber":"210313001"}'` → 500 `{"error":"Failed to verify matric number"}`
+- Diagnosed: the claim API hits `db.matricAllowlist.findUnique()` which throws because the `MatricAllowlist` table DOES NOT EXIST on the live Turso DB. Root cause: the Prisma schema in commit 5f3b275 added `MatricAllowlist` + `Dispute` models, but Render's deploy pipeline only runs `prisma generate` (via postinstall) — it never runs `prisma db push`. So new tables added to schema.prisma never propagate to production.
+- Confirmed via admin-only `/api/admin/allowlist` endpoint: returned `{"error":"Failed to fetch allowlist"}` (table doesn't exist → query throws)
+- Solution: built a self-contained, idempotent admin-only migration endpoint at `/api/admin/migrate` (POST) that runs raw SQL through `db.$executeRaw` to:
+    1. CREATE TABLE IF NOT EXISTS MatricAllowlist (id, matricNumber, fullName, programme, level, cohort, isClaimed, claimedAt, claimedByStudentId, uploadBatch, uploadedAt)
+    2. CREATE TABLE IF NOT EXISTS Dispute (id, matricNumber, expectedName, reporterName, reporterContact, reason, status, accusedStudentId, createdAt, resolvedAt, resolvedBy, resolutionNote)
+    3. ALTER TABLE Student ADD COLUMN deviceFingerprint TEXT (try/catch — no-op if column already exists, matching SQLite's "duplicate column" benign error)
+    4. ALTER TABLE Student ADD COLUMN claimIp TEXT (same pattern)
+    5. CREATE UNIQUE INDEX IF NOT EXISTS on MatricAllowlist.matricNumber
+    6. CREATE UNIQUE INDEX IF NOT EXISTS on MatricAllowlist.claimedByStudentId
+    7. CREATE INDEX IF NOT EXISTS on Dispute.status + Dispute.matricNumber
+    8. If allowlist is empty → seed the 113 400L Maths Ed students
+- Also extracted the 113-student roster into `src/lib/rosters/maths-400l.ts` so both `prisma/seed-allowlist.ts` (local dev) and the new migrate endpoint share one source of truth
+- Committed (86a4a65) + pushed → Render auto-deployed
+- Logged in as admin on live (`admin` / `ulsesa-admin-2026`), obtained JWT, hit `POST /api/admin/migrate` with `x-admin-token` header
+- Migration returned `{"ok": true, "finalAllowlistCount": 113, "steps": [...]}` — all 10 steps green, all 113 students inserted
+- Verified claim API now works on live:
+    - `210313001` (normal admit) → `OGUNDIPE INIOLUWA DANIEL` ✓
+    - `230313501` (Direct Entry) → `SULAIMAN KHADIJAH OMOLOLA` ✓
+    - `130313017` (carryover from 2013) → `ILUYOMADE OMOKOLADE OLUWATOSIN` ✓
+    - `999999999` (fake) → proper 404 with full explanatory error ✓
+- Browser-verified the full claim UX on https://ulsesa.onrender.com/ via agent-browser:
+    - Clicked "Sign In" → auth view loads with "Claim Account" tab active ✓
+    - Typed `210313001` → clicked "Check my matric" → step 2 shows "We found you on the register: OGUNDIPE INIOLUWA DANIEL · Mathematics Education · 400 Level · 210313001" with "Yes, that's me — continue" / "That's not me" / "Use a different matric" buttons ✓
+    - Went back, typed `999999999` → inline error: "This matric number is not in the ULSESA voter register. Only students whose names appear on submitted class attendance lists can vote..." ✓
+- Lint clean (0 errors, 0 warnings)
+
+Stage Summary:
+- ROOT CAUSE: Render deploys `prisma generate` only, never `prisma db push`. The allowlist schema added in commit 5f3b275 never reached the live Turso DB. Fixed by adding an idempotent admin-only migration endpoint that runs the DDL through raw SQL.
+- Live site now fully functional: students can type their matric, see their name from the attendance list, and continue to set a password. The 113 400L Maths Ed students are now claimable on production.
+- Files created (2): `src/app/api/admin/migrate/route.ts` (admin-only POST that creates tables/columns/indexes + seeds; admin-only GET for diagnostics), `src/lib/rosters/maths-400l.ts` (113-student roster shared by seed script + migrate endpoint)
+- Committed + pushed: `86a4a65 feat(admin): add /api/admin/migrate endpoint to bootstrap live Turso DB`
+- Migration run once on production → 113 students in allowlist, 0 errors, 0 skipped
+
+Unresolved / risks:
+- The migrate endpoint is still live and callable by admins. It's idempotent so safe to re-run, but consider gating it behind a one-time flag or removing it after all attendance lists are uploaded. For now it's a useful safety net if more schema changes need to be pushed.
+- 19 other cohort attendance lists (Biology Ed, Chemistry Ed, Integrated Science Ed, Physics Ed, Maths Ed 100L/200L/300L) still need to be collected and uploaded by class reps via the admin Voter Register UI. Each upload will be a separate batch.
+- Standing items: Gmail SMTP creds in Render env (no longer needed for OTP — may remove), git commit of any remaining accumulated work.
+- Recommended next step: have the user test the full register flow (claim → set password → vote) with a real matric from the list. The browser test only went as far as the name-confirmation step to avoid claiming a real student's account on production.
