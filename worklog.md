@@ -1173,3 +1173,38 @@ Unresolved / risks:
 - Dev server was not running at the time of this task (curl to :3000 connection-refused); validated via `bun run lint` only. Browser QA pending next dev-server restart.
 - Test data state: unchanged. Recommend testing the upload flow with a real attendance list .docx after the dev server is restarted.
 
+
+---
+Task ID: ALLOWLIST-VOTING-SYSTEM
+Agent: main-orchestrator
+Task: Replace email OTP with matric allowlist + device fingerprint + dispute queue for ULSESA election
+
+Work Log:
+- Analyzed 400L Maths Ed attendance list (113 students) — found carryovers (13xxx, 19xxx), direct entry (23xxx 50x serials), and 20 serial gaps (dropouts)
+- Determined that "range-based" matric validation is mathematically broken (naive range rejects 11 real students, wide range accepts 3887 fakes)
+- Designed allowlist-based system: class reps submit attendance lists (matric + name only), students self-register on election day
+- Dropped email OTP entirely (Gmail 500/day cap, Resend 100/day free — can't handle 2000 students)
+- Replaced with: matric allowlist + device fingerprint (one claim per device) + dispute queue (real student reports fraud → admin revokes)
+- Prisma schema: added MatricAllowlist model (matric, name, programme, level, isClaimed, claimedByStudentId), Dispute model (matricNumber, expectedName, reporterName, reason, status, accusedStudentId), added deviceFingerprint + claimIp to Student
+- Built device-fingerprint.ts: UUID in localStorage + cookie, one claim per device
+- Rewrote /api/auth/claim: checks MatricAllowlist, returns name for confirmation or alreadyClaimed flag
+- Built /api/auth/register: validates matric in allowlist + unclaimed, checks device fingerprint uniqueness, creates Student (auto-verified), marks allowlist entry as claimed, sets auth cookie
+- Built /api/disputes: student files fraud report when matric already claimed
+- Built /api/admin/allowlist: GET (paginated list + stats), DELETE (remove entry)
+- Built /api/admin/allowlist/upload: parses .docx (via fflate unzip + XML extraction), .csv, .txt — extracts 9-digit matrics + names, upserts into allowlist
+- Built /api/admin/disputes: GET (list disputes), POST (revoke claim = delete Student + free allowlist, or dismiss)
+- Rewrote auth-view.tsx claim flow (1792 → 1251 lines): 3-step flow (matric → confirm name → set password), dispute sub-flow, password strength meter, optional email/phone (no OTP)
+- Delegated admin UI to full-stack-developer subagent: built Voter Register section (stats, upload panel, search/filter, paginated table, cohort breakdown) + Disputes section (stats, status tabs, dispute cards, revoke/dismiss with AlertDialog)
+- Fixed pre-existing TypeScript bug: moved edit-dates state + functions from DashboardSection to ElectionSection (where the UI actually lives)
+- Fixed getAdminFromToken auth pattern (takes 0 args, reads from cookie/header)
+- Fixed Prisma groupBy _sum boolean issue (SQLite doesn't support _sum on booleans — used count with where filter instead)
+- Seeded 113 students from 400L Maths Ed attendance list into allowlist
+- Verified via API tests: claim (✅ returns name from allowlist), register (✅ creates student, sets cookie, auto-verified), already-claimed detection (✅), lint clean (0 errors), tsc clean (0 errors)
+- Committed (5f3b275) and pushed to origin/main
+
+Stage Summary:
+- Files created: src/lib/device-fingerprint.ts, src/app/api/auth/register/route.ts, src/app/api/admin/allowlist/route.ts, src/app/api/admin/allowlist/upload/route.ts, src/app/api/admin/disputes/route.ts, src/app/api/disputes/route.ts, prisma/seed-allowlist.ts
+- Files modified: prisma/schema.prisma (new models), src/app/api/auth/claim/route.ts (rewritten), src/components/views/auth-view.tsx (rewritten claim flow), src/components/views/admin-view.tsx (+1319 LOC for allowlist + disputes admin UI)
+- New npm dep: fflate (for .docx zip extraction)
+- Test data: 113 400L Maths Ed students in allowlist (includes 1 carryover from 2013, 1 from 2019, 9 direct entry from 2023)
+- Next steps: user collects remaining 19 attendance lists from class reps, uploads via admin panel; test full flow on live site after Render deploys
