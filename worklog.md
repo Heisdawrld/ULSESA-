@@ -1483,3 +1483,50 @@ Stage Summary:
 - Election + admin data seeded for QA.
 - "Claim Account" labels cleaned up to "Sign In".
 - What's NOT yet tested: admin login + admin views, the "Can't log in?" WhatsApp escape hatch (UI only, not a full flow test), mobile responsiveness.
+
+---
+Task ID: 10 (password rotation + voteCount recompute — the two flagged bugs)
+Agent: main-orchestrator
+Task: Fix the two flags raised in the dispute-fraud scenario: (A) imposter can re-login after revoke because the password is deterministic/public; (B) Candidate.voteCount isn't decremented when votes are cascade-deleted, so public results show wrong tallies.
+
+Work Log:
+- Added `passwordRotatedAt DateTime?` to MatricAllowlist in prisma/schema.prisma. NULL = rule-based password (matric + last4 surname); non-NULL = a custom one-time password was set at this time. Ran `bun run db:push` + `bunx prisma generate` + dev server restart to pick up the new client.
+- Created POST /api/admin/allowlist/[matric]/rotate-password/route.ts:
+  - Two modes via body `{ action: "rotate" | "reset" }` (default: rotate).
+  - "rotate": generates an 8-char random password from a safe alphabet (no 0/o/1/l), formatted as `xxxx-xxxx` for readability over WhatsApp/phone. Hashes it with bcrypt, stores on the allowlist entry (overriding the rule-based hash), sets `passwordRotatedAt = now()`, audit-logs as `rotate_password`. Returns the PLAINTEXT exactly once.
+  - "reset": restores the rule-based hash via `generatePlainPassword(matric, fullName)`, clears `passwordRotatedAt`, audit-logs as `reset_password_to_rule`. Returns the rule-based plaintext for admin confirmation.
+  - Auth-gated via `getAdminFromToken()`.
+- Created /src/lib/vote-counts.ts:
+  - `recomputeElectionVoteCounts(electionId)`: fetches all positions + candidates for an election with their live `_count.votes`, then batch-updates every `Candidate.voteCount` in a single `$transaction`. Returns the number of candidates refreshed.
+  - `recomputeManyElectionVoteCounts(electionIds)`: convenience wrapper that dedupes + runs them in parallel.
+  - Documented WHY this exists: the denormalized counter is +1'd on vote cast but never decremented on vote deletion (cascade-delete from dispute revoke), causing inflated public results.
+- Updated /api/admin/disputes POST (revoke action):
+  - BEFORE deleting the accused Student, captures `Vote.electionId` rows for that student.
+  - AFTER the cascade-delete, calls `recomputeManyElectionVoteCounts(electionIds)` to refresh the denormalized counters for every affected election.
+  - Updated the success message to mention vote removal + tally recompute.
+  - Added a `tip` field in the response pointing the admin to the Rotate Password button so the imposter can't re-login.
+- Updated /api/admin/allowlist GET to include `passwordRotatedAt` in the select so the admin UI can show a "Custom PW" badge.
+- Updated /src/components/views/admin-view.tsx AllowlistSection:
+  - Added `passwordRotatedAt` to the `AllowlistEntry` type.
+  - Added rotate-password state: `rotatingMatric`, `rotatingEntry`, `rotatedPassword`, `rotatePending`, `copied`.
+  - Added handlers: `handleRotatePassword()` (calls rotate endpoint, stores returned plaintext), `handleResetPassword()` (calls reset endpoint), `copyToClipboard()`, `openWhatsAppWithPassword()` (builds a pre-filled WhatsApp message with the student's name + new password).
+  - Added a "Rotate" button (KeyRound icon, cyan accent) to every row in the actions column — always visible regardless of claimed status.
+  - Added a "Custom PW" amber badge next to the Claimed/Unclaimed status badge when `passwordRotatedAt` is set.
+  - Added a Dialog with two states:
+    - Pre-rotation: explains what happens, shows warnings if the account is claimed (active sessions not killed — revoke first) or if a custom password already exists. Buttons: Cancel, Reset to default (only if custom PW exists), Generate password.
+    - Post-rotation: shows the one-time password in a large monospace code block with a Copy button, a "Open WhatsApp with pre-filled message" button (green WhatsApp brand color), and an "I've sent it — close" button. Amber warning: "This password is shown only once."
+- Verified end-to-end via curl + agent-browser:
+  1. Admin login → rotate password for matric 210313001 → got custom password `r4ne-jwub`.
+  2. Login with custom password → 200 OK. Login with old rule-based password → rejected. ✅
+  3. Reset → rule-based password works again. ✅
+  4. Student 210313001 voted for Aisha Bello (President) → voteCount = 1.
+  5. Filed dispute → admin revoked → Aisha Bello voteCount dropped to 0. ✅ (recompute works)
+  6. Verified in admin UI: Rotate button visible, dialog shows password + Copy + WhatsApp buttons, "Custom PW" badge appears after rotation. ✅
+  7. Lint clean (0 errors / 0 warnings). Dev log clean.
+- Also ran a one-off recompute script to clean up stale voteCounts from pre-fix test data (10 candidates refreshed).
+
+Stage Summary:
+- **Flag A (imposter re-login) FIXED**: Admin can now generate a custom one-time password via the Voter Register tab. The rule-based password stops working immediately. The plaintext is shown once with a Copy button + a "Open WhatsApp" button that pre-fills a message to send to the real student. A "Reset to default" option restores the rule-based password when the situation is resolved.
+- **Flag B (stale voteCount) FIXED**: The dispute revoke flow now captures the accused student's elections before deletion and recomputes `Candidate.voteCount` from live `Vote` rows after the cascade-delete. Public results stay accurate after a revocation.
+- The recommended admin flow for "student reports account was claimed by someone else": (1) Revoke the dispute → deletes fraudulent Student + cascades votes + recomputes tallies. (2) Open Voter Register → click Rotate on that matric → give the new password to the real student via WhatsApp. The imposter's old password is dead, their session is dead (Student row deleted), and the real student can now log in and vote.
+- Known limitation: rotating the password does NOT kill existing JWT sessions (7-day expiry). If the admin rotates WITHOUT revoking (e.g. for a "forgot password" case), the current holder's active session stays alive until it expires. For fraud cases, always revoke first (which deletes the Student → session can no longer authenticate).

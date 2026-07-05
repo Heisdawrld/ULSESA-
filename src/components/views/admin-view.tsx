@@ -211,6 +211,9 @@ interface AllowlistEntry {
   isClaimed: boolean
   claimedAt: string | null
   uploadedAt: string
+  // Non-null when an admin has generated a custom one-time password via
+  // /api/admin/allowlist/[matric]/rotate-password. Lets the UI show a badge.
+  passwordRotatedAt: string | null
 }
 
 interface CohortStat {
@@ -3200,6 +3203,16 @@ function AllowlistSection() {
   const [deletingMatric, setDeletingMatric] = useState<string | null>(null)
   const [deletePending, setDeletePending] = useState(false)
 
+  // Password rotation
+  // `rotatingMatric` holds the matric we're rotating for (drives the dialog).
+  // `rotatedPassword` is the plaintext returned ONCE by the backend — shown in
+  // the dialog with a Copy button, then cleared when the dialog closes.
+  const [rotatingMatric, setRotatingMatric] = useState<string | null>(null)
+  const [rotatingEntry, setRotatingEntry] = useState<AllowlistEntry | null>(null)
+  const [rotatedPassword, setRotatedPassword] = useState<string | null>(null)
+  const [rotatePending, setRotatePending] = useState(false)
+  const [copied, setCopied] = useState(false)
+
   const fetchAllowlist = useCallback(
     async (silent = false) => {
       if (silent) {
@@ -3302,6 +3315,79 @@ function AllowlistSection() {
     } finally {
       setDeletePending(false)
     }
+  }
+
+  // ── Password rotation ──────────────────────────────────────────────────
+  // Generates a custom one-time password on the backend, which overrides the
+  // rule-based (matric + last4 surname) hash. The plaintext is returned ONCE
+  // and shown in a dialog for the admin to copy + send to the student via
+  // WhatsApp. After the dialog closes, the plaintext is gone for good.
+  async function handleRotatePassword() {
+    if (!rotatingMatric) return
+    setRotatePending(true)
+    setCopied(false)
+    try {
+      const res = await api.post<{
+        success: boolean
+        action: string
+        password: string
+        matricNumber: string
+        fullName: string
+        message: string
+      }>(`/admin/allowlist/${rotatingMatric}/rotate-password`, {
+        action: 'rotate',
+      })
+      setRotatedPassword(res.password)
+      toast.success('Custom password generated — send it to the student now.')
+      void fetchAllowlist(true)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to rotate password'
+      )
+    } finally {
+      setRotatePending(false)
+    }
+  }
+
+  // Restore the rule-based password (matric + last4 of surname).
+  async function handleResetPassword() {
+    if (!rotatingMatric) return
+    setRotatePending(true)
+    try {
+      await api.post(`/admin/allowlist/${rotatingMatric}/rotate-password`, {
+        action: 'reset',
+      })
+      toast.success(
+        'Password restored to the rule-based scheme (matric + last 4 letters of surname).'
+      )
+      setRotatedPassword(null)
+      setRotatingMatric(null)
+      setRotatingEntry(null)
+      void fetchAllowlist(true)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to reset password'
+      )
+    } finally {
+      setRotatePending(false)
+    }
+  }
+
+  async function copyToClipboard(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      toast.success('Password copied to clipboard')
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      toast.error('Could not copy — select the text and copy manually')
+    }
+  }
+
+  function openWhatsAppWithPassword(entry: AllowlistEntry, password: string) {
+    const msg = `Hi ${entry.fullName}, your ULSESA portal password has been reset.\n\nMatric: ${entry.matricNumber}\nNew password: ${password}\n\nPlease log in at the portal and change nothing — this password is yours alone. Do not share it with anyone.`
+    const url = `https://wa.me/?text=${encodeURIComponent(msg)}`
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   // Aggregate totals from stats
@@ -3659,38 +3745,65 @@ function AllowlistSection() {
                       </TableCell>
                       <TableCell>{e.level}</TableCell>
                       <TableCell>
-                        {e.isClaimed ? (
-                          <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                            Claimed
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="secondary"
-                            className="text-muted-foreground"
-                          >
-                            Unclaimed
-                          </Badge>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {e.isClaimed ? (
+                            <Badge className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                              Claimed
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="secondary"
+                              className="text-muted-foreground"
+                            >
+                              Unclaimed
+                            </Badge>
+                          )}
+                          {e.passwordRotatedAt && (
+                            <Badge
+                              title={`Custom password set ${formatRelativeTime(e.passwordRotatedAt)}`}
+                              className="border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            >
+                              <KeyRound className="mr-1 size-3" />
+                              Custom PW
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
                         {e.claimedAt ? formatDateTime(e.claimedAt) : '—'}
                       </TableCell>
                       <TableCell className="text-right">
-                        {e.isClaimed ? (
-                          <span className="text-xs text-muted-foreground">
-                            —
-                          </span>
-                        ) : (
+                        <div className="flex items-center justify-end gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-red-600 hover:bg-red-500/10 hover:text-red-600"
-                            onClick={() => setDeletingMatric(e.matricNumber)}
-                            aria-label={`Remove ${e.matricNumber}`}
+                            className="text-cyan-700 hover:bg-cyan-500/10 hover:text-cyan-700 dark:text-cyan-400"
+                            onClick={() => {
+                              setRotatingMatric(e.matricNumber)
+                              setRotatingEntry(e)
+                              setRotatedPassword(null)
+                              setCopied(false)
+                            }}
+                            aria-label={`Rotate password for ${e.matricNumber}`}
+                            title="Generate a custom one-time password"
                           >
-                            <Trash2 className="size-4" />
+                            <KeyRound className="size-4" />
+                            <span className="ml-1 hidden lg:inline">
+                              Rotate
+                            </span>
                           </Button>
-                        )}
+                          {!e.isClaimed && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:bg-red-500/10 hover:text-red-600"
+                              onClick={() => setDeletingMatric(e.matricNumber)}
+                              aria-label={`Remove ${e.matricNumber}`}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -3837,6 +3950,194 @@ function AllowlistSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rotate password dialog */}
+      <Dialog
+        open={!!rotatingMatric}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRotatingMatric(null)
+            setRotatingEntry(null)
+            setRotatedPassword(null)
+            setCopied(false)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="size-5 text-cyan-600 dark:text-cyan-400" />
+              {rotatedPassword ? 'Password generated' : 'Rotate password?'}
+            </DialogTitle>
+            <DialogDescription>
+              {rotatingEntry && (
+                <>
+                  For{' '}
+                  <span className="font-medium text-foreground">
+                    {rotatingEntry.fullName}
+                  </span>{' '}
+                  (
+                  <span className="font-mono">
+                    {rotatingEntry.matricNumber}
+                  </span>
+                  )
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {rotatedPassword ? (
+            // ── Post-rotation: show the one-time password ──────────────────
+            <div className="space-y-4">
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+                <p className="flex items-start gap-2">
+                  <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+                  <span>
+                    This password is shown{' '}
+                    <strong>only once</strong>. Copy it and send it to the
+                    student via WhatsApp now. You will not be able to retrieve
+                    it again.
+                  </span>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  New one-time password
+                </Label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 rounded-md border bg-muted px-3 py-2.5 font-mono text-lg font-bold tracking-widest">
+                    {rotatedPassword}
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void copyToClipboard(rotatedPassword)}
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCircle2 className="size-4 text-emerald-600" />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="size-4" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button
+                  className="bg-[#25D366] text-white hover:bg-[#1fb455]"
+                  onClick={() =>
+                    rotatingEntry &&
+                    openWhatsAppWithPassword(rotatingEntry, rotatedPassword)
+                  }
+                >
+                  <ExternalLink className="size-4" />
+                  Open WhatsApp with pre-filled message
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setRotatingMatric(null)
+                    setRotatingEntry(null)
+                    setRotatedPassword(null)
+                    setCopied(false)
+                  }}
+                >
+                  I&apos;ve sent it — close
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                The student&apos;s previous password no longer works. They must
+                use this new one to log in.
+              </p>
+            </div>
+          ) : (
+            // ── Pre-rotation: confirm ─────────────────────────────────────
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                This generates a random one-time password that overrides the
+                rule-based password (
+                <span className="font-mono">matric + last 4 of surname</span>).
+                The student&apos;s previous password will stop working
+                immediately.
+              </p>
+
+              {rotatingEntry?.isClaimed && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+                  <p className="flex items-start gap-2">
+                    <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+                    <span>
+                      This account is currently claimed. Rotating the password
+                      will stop the current holder from logging back in — useful
+                      if the account was fraudulently claimed. Active sessions
+                      are not killed instantly; revoke the claim via the
+                      Disputes panel first if you need to end them immediately.
+                    </span>
+                  </p>
+                </div>
+              )}
+
+              {rotatingEntry?.passwordRotatedAt && (
+                <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 p-3 text-sm text-cyan-800 dark:text-cyan-300">
+                  A custom password was already set{' '}
+                  {formatRelativeTime(rotatingEntry.passwordRotatedAt)}.
+                  Rotating again will replace it.
+                </div>
+              )}
+
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setRotatingMatric(null)
+                    setRotatingEntry(null)
+                  }}
+                  disabled={rotatePending}
+                >
+                  Cancel
+                </Button>
+                {rotatingEntry?.passwordRotatedAt && (
+                  <Button
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    disabled={rotatePending}
+                    onClick={() => void handleResetPassword()}
+                  >
+                    {rotatePending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
+                    Reset to default
+                  </Button>
+                )}
+                <Button
+                  className="bg-cyan-600 text-white hover:bg-cyan-700"
+                  disabled={rotatePending}
+                  onClick={() => void handleRotatePassword()}
+                >
+                  {rotatePending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Generating…
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound className="size-4" /> Generate password
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

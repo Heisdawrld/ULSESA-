@@ -63,6 +63,13 @@ model MatricAllowlist {
   // Students log in directly with this — no claim/set-password flow.
   // NULL only for entries uploaded before this field existed (backfilled by /api/admin/migrate).
   passwordHash String?
+  // When an admin generates a custom one-time password for this matric
+  // (via /api/admin/allowlist/[matric]/rotate-password), this timestamp is set.
+  // NULL = the passwordHash follows the rule-based scheme.
+  // Non-NULL = a custom password was last set at this time (overrides the rule).
+  // The login route just checks whatever hash is stored, so this field is
+  // informational — it lets the admin UI show a "custom password" badge.
+  passwordRotatedAt DateTime?
 
   student      Student? @relation(fields: [claimedByStudentId], references: [id], onDelete: SetNull)
 }

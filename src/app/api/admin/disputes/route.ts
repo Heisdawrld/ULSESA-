@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAdminFromToken } from '@/lib/auth/server-auth'
+import { recomputeManyElectionVoteCounts } from '@/lib/vote-counts'
 
 /**
  * GET /api/admin/disputes
@@ -111,6 +112,18 @@ export async function POST(request: Request) {
           select: { id: true, matricNumber: true, hasVoted: true, fullName: true },
         })
         if (accused) {
+          // Capture which elections this student voted in BEFORE deleting them,
+          // so we can recompute Candidate.voteCount for those elections after
+          // the cascade-delete. Without this, the denormalized counter stays
+          // inflated and the public Results page shows wrong tallies.
+          const accusedVotes = await db.vote.findMany({
+            where: { studentId: accused.id },
+            select: { electionId: true },
+          })
+          const electionIds = [
+            ...new Set(accusedVotes.map((v) => v.electionId)),
+          ]
+
           await db.verificationLog.create({
             data: {
               studentId: accused.id,
@@ -119,6 +132,13 @@ export async function POST(request: Request) {
             },
           })
           await db.student.delete({ where: { id: accused.id } })
+
+          // Recompute voteCounts for every affected election. The Votes were
+          // cascade-deleted above; this refreshes the denormalized counter so
+          // the public results reflect the real (post-revocation) tally.
+          if (electionIds.length > 0) {
+            await recomputeManyElectionVoteCounts(electionIds)
+          }
         }
         // Free the allowlist entry
         await db.matricAllowlist.updateMany({
@@ -146,13 +166,14 @@ export async function POST(request: Request) {
           adminId: admin.id,
           action: 'dispute_revoke',
           target: dispute.matricNumber,
-          details: `Revoked claim on ${dispute.matricNumber} (${dispute.expectedName}). Dispute filed by ${dispute.reporterName}.`,
+          details: `Revoked claim on ${dispute.matricNumber} (${dispute.expectedName}). Dispute filed by ${dispute.reporterName}. Votes cast by the revoked account have been removed and result tallies recomputed.`,
         },
       })
 
       return NextResponse.json({
         success: true,
-        message: `Claim revoked. The matric ${dispute.matricNumber} is now free for the legitimate student to re-claim.`,
+        message: `Claim revoked. The matric ${dispute.matricNumber} is now free for the legitimate student to re-claim. Any votes cast by the fraudulent account have been removed and the result tallies recomputed.`,
+        tip: `To stop the imposter from logging back in with the rule-based password, open the Voter Register and click "Rotate Password" on ${dispute.matricNumber}. Give the new password to the legitimate student via WhatsApp.`,
       })
     } else {
       // dismiss

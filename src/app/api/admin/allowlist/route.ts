@@ -59,6 +59,9 @@ export async function GET(request: Request) {
           isClaimed: true,
           claimedAt: true,
           uploadedAt: true,
+          // Lets the admin UI show a "custom password" badge for entries where
+          // the rule-based password was overridden via rotate-password.
+          passwordRotatedAt: true,
         },
       }),
       db.matricAllowlist.count({ where }),
