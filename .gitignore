@@ -77,3 +77,6 @@ tool-results/
 
 # Persistent memory file — contains secrets, NEVER commit
 MEMORY.md
+
+# One-off scripts (not committed)
+scripts/
