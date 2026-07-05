@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getAdminFromToken } from '@/lib/auth/server-auth'
+import { getAdminFromToken, hashPassword } from '@/lib/auth/server-auth'
+import { generatePlainPassword } from '@/lib/password-generator'
 import { MATHS_ED_400L } from '@/lib/rosters/maths-400l'
 
 /**
@@ -111,6 +112,14 @@ export async function POST(request: Request) {
     return 'column added'
   })
 
+  // ── 3b. Add passwordHash to MatricAllowlist ───────────────────────────
+  // Pre-set password scheme: matric + last4(surname). Hash computed at
+  // upload time. Existing entries get backfilled in step 6b below.
+  await run('MatricAllowlist.passwordHash column', async () => {
+    await db.$executeRaw`ALTER TABLE "MatricAllowlist" ADD COLUMN "passwordHash" TEXT`
+    return 'column added'
+  })
+
   // ── 4. Indexes ─────────────────────────────────────────────────────────
   await run('unique index on MatricAllowlist.matricNumber', async () => {
     await db.$executeRaw`
@@ -167,6 +176,7 @@ export async function POST(request: Request) {
           skipped++
           continue
         }
+        const passwordHash = await hashPassword(generatePlainPassword(matric, name))
         await db.matricAllowlist.create({
           data: {
             matricNumber: matric,
@@ -175,6 +185,7 @@ export async function POST(request: Request) {
             level: '400',
             cohort: 'Mathematics Education',
             uploadBatch: batchId,
+            passwordHash,
           },
         })
         inserted++
@@ -189,6 +200,32 @@ export async function POST(request: Request) {
       message: `skipped — allowlist already has ${allowlistCount} entries`,
     })
   }
+
+  // ── 6b. Backfill passwordHash for existing allowlist entries ──────────
+  // Any entry that predates the passwordHash column will have NULL. Compute
+  // and store the hash using the ULSESA rule. Idempotent: entries that
+  // already have a hash are skipped.
+  await run('backfill passwordHash for existing allowlist entries', async () => {
+    const needHash = await db.matricAllowlist.findMany({
+      where: { passwordHash: null },
+      select: { id: true, matricNumber: true, fullName: true },
+    })
+    if (needHash.length === 0) {
+      return 'all entries already have a passwordHash'
+    }
+    let updated = 0
+    for (const entry of needHash) {
+      const passwordHash = await hashPassword(
+        generatePlainPassword(entry.matricNumber, entry.fullName)
+      )
+      await db.matricAllowlist.update({
+        where: { id: entry.id },
+        data: { passwordHash },
+      })
+      updated++
+    }
+    return `backfilled ${updated} entries (of ${needHash.length} needing it)`
+  })
 
   // ── 7. Final count ─────────────────────────────────────────────────────
   let finalCount = 0

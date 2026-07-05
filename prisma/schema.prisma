@@ -58,6 +58,11 @@ model MatricAllowlist {
   claimedByStudentId String? @unique // links to Student once claimed
   uploadBatch  String   // groups entries from the same upload
   uploadedAt   DateTime @default(now())
+  // Pre-set password hash, computed at upload time using the ULSESA rule:
+  //   matricNumber + last4(lowercase(surname))
+  // Students log in directly with this — no claim/set-password flow.
+  // NULL only for entries uploaded before this field existed (backfilled by /api/admin/migrate).
+  passwordHash String?
 
   student      Student? @relation(fields: [claimedByStudentId], references: [id], onDelete: SetNull)
 }

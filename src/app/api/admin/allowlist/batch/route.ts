@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getAdminFromToken } from '@/lib/auth/server-auth'
+import { getAdminFromToken, hashPassword } from '@/lib/auth/server-auth'
+import { generatePlainPassword } from '@/lib/password-generator'
 
 /**
  * POST /api/admin/allowlist/batch
@@ -135,6 +136,9 @@ export async function POST(request: Request) {
         })
         continue
       }
+      // Pre-compute the password hash using the ULSESA rule so the student
+      // can log in directly (no claim / set-password flow).
+      const passwordHash = await hashPassword(generatePlainPassword(matric, name))
       await db.matricAllowlist.create({
         data: {
           matricNumber: matric,
@@ -143,6 +147,7 @@ export async function POST(request: Request) {
           level,
           cohort,
           uploadBatch: batchId,
+          passwordHash,
         },
       })
       inserted++
