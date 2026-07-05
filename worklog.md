@@ -1647,3 +1647,48 @@ Stage Summary:
 - 3 commits pushed (voting-activity code + 2 worklog-only updates).
 - Production is in sync with local main.
 - READY for the user's next class list upload — the admin "Upload" button (POST /api/admin/allowlist/upload with mammoth .docx parser + roster-parser.ts) is live and will accept the roster once it arrives.
+
+---
+Task ID: maths-ed-y2-upload
+Agent: main-orchestrator
+Task: Determine the level of the uploaded "list of students in my level.docx" roster and upload it to production Turso DB.
+
+Work Log:
+- Source file: `upload/list of students in my level.docx`. Extracted text via mammoth → `upload/list-my-level.txt` (1478 chars, 38 logical records). Document title: "LIST OF STUDENTS IN MATHEMATICS EDUCATION 2024/25".
+- Determined level = **200 LEVEL (Year 2)** for the 2025/26 session, based on matric-pattern analysis:
+  - 35 UTME students with matrics `240313001`–`240313035` (admitted 2024/25 as 100-level, now in 200-level for 2025/26).
+  - 4 Direct Entry students with matrics `250313501, 509, 510, 511` (admitted 2025/26, DE starts at 200-level).
+  - Cross-checked against existing cohorts: Math Ed 400 = `220313xxx`+`2303135xx` DE; Math Ed 300 = `230313xxx`+`2403135xx` DE; Math Ed 200 = `240313xxx`+`2503135xx` DE ← matches this list. Pattern: Year-N cohort = UTME admitted (N−1) sessions ago + DE admitted this session.
+- Pre-processed the docx text (matric and name were on separate lines in the mammoth output) by writing a small joiner that pairs each 9-digit matric with the next non-empty line, producing `upload/maths-ed-y2.txt` with 38 single-line records.
+- Ran `scripts/preview-roster.ts` → 38 entries parsed, 0 duplicates, 0 skipped lines. Spot-checked edge cases:
+  - `Nehemiah God'sking Ikechukwu` → surname "Nehemiah" → password `240313014miah` ✓ (apostrophe stripped correctly)
+  - `Ibrahim-Shehu Kamila` → surname "Ibrahim-Shehu" → stripped to "ibrahimshehu" → password `250313025hehu` ✓ (hyphenated surname handled)
+  - `OLADIPUPO JAMIU OLUWADAMILARE` → password `250313501pupo` ✓ (uppercase handled)
+  - Gap noted: serial `240313016` is missing (jumps 015 → 017). Uploaded as-is.
+- Built `upload/maths-ed-y2.json` (38 entries).
+- Wrote `scripts/upload-maths-ed-y2.ts` (clone of upload-maths-ed-y3.ts with LEVEL='200', reads maths-ed-y2.json). Three-way upsert: insert / update-unclaimed / skip-claimed.
+- Ran the uploader against live Turso (env from `.env.render`):
+  - Inserted: 38 (all new)
+  - Updated: 0
+  - Skipped (claimed): 0
+  - Batch ID: `upload-mathematics-education-200-1783295773675`
+  - Maths Ed 200 cohort now: 38 entries
+  - Grand total allowlist entries now: 344 (was 306)
+- Ran `scripts/verify-all-passwords.ts` (bcrypt.compare for every entry against live Turso):
+  - Total entries : 344
+  - Verified OK   : 344
+  - Failed        : 0
+  - ALL 344 ACCOUNTS VERIFIED — every student can log in.
+
+Stage Summary:
+- **Mathematics Education · 200 Level** roster is LIVE on Turso. 38 new students can now log in with `matric + last4(surname)`.
+- Production voter register: **344 total across 6 active cohorts**:
+  - Biology Education · 200 = 73
+  - Mathematics Education · 200 = 38  ← NEW
+  - Mathematics Education · 300 = 82
+  - Mathematics Education · 400 = 112  (was 113; one fraudulent student was revoked in a prior fraud dispute)
+  - Physics Education · 300 = 17
+  - Physics Education · 400 = 22
+- Physics Education · 100 still ON HOLD (MHTML pairing issue, unresolved from prior session).
+- No code changes — pure data operation. No deploy or git push needed.
+- Artifacts: `scripts/upload-maths-ed-y2.ts`, `upload/list-my-level.txt`, `upload/maths-ed-y2.txt`, `upload/maths-ed-y2.json` (all gitignored except the script — which is a one-off uploader so left untracked by convention).
