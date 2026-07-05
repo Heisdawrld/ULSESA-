@@ -134,7 +134,7 @@ interface ResultsData {
   turnout: number
 }
 
-type Subview = 'home' | 'candidates' | 'vote' | 'results'
+type Subview = 'home' | 'candidates' | 'vote' | 'results' | 'turnout'
 
 // ============ Helpers ============
 function getInitials(name: string) {
@@ -613,6 +613,7 @@ export function ElectionsView() {
           {subview === 'candidates' && <CandidatesView />}
           {subview === 'vote' && <VoteFlow />}
           {subview === 'results' && <ResultsView />}
+          {subview === 'turnout' && <TurnoutView />}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -632,6 +633,7 @@ function SubViewNav({
     { id: 'candidates', label: 'Candidates', icon: Users },
     { id: 'vote', label: 'Vote', icon: Vote },
     { id: 'results', label: 'Results', icon: BarChart3 },
+    { id: 'turnout', label: 'Turnout', icon: TrendingUp },
   ]
   return (
     <div className="relative">
@@ -2046,6 +2048,233 @@ function ResultsView() {
 
       {/* Receipt verifier — anyone can confirm a vote was counted */}
       <ReceiptVerifierCard />
+    </div>
+  )
+}
+
+// ============ Turnout View (student-facing, privacy-safe) ============
+interface TurnoutVotedEntry {
+  maskedMatric: string
+  displayName: string
+  programme: string
+  level: string
+  votedAt: string | null
+}
+
+interface TurnoutData {
+  stats: { totalEligible: number; totalVoted: number; turnout: number }
+  cohorts: Array<{ label: string; total: number; voted: number; turnout: number }>
+  voted: TurnoutVotedEntry[]
+}
+
+function TurnoutView() {
+  const [data, setData] = useState<TurnoutData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await api.get<TurnoutData>('/elections/turnout')
+        if (!cancelled) setData(res)
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to load turnout'
+        )
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    // Auto-refresh every 30s so the list stays current during voting.
+    const interval = setInterval(() => void load(), 30000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-48 w-full rounded-2xl" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
+  if (!data) return null
+
+  const { stats, cohorts, voted } = data
+
+  return (
+    <div className="space-y-6">
+      {/* Hero turnout card */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <Card className="overflow-hidden rounded-2xl border-border/60">
+          <CardContent className="p-6 sm:p-8">
+            <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
+              {/* Big number */}
+              <div className="text-center sm:text-left">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <TrendingUp className="size-3.5" />
+                  Live Turnout
+                </div>
+                <p className="mt-1 font-display text-5xl font-bold text-primary sm:text-6xl">
+                  {stats.turnout.toFixed(1)}%
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {stats.totalVoted} of {stats.totalEligible} eligible students
+                  have voted
+                </p>
+              </div>
+              {/* Progress ring */}
+              <div className="relative ml-auto">
+                <svg className="size-28 -rotate-90" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    strokeWidth="8"
+                    className="stroke-muted/40"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    className="stroke-primary transition-all duration-700"
+                    strokeDasharray={`${(stats.turnout / 100) * 264} 264`}
+                  />
+                </svg>
+                <div className="absolute inset-0 grid place-items-center">
+                  <span className="font-display text-lg font-bold">
+                    {stats.totalVoted}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Cohort breakdown */}
+      {cohorts.length > 0 && (
+        <Card className="rounded-2xl border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-display">
+              <Users className="size-4 text-cyan-accent" />
+              By Cohort
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {cohorts.map((c, i) => (
+              <motion.div
+                key={c.label}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.05 * i }}
+                className="space-y-1"
+              >
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{c.label}</span>
+                  <span className="text-muted-foreground">
+                    {c.voted} / {c.total}{' '}
+                    <span className="text-xs">
+                      ({c.turnout.toFixed(0)}%)
+                    </span>
+                  </span>
+                </div>
+                <Progress value={c.turnout} className="h-2" />
+              </motion.div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Privacy note */}
+      <Card className="rounded-2xl border-border/60 bg-accent/30">
+        <CardContent className="flex items-start gap-3 p-4 pt-4">
+          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+            <Lock className="size-4" />
+          </div>
+          <div className="text-xs text-muted-foreground">
+            <p className="font-semibold text-foreground">
+              Why are matrics and surnames hidden?
+            </p>
+            <p className="mt-0.5">
+              Matric numbers are masked (first 4 digits only) and surnames are
+              hidden to protect your password — your login uses your matric +
+              last 4 letters of your surname. Only the admin can see full
+              details. Who you voted for is never shown to anyone.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Voted list */}
+      <Card className="rounded-2xl border-border/60">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-display">
+            <CheckCircle className="size-4 text-emerald-500" />
+            Who Has Voted
+            <Badge variant="secondary" className="ml-1">
+              {voted.length}
+            </Badge>
+          </CardTitle>
+          <CardDescription>
+            Students who have cast their ballot — most recent first.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {voted.length === 0 ? (
+            <div className="px-4 py-12 text-center">
+              <p className="text-sm text-muted-foreground">
+                No votes cast yet. Be the first to vote!
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-96 overflow-y-auto scrollbar-thin">
+              {voted.map((v, i) => (
+                <motion.div
+                  key={`${v.maskedMatric}-${i}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: Math.min(i * 0.02, 0.4) }}
+                  className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5 last:border-0"
+                >
+                  <div className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle className="size-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {v.displayName}
+                    </p>
+                    <p className="font-mono text-[11px] text-muted-foreground">
+                      {v.maskedMatric} · {v.programme} · Level {v.level}
+                    </p>
+                  </div>
+                  {v.votedAt && (
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {new Date(v.votedAt).toLocaleString(undefined, {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
+                    </span>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

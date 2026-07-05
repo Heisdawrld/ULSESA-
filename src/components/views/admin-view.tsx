@@ -125,6 +125,7 @@ type Section =
   | 'students'
   | 'verification'
   | 'election'
+  | 'voting-activity'
   | 'disputes'
   | 'audit'
   | 'settings'
@@ -599,6 +600,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: typeof Users }[] = [
   { id: 'students', label: 'Students', icon: Users },
   { id: 'verification', label: 'Verification', icon: ShieldCheck },
   { id: 'election', label: 'Election', icon: Vote },
+  { id: 'voting-activity', label: 'Voting Activity', icon: Activity },
   { id: 'disputes', label: 'Disputes', icon: AlertTriangle },
   { id: 'audit', label: 'Audit Logs', icon: ScrollText },
   { id: 'settings', label: 'Settings', icon: Settings },
@@ -2909,6 +2911,345 @@ function ElectionSection() {
   )
 }
 
+// ===================== Voting Activity Section =====================
+interface VotingActivityEntry {
+  matricNumber: string
+  fullName: string
+  programme: string
+  level: string
+  cohort: string
+  isClaimed: boolean
+  voteCount: number
+  firstVoteAt: string | null
+}
+
+interface VotingActivityStats {
+  totalEligible: number
+  totalVoted: number
+  totalClaimed: number
+  totalNotVoted: number
+  turnout: number
+}
+
+interface CohortTurnout {
+  label: string
+  total: number
+  voted: number
+  turnout: number
+}
+
+function VotingActivitySection() {
+  const [entries, setEntries] = useState<VotingActivityEntry[]>([])
+  const [stats, setStats] = useState<VotingActivityStats | null>(null)
+  const [cohorts, setCohorts] = useState<CohortTurnout[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<'all' | 'voted' | 'not-voted'>('all')
+
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
+    try {
+      const res = await api.get<{
+        entries: VotingActivityEntry[]
+        stats: VotingActivityStats
+        cohorts: CohortTurnout[]
+      }>('/admin/voting-activity')
+      setEntries(res.entries)
+      setStats(res.stats)
+      setCohorts(res.cohorts)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load voting activity'
+      )
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchData()
+    // Auto-refresh every 20s while the tab is open — same cadence as Election Control.
+    const interval = setInterval(() => void fetchData(true), 20000)
+    return () => clearInterval(interval)
+  }, [fetchData])
+
+  const filtered = useMemo(() => {
+    let result = entries
+    if (filter === 'voted') result = result.filter((e) => e.voteCount > 0)
+    else if (filter === 'not-voted')
+      result = result.filter((e) => e.voteCount === 0)
+    const q = search.trim().toLowerCase()
+    if (q) {
+      result = result.filter(
+        (e) =>
+          e.matricNumber.toLowerCase().includes(q) ||
+          e.fullName.toLowerCase().includes(q) ||
+          e.programme.toLowerCase().includes(q) ||
+          e.level.toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [entries, filter, search])
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-64 rounded-xl" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-2xl" />
+          ))}
+        </div>
+        <Skeleton className="h-64 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Voting Activity
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Live turnout monitor — who has voted, who hasn&apos;t
+            <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live · auto-refresh 20s
+            </span>
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void fetchData(true)}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Stat cards */}
+      {stats && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Card className="rounded-2xl border-border/60">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Users className="size-3.5" />
+                Eligible Voters
+              </div>
+              <p className="mt-1.5 font-display text-2xl font-bold">
+                {stats.totalEligible}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {stats.totalClaimed} claimed
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border-border/60">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <CheckCircle2 className="size-3.5 text-emerald-500" />
+                Voted
+              </div>
+              <p className="mt-1.5 font-display text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                {stats.totalVoted}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {stats.turnout.toFixed(1)}% turnout
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border-border/60">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Clock className="size-3.5 text-amber-500" />
+                Not Voted
+              </div>
+              <p className="mt-1.5 font-display text-2xl font-bold text-amber-600 dark:text-amber-400">
+                {stats.totalNotVoted}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                chase via WhatsApp
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border-border/60">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <TrendingUp className="size-3.5 text-primary" />
+                Turnout
+              </div>
+              <p className="mt-1.5 font-display text-2xl font-bold text-primary">
+                {stats.turnout.toFixed(1)}%
+              </p>
+              <Progress
+                value={stats.turnout}
+                className="mt-1.5 h-1.5"
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Cohort breakdown */}
+      {cohorts.length > 0 && (
+        <Card className="rounded-2xl border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-display">
+              Per-Cohort Turnout
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {cohorts.map((c) => (
+              <div key={c.label} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{c.label}</span>
+                  <span className="text-muted-foreground">
+                    {c.voted} / {c.total}{' '}
+                    <span className="text-xs">({c.turnout.toFixed(0)}%)</span>
+                  </span>
+                </div>
+                <Progress value={c.turnout} className="h-2" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search + filter + table */}
+      <Card className="rounded-2xl border-border/60">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base font-display">
+              Voter Status{' '}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">
+                ({filtered.length} shown)
+              </span>
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search matric or name…"
+                  className="h-9 w-full pl-8 sm:w-56"
+                />
+              </div>
+              <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-0.5">
+                {(
+                  [
+                    { id: 'all', label: 'All' },
+                    { id: 'voted', label: 'Voted' },
+                    { id: 'not-voted', label: 'Not Voted' },
+                  ] as const
+                ).map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilter(f.id)}
+                    className={cn(
+                      'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      filter === f.id
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="max-h-[28rem] overflow-y-auto scrollbar-thin">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableRow className="border-border/60">
+                  <TableHead className="pl-4">Matric</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="hidden sm:table-cell">Cohort</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="pr-4 text-right">Voted At</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="py-8 text-center text-sm text-muted-foreground"
+                    >
+                      No entries match your search.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filtered.map((e) => {
+                    const hasVoted = e.voteCount > 0
+                    return (
+                      <TableRow key={e.matricNumber} className="border-border/40">
+                        <TableCell className="pl-4 font-mono text-xs">
+                          {e.matricNumber}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {e.fullName}
+                        </TableCell>
+                        <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                          {e.programme} · {e.level}
+                        </TableCell>
+                        <TableCell>
+                          {hasVoted ? (
+                            <Badge className="border-transparent bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="mr-1 size-3" />
+                              Voted
+                              {e.voteCount > 1 && (
+                                <span className="ml-1 opacity-70">
+                                  ×{e.voteCount}
+                                </span>
+                              )}
+                            </Badge>
+                          ) : e.isClaimed ? (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-500/30 text-amber-600 dark:text-amber-400"
+                            >
+                              <Clock className="mr-1 size-3" />
+                              Claimed
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              Not claimed
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="pr-4 text-right text-xs text-muted-foreground">
+                          {e.firstVoteAt
+                            ? new Date(e.firstVoteAt).toLocaleString(undefined, {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })
+                            : '—'}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 // ===================== Audit Logs Section =====================
 function AuditLogsSection() {
   const [logs, setLogs] = useState<AuditLog[]>([])
@@ -4774,6 +5115,7 @@ export function AdminView() {
               {section === 'students' && <StudentsSection />}
               {section === 'verification' && <VerificationSection />}
               {section === 'election' && <ElectionSection />}
+              {section === 'voting-activity' && <VotingActivitySection />}
               {section === 'disputes' && <DisputesSection />}
               {section === 'audit' && <AuditLogsSection />}
               {section === 'settings' && <SettingsSection />}

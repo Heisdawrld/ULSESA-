@@ -1601,3 +1601,31 @@ Stage Summary:
 - Production voter register: 306 total across 5 active cohorts (Math Ed 400=113, Math Ed 300=82, Physics Ed 400=22, Physics Ed 300=17, Biology Ed 200=73). Physics Ed 100 still ON HOLD (MHTML pairing issue).
 - No code changes — this was a pure data operation. No deploy needed. No git push needed.
 - Artifacts: `scripts/upload-maths-ed-y3.ts`, `upload/maths-ed-y3.{txt,json}` (all gitignored).
+
+
+---
+Task ID: voting-activity-feature
+Agent: main-orchestrator
+Task: Build "who has voted" monitoring feature — admin sees full details, students see masked version
+
+Work Log:
+- Created `src/lib/matric-mask.ts` with two helpers:
+  - `maskMatric(matric)` → shows first 4 digits + stars (e.g. "230313001" → "2303*****")
+  - `displayFirstName(fullName)` → drops surname (password component), title-cases the rest
+- Created `GET /api/admin/voting-activity` (admin-only): returns all 306 allowlist entries with full matric, full name, programme/level/cohort, isClaimed, voteCount, firstVoteAt. Plus aggregate stats + per-cohort breakdown.
+- Created `GET /api/elections/turnout` (public): returns masked matric + display name (surname hidden) for voted students only. Does NOT expose who hasn't voted (anti-fraud).
+- Fixed raw SQL date parsing bug: SQLite's `MIN(timestamp)` returns epoch-ms as bigint, not ISO string. Added `safeISODate()` helper to both routes handling bigint / number / numeric-string / ISO-string / null.
+- Added "Voting Activity" tab to admin panel (`admin-view.tsx`): 4 stat cards, per-cohort progress bars, searchable+filterable scrollable table with sticky header, 20s auto-refresh.
+- Added "Turnout" sub-view to student Elections view (`elections-view.tsx`): big turnout % with SVG progress ring, cohort breakdown, privacy explanation card, scrollable voted list, 30s auto-refresh.
+- Ran `bun run lint` — passes clean.
+- Verified via agent-browser:
+  - Admin tab: renders full table with matrics, names, statuses (Not claimed / Voted / Claimed), search, filters.
+  - Student tab: renders "LIVE TURNOUT 0.9%", "1 of 113 eligible", cohort bar, privacy note, voted entry "Loveth Olamide 2103***** · Mathematics Education · Level 400, 7/5/26 9:44 PM" (surname AJEWOLE correctly hidden).
+  - No console/runtime errors. Dev log clean.
+
+Stage Summary:
+- Admin can now monitor live turnout on election day — who has voted, who hasn't, who to chase via WhatsApp.
+- Students see a privacy-safe turnout board that drives peer accountability without exposing passwords or creating a target list.
+- Security: matric masked (first 4 only), surname hidden (it's the password component), "not voted" list never exposed to students.
+- All code is UNCOMMITTED — awaiting user's decision on whether to push to main (Render auto-deploys on push).
+- Artifacts: `src/lib/matric-mask.ts`, 2 API routes, 2 UI sections. Screenshot at `upload/turnout-view-screenshot.png`.
