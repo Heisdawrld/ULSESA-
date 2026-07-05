@@ -1255,3 +1255,43 @@ Unresolved / risks:
 - 19 other cohort attendance lists (Biology Ed, Chemistry Ed, Integrated Science Ed, Physics Ed, Maths Ed 100L/200L/300L) still need to be collected and uploaded by class reps via the admin Voter Register UI. Each upload will be a separate batch.
 - Standing items: Gmail SMTP creds in Render env (no longer needed for OTP — may remove), git commit of any remaining accumulated work.
 - Recommended next step: have the user test the full register flow (claim → set password → vote) with a real matric from the list. The browser test only went as far as the name-confirmation step to avoid claiming a real student's account on production.
+
+---
+Task ID: PHYSED-400L-UPLOAD
+Agent: main (Z.ai Code)
+Task: Parse and upload Physics Education Year 4 attendance list to live allowlist
+
+Work Log:
+- User uploaded `Physics Education year 4 list.doc` (binary .doc, 37KB, not .docx)
+- antiword extracted 22 student rows with S/N, matric, name, email
+- Programme: Physics Education · Level: 400 · Dept code: 0315 ✓
+- Cohort breakdown: 14 normal admits (210315001-017) + 8 Direct Entry (230315501-508), 0 carryovers
+- Detected typo: student #14 had matric `219315017` (dept code `9315` doesn't exist) — flagged to user before upload
+- User confirmed: "Correct it. It's a typo." → corrected to `210315017`
+- Discovered the /api/admin/allowlist/upload endpoint referenced in worklog was never actually created (only GET + DELETE exist on /api/admin/allowlist). The .docx-only upload parser couldn't handle .doc anyway.
+- Built new endpoint /api/admin/allowlist/batch (POST) that accepts clean JSON: { programme, level, cohort, source, entries: [{matric, name}, ...] }
+  - Validates every entry (9-digit matric, non-empty name, no within-batch dupes) before inserting any
+  - Skips matrics already in allowlist (idempotent)
+  - Logs audit entry with admin ID + batch ID + source filename
+  - Returns detailed summary (inserted/skipped/skippedDetails)
+- Committed (b5b5d25), pushed, Render auto-deployed
+- Built JSON roster payload with all 22 students (names preserved exactly as written — mixed case, not uppercased — to avoid introducing errors)
+- Pushed to live via admin token: 22/22 inserted, 0 skipped
+- Verified 4 matrics via /api/auth/claim:
+  - 210315001 → Raji olatubosun Joshua ✓
+  - 210315017 → Ugwuogidi Andrew Chikeuba (the corrected typo) ✓
+  - 230315508 → Olayode Kehinde Patrick ✓
+  - 219315017 (the original typo) → correctly rejected as "not in voter register" ✓
+- Live allowlist now at 135 students total (113 Maths Ed 400L + 22 Physics Ed 400L), 0 claimed
+
+Stage Summary:
+- Physics Education Year 4 roster LIVE on https://ulsesa.onrender.com/. All 22 students can now type their matric and claim their account.
+- Typo `219315017` corrected to `210315017` before upload — student #14 (Ugwuogidi Andrew Chikeuba) will be able to claim on election day. If we'd uploaded the typo, he would have been blocked.
+- New reusable endpoint /api/admin/allowlist/batch for future roster uploads — accepts clean JSON, validates everything, idempotent. Works for any source format (.doc, .csv, screenshots) since parsing happens offline.
+- Files created (1): src/app/api/admin/allowlist/batch/route.ts
+- Live DB state: 135 matrics in allowlist across 2 cohorts (Maths Ed 400L: 113, Physics Ed 400L: 22)
+
+Unresolved / risks:
+- 18 more cohort attendance lists still pending (Physics Ed 100L/200L/300L, Maths Ed 100L/200L/300L, Biology Ed all levels, Chemistry Ed all levels, Integrated Science Ed all levels)
+- Need to confirm dept codes for Biology Ed, Chemistry Ed, Integrated Science Ed once those lists arrive
+- Standing: Gmail SMTP creds in Render env (no longer needed for OTP)
