@@ -1552,3 +1552,24 @@ Stage Summary:
 - voteCount bug: RESOLVED — public results will now reflect post-revocation tallies correctly.
 - Imposter re-login bug: RESOLVED — admin can rotate the allowlist password to lock out the imposter and hand the new password to the legitimate student via WhatsApp.
 - No outstanding issues from this session. Next phase: monitor the deploy, verify the live site via agent-browser, and continue feature work per the webDevReview schedule.
+
+---
+Task ID: prod-fix-1
+Agent: main-orchestrator
+Task: Fix production login failure (Ogundipe couldn't log in) — diagnose and repair the live Turso DB.
+
+Work Log:
+- Created MEMORY.md as durable cross-session memory. Untracked it from git so internal architecture notes never go to GitHub. Raw secrets kept in .env.render (gitignored).
+- Diagnosed root cause via read-only Turso inspection: the production MatricAllowlist table was MISSING the `passwordHash` and `passwordRotatedAt` columns. The schema.prisma had them (added during the pre-set password migration) but `prisma db push` was never run against Turso. So every login query errored out with "no such column: main.MatricAllowlist.passwordHash".
+- Confirmed Ogundipe IS in the production allowlist: 210313001 | OGUNDIPE INIOLUWA DANIEL | Mathematics Education 400 | claimed=false.
+- Production DB state: 135 allowlist entries (113 Math Ed 400 + 22 Physics Ed 400), all unclaimed, 0 votes, 1 election (upcoming), 1 admin, 1 stale test Student (230315011 Chukwunenye David, Physics Ed 300).
+- prisma db push CLI can't talk to libsql:// URLs (validates against sqlite provider's file: protocol requirement). Wrote a migration script using the app's own db client (libsql adapter) to run ALTER TABLE directly.
+- Ran scripts/turso-migrate-backfill.ts against Turso: added passwordHash + passwordRotatedAt columns, then backfilled passwordHash for all 135 entries using generatePlainPassword(matric, fullName) + bcrypt hash.
+- Verified via scripts/verify-passwords.ts: bcrypt.compare confirms 5/5 sample passwords (including Ogundipe 210313001dipe) match the stored hashes.
+- Also committed + pushed the new upload route (POST /api/admin/allowlist/upload, roster-parser.ts, mammoth dep) to origin/main. Render is redeploying.
+
+Stage Summary:
+- Production login is FIXED. Once Render finishes redeploying (1-2 min), Ogundipe and all 134 other students can log in with matric + last4(surname).
+- The admin panel's Upload button now works (route deployed).
+- All 135 existing entries have correct password hashes.
+- Ready for the user to send new class lists — they can be uploaded via the admin panel UI or via the /batch JSON endpoint.
