@@ -1295,3 +1295,81 @@ Unresolved / risks:
 - 18 more cohort attendance lists still pending (Physics Ed 100L/200L/300L, Maths Ed 100L/200L/300L, Biology Ed all levels, Chemistry Ed all levels, Integrated Science Ed all levels)
 - Need to confirm dept codes for Biology Ed, Chemistry Ed, Integrated Science Ed once those lists arrive
 - Standing: Gmail SMTP creds in Render env (no longer needed for OTP)
+
+---
+Task ID: SECURITY-CLAIM-FIX
+Agent: main (Z.ai Code)
+Task: Close critical matric enumeration + mass-claim vulnerability in claim flow
+
+Work Log:
+- User reported: "all i had to do was just keep changing the last numbers of matric numbers, and it brings up more students, what if i was to vote and i kept using different device?"
+- Confirmed the vulnerability: /api/auth/claim returned the student's fullName on matric lookup. An attacker could enumerate sequential matrics (210313001, 002, 003...) and map the entire voter register, then claim multiple matrics from different devices/browsers to cast multiple votes.
+- Device fingerprint (cookie + localStorage) was weak: bypassed by incognito mode, clearing cookies, different browser, or different device.
+- Designed fix: knowledge-based verification. Stop revealing the name. Require the student to TYPE their full name. The attendance-list name becomes a second factor — something the real student knows but a fraudster guessing matrics does not.
+
+Built 3 new utilities + rewrote claim/register APIs + rewrote frontend claim flow:
+
+1. src/lib/name-match.ts — fuzzy name comparison:
+   - Case-insensitive, whitespace-normalized, non-alphanumeric stripped
+   - Token-subset match (sorted): "daniel ogundipe inioluwa" == "OGUNDIPE INIOLUWA DANIEL" == "inioluwa daniel ogundipe"
+   - Handles "Abdul-Sobur" == "abdul sobur", "God'spraise" == "godspraise"
+   - Allows skipping middle names (must have 2+ tokens)
+
+2. src/lib/rate-limiter.ts — in-memory rate limiting (single Render instance):
+   - 15 matric lookups per IP per hour (stops enumeration scripts)
+   - 3 claims per IP per day (a real student needs exactly 1)
+   - 10 name-failures per IP per hour (stops name spraying)
+   - 5 name-failures per matric → 30-min lock (stops name guessing)
+   - Periodic cleanup every 10 min to prevent memory leak
+
+3. src/lib/auth/sign-token.ts — short-lived JWT (10 min) for claim verification:
+   - Issued ONLY after name match succeeds
+   - Required by /auth/register to prevent skipping name verification
+   - Payload: { matricNumber, type: 'claim-verification' }
+
+4. src/app/api/auth/claim/route.ts — rewritten as two-phase:
+   - Phase 1 (matric only): returns { requiresName: true, programme, level } — NO NAME
+   - Phase 2 (matric + fullName): verifies name, returns verificationToken or 401
+   - Rate limits checked on every call; matric locks after 5 name fails
+
+5. src/app/api/auth/register/route.ts — now requires verificationToken:
+   - Rejects requests without it ("Name verification required")
+   - Verifies token signature + expiry + matric match
+   - Rate limit: 3 claims per IP per day
+
+6. src/components/views/auth-view.tsx — ClaimFlow rewritten:
+   - Step 1: type matric → "Matric found on the register" (no name shown)
+   - Step 2: type full name → amber security notice "Your name is not shown — only you know it"
+   - Step 3: set password → "Identity verified — {typedName}"
+   - Removed old "Is this you?" confirm screen entirely (was the vulnerability)
+   - Step indicator changed: Matric → Name → Secure
+
+Committed (34ba153) + pushed. Render deployed.
+
+Verified on live site via curl:
+  - Enumeration: 210313002 returns { requiresName: true } — NO NAME LEAKS ✓
+  - Correct name (any order/case): "daniel ogundipe inioluwa" → nameVerified: true + verificationToken ✓
+  - Wrong name: "John Random Hacker" → 401 "4 attempts remaining" ✓
+  - Direct Entry: 230313501 + "sulaiman khadijah omolola" → verified ✓
+  - Physics Ed: 210315001 + "raji olatubosun joshua" → verified ✓
+  - Register without verificationToken → 400 "Name verification required" ✓
+
+Verified in browser via agent-browser:
+  - Step 1: typed 210313003 → "Matric found on the register. Verify your identity." (no name shown) ✓
+  - Step 2 with wrong name → "The name you entered doesn't match... 4 attempts remaining before this matric is temporarily locked" ✓
+  - Step 2 with correct name → "Identity verified — daniel ogundipe inioluwa" → advanced to Step 3 (password) ✓
+  - Lint clean, tsc clean (my files only — pre-existing errors in examples/skills/health/theme-toggle/email unchanged)
+
+Stage Summary:
+- CRITICAL VULNERABILITY CLOSED. The claim flow no longer reveals student names. A fraudster cannot enumerate the voter register or mass-claim matrics without knowing each student's exact name.
+- Three layers of defence: (1) name knowledge, (2) per-IP rate limits, (3) per-matric lockout + device fingerprint
+- Files created (3): src/lib/name-match.ts, src/lib/rate-limiter.ts, src/lib/auth/sign-token.ts
+- Files modified (3): src/app/api/auth/claim/route.ts, src/app/api/auth/register/route.ts, src/components/views/auth-view.tsx
+- Committed: 34ba153
+- All tests pass on live site. The 135 students already in the allowlist are now protected by the new flow.
+
+Unresolved / risks:
+- Name matching is fuzzy (token-subset). If a student's name on the attendance list has a typo, they may not be able to claim. Mitigation: 5 attempts before lock, dispute queue, admin can manually help.
+- Rate limits are in-memory. If Render restarts the instance, counters reset. Acceptable for election day — a restart would actually be a fresh start.
+- Students who don't know the exact spelling of their name on the attendance list will be blocked. Class reps should remind students to use their official name as it appears on the list.
+- Standing: 18 more cohort attendance lists still pending. Physics Ed Year 3 (17 students) was parsed and ready to upload — can proceed now that the security fix is live.
