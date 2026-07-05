@@ -1573,3 +1573,31 @@ Stage Summary:
 - The admin panel's Upload button now works (route deployed).
 - All 135 existing entries have correct password hashes.
 - Ready for the user to send new class lists — they can be uploaded via the admin panel UI or via the /batch JSON endpoint.
+
+
+---
+Task ID: maths-ed-y3-upload
+Agent: main-orchestrator
+Task: Upload Mathematics Education Year 3 class roster to production Turso DB
+
+Work Log:
+- Located source file `upload/MATHS EDU 300L LIST.docx` (already extracted to `upload/maths-ed-y3.txt` and parsed to `upload/maths-ed-y3.json` — 82 entries — in the prior compacted turn).
+- Wrote `scripts/upload-maths-ed-y3.ts` modelled on the Biology Ed Y2 uploader: three-way upsert (insert / update-unclaimed / skip-claimed), rule-based password hash (matric + last4 lowercase surname), batchId stamp.
+- Ran the script against live Turso (env sourced from `.env.render`):
+  - Inserted: 81 (all new Maths Ed 300 students)
+  - Updated: 1  (matric 210313075 AROGUNDADE — pre-existing unclaimed entry, refreshed to Maths Ed 300 + fresh hash — idempotent)
+  - Skipped (claimed): 0
+  - Maths Ed 300 cohort now: 82 entries
+  - Grand total allowlist entries now: 306 (was 225)
+- Ran `scripts/verify-all-passwords.ts` (bcrypt.compare for every entry against live Turso):
+  - Total entries : 306
+  - Verified OK   : 306
+  - Failed        : 0
+  - ALL 306 ACCOUNTS VERIFIED — every student can log in.
+- Updated `MEMORY.md` section 4 with the new Maths Ed 300 cohort breakdown and bumped the running total from 225 → 306.
+
+Stage Summary:
+- Maths Education · 300 roster is LIVE on Turso. 82 students can now log in with `matric + last4(surname)`.
+- Production voter register: 306 total across 5 active cohorts (Math Ed 400=113, Math Ed 300=82, Physics Ed 400=22, Physics Ed 300=17, Biology Ed 200=73). Physics Ed 100 still ON HOLD (MHTML pairing issue).
+- No code changes — this was a pure data operation. No deploy needed. No git push needed.
+- Artifacts: `scripts/upload-maths-ed-y3.ts`, `upload/maths-ed-y3.{txt,json}` (all gitignored).
