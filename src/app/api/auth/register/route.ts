@@ -5,30 +5,39 @@ import {
   hashPassword,
   signStudentToken,
 } from '@/lib/auth/server-auth'
+import { verifyToken } from '@/lib/auth/sign-token'
+import {
+  checkClaimLimit,
+  getClientIp,
+  formatRetryAfter,
+} from '@/lib/rate-limiter'
 
 /**
- * NEW allowlist-based registration (replaces the old OTP + set-password flow).
+ * SECURE allowlist-based registration.
  *
- * Body: { matricNumber, password, deviceFingerprint, email?, phone? }
+ * Body: { matricNumber, password, verificationToken, deviceFingerprint, email?, phone? }
  *
  * Flow:
- *  1. Validate matric is in allowlist AND unclaimed
- *  2. Validate device fingerprint hasn't already claimed another matric
- *  3. Create Student record (auto-verified — the allowlist IS the identity proof)
- *  4. Mark allowlist entry as claimed by this student
- *  5. Set auth cookie + return token
- *
- * No email OTP. No ID upload. No admin approval gate. The matric allowlist +
- * name confirmation + device fingerprint + dispute queue is the fraud defence.
+ *  1. Verify the verificationToken (issued by /auth/claim after name match)
+ *     — this proves the student typed the correct name. Without it, anyone
+ *       could register by just knowing a matric.
+ *  2. Validate matric is in allowlist AND unclaimed
+ *  3. Validate device fingerprint hasn't already claimed another matric
+ *  4. Rate limit: max 3 claims per IP per day
+ *  5. Create Student record (auto-verified)
+ *  6. Mark allowlist entry as claimed
+ *  7. Set auth cookie + return token
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const matricNumber = (body?.matricNumber ?? '').toString().trim()
     const password = (body?.password ?? '').toString()
+    const verificationToken = (body?.verificationToken ?? '').toString().trim()
     const deviceFingerprint = (body?.deviceFingerprint ?? '').toString().trim()
     const email = (body?.email ?? '').toString().trim() || null
     const phone = (body?.phone ?? '').toString().trim() || null
+    const ip = getClientIp(request)
 
     if (!matricNumber || !password) {
       return NextResponse.json(
@@ -51,7 +60,40 @@ export async function POST(request: Request) {
       )
     }
 
-    // 1. Check the allowlist
+    // ── 1. Verify the claim verification token ────────────────────────────
+    // This token was issued by /auth/claim ONLY after the student typed
+    // their name correctly. Rejecting requests without it prevents someone
+    // from skipping name verification and registering with just a matric.
+    if (!verificationToken) {
+      return NextResponse.json(
+        {
+          error:
+            'Name verification required. Please go back to step 1 and verify your matric number and name before setting a password.',
+        },
+        { status: 400 }
+      )
+    }
+
+    const payload = verifyToken<{ matricNumber: string; type: string }>(
+      verificationToken
+    )
+    if (!payload || payload.type !== 'claim-verification') {
+      return NextResponse.json(
+        {
+          error:
+            'Your verification session has expired. Please go back to step 1 and re-verify your matric number and name.',
+        },
+        { status: 401 }
+      )
+    }
+    if (payload.matricNumber !== matricNumber) {
+      return NextResponse.json(
+        { error: 'Verification mismatch. Please start again from step 1.' },
+        { status: 400 }
+      )
+    }
+
+    // ── 2. Check the allowlist ────────────────────────────────────────────
     const entry = await db.matricAllowlist.findUnique({
       where: { matricNumber },
     })
@@ -77,7 +119,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // 2. Device fingerprint check — prevent one device from claiming multiple matrics
+    // ── 3. Device fingerprint check ───────────────────────────────────────
     const existingClaim = await db.student.findFirst({
       where: { deviceFingerprint },
       select: { id: true, matricNumber: true },
@@ -94,11 +136,20 @@ export async function POST(request: Request) {
       )
     }
 
-    // 3. Extract client IP for audit (best-effort)
-    const forwarded = request.headers.get('x-forwarded-for')
-    const claimIp = forwarded ? forwarded.split(',')[0].trim() : null
+    // ── 4. Rate limit: max claims per IP per day ──────────────────────────
+    const claimLimit = checkClaimLimit(ip)
+    if (!claimLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: `You've reached the maximum number of account claims from this device. If you need help, contact the electoral committee. Try again in ${formatRetryAfter(
+            claimLimit.retryAfterMs
+          )}.`,
+        },
+        { status: 429 }
+      )
+    }
 
-    // 4. Create the Student record — auto-verified (allowlist = identity proof)
+    // ── 5. Create the Student record ──────────────────────────────────────
     const passwordHash = await hashPassword(password)
     const student = await db.student.create({
       data: {
@@ -112,11 +163,11 @@ export async function POST(request: Request) {
         isVerified: true,
         verificationStatus: 'approved',
         deviceFingerprint,
-        claimIp,
+        claimIp: ip,
       },
     })
 
-    // 5. Mark the allowlist entry as claimed
+    // ── 6. Mark the allowlist entry as claimed ────────────────────────────
     await db.matricAllowlist.update({
       where: { id: entry.id },
       data: {
@@ -126,12 +177,12 @@ export async function POST(request: Request) {
       },
     })
 
-    // 6. Audit log
+    // ── 7. Audit log ──────────────────────────────────────────────────────
     await db.verificationLog.create({
       data: {
         studentId: student.id,
         action: 'approved',
-        notes: `Self-registered via allowlist. Device: ${deviceFingerprint.slice(0, 8)}…, IP: ${claimIp ?? 'unknown'}`,
+        notes: `Self-registered via allowlist. Name verified. Device: ${deviceFingerprint.slice(0, 8)}…, IP: ${ip}`,
       },
     })
 
@@ -139,11 +190,11 @@ export async function POST(request: Request) {
       data: {
         studentId: student.id,
         action: 'account_claimed',
-        details: 'Account claimed via matric allowlist self-registration',
+        details: 'Account claimed via matric allowlist self-registration (name-verified)',
       },
     })
 
-    // 7. Issue token + cookie
+    // ── 8. Issue token + cookie ───────────────────────────────────────────
     const token = signStudentToken({
       studentId: student.id,
       matricNumber: student.matricNumber,

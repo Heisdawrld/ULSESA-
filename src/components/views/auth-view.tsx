@@ -83,18 +83,9 @@ interface LoginResponse {
   notice?: string
 }
 
-// Claim flow steps. Numeric steps 1-4 are the OTP-based path; the string
-// steps ('upload', 'pending', 'rejected') are the manual ID-upload fallback
-// path used when the student can't receive the email code.
-//
-//   1 → enter matric
-//   2 → review details & send OTP                  (also offers "upload ID instead")
-//   3 → enter OTP code
-//   4 → set password
-//   'upload'   → upload student ID / biodata image
-//   'pending'  → ID uploaded, waiting for admin review
-//   'rejected' → admin rejected the uploaded ID, can re-upload
-type ClaimStep = 1 | 2 | 3 | 4 | 'upload' | 'pending' | 'rejected'
+// Claim flow steps are defined below in the ClaimFlow component (secure
+// name-verified flow). This top-level type is kept for the old AuthView
+// component's mode switching only.
 type Mode = 'claim' | 'signin'
 
 // ===================== Helpers =====================
@@ -287,26 +278,30 @@ function DetailRow({
   )
 }
 
-// ===================== Claim Flow (allowlist-based, no OTP) =====================
+// ===================== Claim Flow (secure: name-verified, no OTP) =====================
 
 interface ClaimFlowProps {
   onSwitchToSignIn: () => void
   onAuthSuccess: (student: StudentUser, token: string, message: string) => void
 }
 
-// Steps: 1 = enter matric, 2 = confirm name, 3 = set password
+// Steps: 1 = enter matric, 2 = type full name (verified against register),
+//         3 = set password
 // Plus: 'dispute' = matric already claimed, file a report
 type ClaimStep = 1 | 2 | 3 | 'dispute'
 
-// Response from POST /auth/claim
+// Response from POST /auth/claim (phase 1: matric lookup only)
 interface ClaimLookup {
   matricNumber: string
-  fullName?: string
   programme?: string
   level?: string
-  cohort?: string
-  expectedName?: string // only when alreadyClaimed
   alreadyClaimed: boolean
+  requiresName?: boolean
+  // Phase 2 (name verified):
+  nameVerified?: boolean
+  verificationToken?: string
+  // When already claimed:
+  expectedName?: string
 }
 
 // Response from POST /auth/register
@@ -327,11 +322,13 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
   const [step, setStep] = useState<ClaimStep>(1)
   const [loading, setLoading] = useState(false)
 
-  // Step 1
+  // Step 1 — matric
   const [matric, setMatric] = useState('')
 
-  // Step 2 — looked-up entry from allowlist
+  // Step 2 — name verification
   const [lookup, setLookup] = useState<ClaimLookup | null>(null)
+  const [typedName, setTypedName] = useState('')
+  const [nameAttempts, setNameAttempts] = useState(0)
 
   // Step 3 — password + optional contact
   const [password, setPassword] = useState('')
@@ -374,7 +371,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
       setLookup(data)
       if (data.alreadyClaimed) {
         setStep('dispute')
-      } else {
+      } else if (data.requiresName) {
         setStep(2)
       }
     } catch (err) {
@@ -385,20 +382,54 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     }
   }
 
-  // --- Step 2: confirm "Is this you?" ---
-  function handleConfirmYes() {
-    setStep(3)
-  }
-
-  function handleConfirmNo() {
-    toast.message(
-      'If this is not you, contact your class rep or the ULSESA electoral committee to verify your matric number.'
-    )
+  // --- Step 2: type full name to verify identity ---
+  async function handleNameSubmit() {
+    if (!lookup) return
+    if (typedName.trim().length < 3) {
+      toast.error('Please enter your full name.')
+      return
+    }
+    setLoading(true)
+    try {
+      const data = await api.post<ClaimLookup>('/auth/claim', {
+        matricNumber: lookup.matricNumber,
+        fullName: typedName.trim(),
+      })
+      if (data.alreadyClaimed) {
+        // Race condition: someone claimed between step 1 and step 2
+        setLookup(data)
+        setStep('dispute')
+      } else if (data.nameVerified && data.verificationToken) {
+        // Name matched — store the verification token, move to password step
+        setLookup({ ...lookup, verificationToken: data.verificationToken })
+        setStep(3)
+      } else {
+        // Shouldn't happen, but handle gracefully
+        toast.error('Verification failed. Please try again.')
+      }
+    } catch (err) {
+      // Name didn't match or rate limited
+      const msg = err instanceof Error ? err.message : 'Name verification failed'
+      setNameAttempts((n) => n + 1)
+      toast.error(msg)
+      // If locked or too many attempts, go back to step 1
+      if (/locked|too many|temporarily/i.test(msg)) {
+        setTimeout(() => {
+          handleReset()
+        }, 3000)
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   // --- Step 3: set password + register ---
   async function handleRegister() {
-    if (!lookup) return
+    if (!lookup || !lookup.verificationToken) {
+      toast.error('Verification expired. Please start again.')
+      setStep(1)
+      return
+    }
     if (password.length < 6) {
       toast.error('Password must be at least 6 characters.')
       return
@@ -417,6 +448,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
       const data = await api.post<RegisterResponse>('/auth/register', {
         matricNumber: lookup.matricNumber,
         password,
+        verificationToken: lookup.verificationToken,
         deviceFingerprint,
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
@@ -426,11 +458,13 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Registration failed'
       toast.error(msg)
-      // If device-blocked or already-claimed, go back to step 1
-      if (/already been claimed|one account per device/i.test(msg)) {
+      // If device-blocked, already-claimed, or verification expired, go back to step 1
+      if (/already been claimed|one account per device|verification|expired/i.test(msg)) {
         setStep(1)
         setLookup(null)
         setMatric('')
+        setTypedName('')
+        setNameAttempts(0)
       }
     } finally {
       setLoading(false)
@@ -470,6 +504,8 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
     setStep(1)
     setMatric('')
     setLookup(null)
+    setTypedName('')
+    setNameAttempts(0)
     setPassword('')
     setConfirm('')
     setEmail('')
@@ -489,7 +525,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
             Claim your account
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Enter your matric number to verify you&apos;re on the ULSESA voter register, then set a password to activate your account.
+            Enter your matric number, verify your name, then set a password to activate your account.
           </p>
         </div>
 
@@ -498,7 +534,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
           <div className="flex items-center justify-center gap-2 text-xs">
             {[
               { n: 1, label: 'Matric' },
-              { n: 2, label: 'Confirm' },
+              { n: 2, label: 'Name' },
               { n: 3, label: 'Secure' },
             ].map((s, i) => {
               const current = step === s.n
@@ -595,7 +631,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
             </motion.div>
           )}
 
-          {/* ---------- Step 2: Confirm name ---------- */}
+          {/* ---------- Step 2: Verify your name ---------- */}
           {step === 2 && lookup && (
             <motion.div
               key="step-2"
@@ -606,12 +642,12 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
               className="space-y-5"
             >
               <div className="flex flex-col items-center text-center py-2">
-                <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20">
+                <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
                   <UserCheck className="size-8" />
                 </div>
-                <p className="text-sm text-muted-foreground">We found you on the register:</p>
+                <p className="text-sm text-muted-foreground">Matric found on the register.</p>
                 <p className="mt-1 font-display text-xl font-bold tracking-tight">
-                  {lookup.fullName}
+                  Verify your identity
                 </p>
                 <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                   <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -626,23 +662,63 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                <div className="flex items-start gap-2">
+                  <Lock className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    For security, we need you to type your full name exactly as it appears on your class attendance list.
+                    This prevents someone else from claiming your matric. Your name is <strong>not shown</strong> — only you know it.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="claim-name" className="text-sm font-medium">
+                  Your full name <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="claim-name"
+                  type="text"
+                  autoComplete="off"
+                  placeholder="e.g. Daniel Ogundipe Inioluwa"
+                  value={typedName}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !loading && typedName.trim().length >= 3) handleNameSubmit()
+                  }}
+                  className="h-12 rounded-xl text-base"
+                  disabled={loading}
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter all your names (first, middle, surname) in any order. Case doesn&apos;t matter.
+                  {nameAttempts > 0 && (
+                    <span className="mt-1 block text-amber-600 dark:text-amber-400">
+                      Attempt {nameAttempts + 1} — if your name doesn&apos;t match, contact your class rep to confirm the exact spelling on the attendance list.
+                    </span>
+                  )}
+                </p>
+              </div>
+
               <div className="flex flex-col gap-2">
                 <Button
                   type="button"
                   size="lg"
                   className="h-12 w-full rounded-xl text-base font-semibold"
-                  onClick={handleConfirmYes}
+                  onClick={handleNameSubmit}
+                  disabled={loading || typedName.trim().length < 3}
                 >
-                  <CheckCircle2 className="size-4" />
-                  Yes, that&apos;s me — continue
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-10 w-full rounded-xl text-sm"
-                  onClick={handleConfirmNo}
-                >
-                  That&apos;s not me
+                  {loading ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Verifying name…
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="size-4" />
+                      Verify my name
+                    </>
+                  )}
                 </Button>
                 <Button
                   type="button"
@@ -670,7 +746,7 @@ function ClaimFlow({ onSwitchToSignIn, onAuthSuccess }: ClaimFlowProps) {
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                    Identity confirmed — {lookup.fullName}
+                    Identity verified — {typedName}
                   </p>
                 </div>
                 <p className="mt-1 pl-6 text-xs text-muted-foreground">
