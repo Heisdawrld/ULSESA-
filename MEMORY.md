@@ -34,8 +34,12 @@ with real voter data, so security and data integrity matter.
 - **Repo:** `github.com/Heisdawrdawrld/ULSESA-` (branch `main`)
 - **Live host:** Render (auto-deploys from `main` on push)
 - **Stack:** Next.js 16 (App Router) · TypeScript 5 · Tailwind 4 · shadcn/ui ·
-  Prisma (SQLite locally, MySQL on Render) · NextAuth available · Zustand ·
-  TanStack Query
+  Prisma · NextAuth available · Zustand · TanStack Query
+- **DBs:**
+  - Local dev → SQLite (file-based, `prisma/dev.db`)
+  - Production (Render) → **Turso (libsql)** at
+    `libsql://ulsesa-dawrld.aws-us-west-2.turso.io` — NOT MySQL. Schema must
+    stay libsql-compatible. `prisma/schema.prisma` cannot use list-typed primitives.
 
 ---
 
@@ -182,16 +186,20 @@ This was discussed at length. The agreed resolution flow:
 
 ## 7. Env Vars (Render)
 
-> The user will paste env vars here as they send them. Until then, this section
-> is a placeholder. **Do NOT ask repeatedly** — wait for the user to send.
+**Full env saved at:** `/home/z/my-project/.env.render` (gitignored via `.env*`).
+That file is the canonical copy — read it when you need actual values.
 
-```
-# PASTE RENDER ENV VARS BELOW THIS LINE WHEN PROVIDED
-```
-
-- Database URL for Render's MySQL: _awaiting user_
-- NextAuth secret: _awaiting user_
-- Any other secrets: _awaiting user_
+Key facts (safe to keep here, no raw secrets):
+- Production DB: **Turso (libsql)** — `libsql://ulsesa-dawrld.aws-us-west-2.turso.io`
+- Auth token for Turso: in `.env.render` as `TURSO_AUTH_TOKEN`
+- Admin login: `ADMIN_USERNAME` / `ADMIN_PASSWORD` (in `.env.render`)
+- `JWT_SECRET`, `NODE_ENV=production`, `PORT=10000`
+- Email: both Resend and Gmail SMTP are configured, BUT auth no longer uses
+  email OTP (switched to matric + rule-based password). Email config is dormant.
+- **MEMORY.md is currently git-tracked** (got auto-committed in a prior session).
+  Do NOT paste raw secrets into this file. If it ever needs to hold secrets,
+  run `git rm --cached MEMORY.md` + commit first. Until then, keep secrets in
+  `.env.render` only.
 
 ---
 

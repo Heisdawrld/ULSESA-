@@ -74,3 +74,6 @@ db/custom.db
 
 # agent-browser / tool temp artifacts
 tool-results/
+
+# Persistent memory file — contains secrets, NEVER commit
+MEMORY.md
