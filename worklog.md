@@ -1629,3 +1629,21 @@ Stage Summary:
 - Security: matric masked (first 4 only), surname hidden (it's the password component), "not voted" list never exposed to students.
 - All code is UNCOMMITTED — awaiting user's decision on whether to push to main (Render auto-deploys on push).
 - Artifacts: `src/lib/matric-mask.ts`, 2 API routes, 2 UI sections. Screenshot at `upload/turnout-view-screenshot.png`.
+
+---
+Task ID: push-voting-activity
+Agent: main-orchestrator
+Task: Push the uncommitted voting-activity feature (admin Voting Activity tab + student Turnout view) to origin/main so it deploys live.
+
+Work Log:
+- Reviewed worklog tail — confirmed voting-activity-feature code (Task ID: voting-activity-feature) was committed locally as 44a6d73 but never pushed.
+- `git status -sb` showed main was 3 commits ahead of origin/main (cca68f2, e42d2c4, 44a6d73).
+- `bun run lint` — clean (0 errors / 0 warnings).
+- `git push origin main` — succeeded: 12ab2f1..44a6d73 main -> main. Render auto-deploy triggered.
+- Dev server log clean (GET / 200 in ~60ms, no errors).
+
+Stage Summary:
+- Voting Activity monitoring feature is now LIVE: admin can see who has/hasn't voted with full matric + name + cohort + vote time; students see a privacy-safe Turnout board (matric masked to first 4 digits, surname hidden).
+- 3 commits pushed (voting-activity code + 2 worklog-only updates).
+- Production is in sync with local main.
+- READY for the user's next class list upload — the admin "Upload" button (POST /api/admin/allowlist/upload with mammoth .docx parser + roster-parser.ts) is live and will accept the roster once it arrives.
