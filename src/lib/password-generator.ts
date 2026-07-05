@@ -11,10 +11,10 @@
  * "SURNAME FirstName [MiddleName]" in UPPERCASE. So the surname is the
  * FIRST whitespace-separated token of fullName.
  *
- * Examples (from the real 400L Maths Ed roster):
- *   210313001 OGUNDIPE INIOLUWA DANIEL  → 210313001dipe
- *   210313002 JUNAID OMOWUNMI OMOFOLASHADE → 210313002naid
- *   210313003 OSOKOYA OMOTOLA OLUWADAMILARE → 210313003koya
+ * Examples (fictional — NOT real students):
+ *   230315001 BELLO Aisha Mohammed   → 230315001ello
+ *   230315002 ADEWALE John Oluwaseun → 230315002wale
+ *   230315003 EZE Grace Ngozi        → 230315003eze  (short surname → whole thing)
  *
  * Edge cases handled:
  *  - Surname shorter than 4 letters → use the whole surname (e.g. "Eze" → "eze")
@@ -82,6 +82,7 @@ export const PASSWORD_RULE_HINT =
   'Your password is your matric number + the last 4 letters of your surname (all lowercase, no spaces).'
 
 /**
- * Example used in the login hint box. Kept generic (no real student).
+ * Example used in the login hint box. Uses a FICTIONAL student that is
+ * NOT in any roster, so the hint can never leak a real password.
  */
-export const PASSWORD_RULE_EXAMPLE = 'e.g. matric 210313001, surname "Ogundipe" → 210313001dipe'
+export const PASSWORD_RULE_EXAMPLE = 'e.g. matric 230315001, surname "Bello" → 230315001ello'

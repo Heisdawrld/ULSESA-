@@ -366,7 +366,7 @@ function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
               id="signin-matric"
               inputMode="numeric"
               autoComplete="username"
-              placeholder="e.g. 210313001"
+              placeholder="e.g. 230315001"
               value={matric}
               onChange={(e) => {
                 setMatric(e.target.value.replace(/[^0-9]/g, '').slice(0, 9))
@@ -473,9 +473,9 @@ function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
                   <p>
                     Your surname is the <strong>first word</strong> of the name
                     on the register (e.g.{' '}
-                    <span className="font-mono">OGUNDIPE Daniel Inioluwa</span>{' '}
-                    → surname is <strong>OGUNDIPE</strong> → last 4 ={' '}
-                    <code className="rounded bg-muted px-1 py-0.5">dipe</code>).
+                    <span className="font-mono">BELLO Aisha Mohammed</span>{' '}
+                    → surname is <strong>BELLO</strong> → last 4 ={' '}
+                    <code className="rounded bg-muted px-1 py-0.5">ello</code>).
                   </p>
                   <p>
                     If your name on the register has unusual spelling,

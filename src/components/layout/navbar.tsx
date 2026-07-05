@@ -183,7 +183,7 @@ export function Navbar() {
                     className="mt-2 bg-primary hover:bg-primary/90 rounded-full"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Sign In / Claim Account
+                    Sign In
                   </Button>
                 )}
               </nav>

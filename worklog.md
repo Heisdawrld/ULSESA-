@@ -1447,3 +1447,39 @@ Stage Summary:
 - Login rate limiting (5 fails → 15-min lock) is live and tested.
 - The password hint is shown prominently on the login screen so real students know exactly what to type.
 - Lint clean. Dev server healthy. Golden path verified in browser.
+
+---
+Task ID: 9b (honest re-verification + critical fixes)
+Agent: main-orchestrator
+Task: Fix real-student data leak in login hint + verify full voting flow end-to-end
+
+Work Log:
+- CRITICAL FIX: The login hint shown on the public login screen was using a REAL student's data as the example ("matric 210313001, surname Ogundipe → 210313001dipe"). Anyone reading the hint could log in as that student. Replaced ALL real-student placeholders across 5 files with a fictional example (matric 230315001, surname "Bello" → 230315001ello):
+  - /src/lib/password-generator.ts (PASSWORD_RULE_EXAMPLE + JSDoc comments)
+  - /src/components/views/auth-view.tsx (input placeholder + "Can't log in?" help section)
+  - /src/app/api/admin/allowlist/route.ts (API doc comment)
+  - /src/lib/name-match.ts (JSDoc comment)
+  - /prisma/backfill-passwords.ts (removed the dev-mode plaintext password printer entirely)
+- Deleted 6 dead auth route files that are no longer called by the UI: claim, send-otp, verify-otp, set-password, register, upload-id. The set-password route was a potential security hole (could be abused via the old OTP path).
+- Found & fixed a runtime crash in elections-view.tsx: "Cannot read properties of null (reading 'status')". The API can return election: null (no elections / DB unreachable), but the component accessed data.election.status without a null check. Fixed in two places (targetDate computation + election destructuring). Added a friendly "No active election" empty state.
+- Seeded election data (was missing after db:push reset the DB): created admin (admin/ulsesa-admin-2026), 1 active election, 5 positions, 10 candidates, 3 announcements. New script: prisma/seed-election.ts.
+- Fixed leftover "Claim Account" labels in navbar.tsx and footer.tsx → "Sign In" (the claim flow no longer exists).
+- Full end-to-end verification with agent-browser:
+  1. Login as a real student (QA only, not exposed in UI) → 200, dashboard loads
+  2. Navigate to Elections → no crash, "Voting Open" shown
+  3. Click Vote tab → ballot with 5 positions + candidates
+  4. Select John David for President → Cast Vote → Confirm → 200
+  5. Receipt code shown: "Vote cast successfully! You voted for John David as President."
+  6. Vote tab now shows "Voted" for President, "1 / 5 voted"
+  7. Results API confirms: John David: 1 vote
+- Verified login hint shows fictional data only (230315001 / Bello), no real student data.
+- Lint clean. Dev log clean (no errors).
+
+Stage Summary:
+- Real-student data leak in the public login hint is FIXED. The hint now uses a fictional student that is NOT in any roster.
+- Full voting flow verified end-to-end: login → vote → receipt → results. All working.
+- 6 dead auth routes deleted (security hygiene).
+- Elections view null-check crash fixed.
+- Election + admin data seeded for QA.
+- "Claim Account" labels cleaned up to "Sign In".
+- What's NOT yet tested: admin login + admin views, the "Can't log in?" WhatsApp escape hatch (UI only, not a full flow test), mobile responsiveness.

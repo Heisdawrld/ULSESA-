@@ -8,6 +8,8 @@ import { db } from '../src/lib/db'
 import { hashPassword } from '../src/lib/auth/server-auth'
 import { generatePlainPassword } from '../src/lib/password-generator'
 
+// generatePlainPassword is used inside the loop below.
+
 async function main() {
   const needHash = await db.matricAllowlist.findMany({
     where: { passwordHash: null },
@@ -39,18 +41,10 @@ async function main() {
 
   console.log(`Done. Backfilled ${updated} entries.`)
 
-  // Print a few example plaintext passwords for manual QA (admin can test login).
-  // Only shown in dev — never expose plaintext in production logs.
-  if (process.env.NODE_ENV !== 'production') {
-    const sample = await db.matricAllowlist.findMany({
-      take: 3,
-      select: { matricNumber: true, fullName: true },
-    })
-    console.log('\nSample passwords (for QA):')
-    for (const s of sample) {
-      console.log(`  ${s.matricNumber} (${s.fullName}) → ${generatePlainPassword(s.matricNumber, s.fullName)}`)
-    }
-  }
+  // NOTE: We deliberately do NOT print real student passwords here, even in
+  // dev. To manually QA login, generate a password for a fictional example:
+  //   matric 230315001, surname "Bello" → 230315001ello
+  // (See src/lib/password-generator.ts for the rule.)
 }
 
 main()

@@ -683,8 +683,10 @@ function ElectionHome({ onNavigate }: { onNavigate: (v: Subview) => void }) {
     fetchData()
   }, [fetchData])
 
-  // Compute countdown target before any early return so hooks stay unconditional
-  const targetDate = data
+  // Compute countdown target before any early return so hooks stay unconditional.
+  // NOTE: data.election can be null (no elections exist / DB unreachable),
+  // so we guard with optional chaining to avoid a TypeError.
+  const targetDate = data?.election
     ? data.election.status === 'upcoming'
       ? data.election.startDate
       : data.election.endDate
@@ -708,6 +710,32 @@ function ElectionHome({ onNavigate }: { onNavigate: (v: Subview) => void }) {
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Retry
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Handle the case where no election exists yet (API returns election: null).
+  // This happens when the DB has no elections or is unreachable.
+  if (!data.election) {
+    return (
+      <Card className="rounded-2xl border-border/60">
+        <CardContent className="py-12 text-center space-y-3">
+          <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto" />
+          <p className="text-sm font-medium">No active election at this time</p>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            Voting hasn&apos;t opened yet. Check back later, or watch out for
+            announcements from the ULSESA electoral committee.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchData}
+            className="mt-2 rounded-full"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
           </Button>
         </CardContent>
       </Card>

@@ -54,7 +54,7 @@ export function Footer() {
               <li><button onClick={() => navigate('about')} className="hover:text-primary transition-colors">About ULSESA</button></li>
               <li><button onClick={() => navigate('help')} className="hover:text-primary transition-colors">Help Center</button></li>
               <li><button onClick={() => navigate('community')} className="hover:text-primary transition-colors">WhatsApp Groups</button></li>
-              <li><button onClick={() => navigate('auth')} className="hover:text-primary transition-colors">Claim Account</button></li>
+              <li><button onClick={() => navigate('auth')} className="hover:text-primary transition-colors">Sign In</button></li>
             </ul>
           </div>
 

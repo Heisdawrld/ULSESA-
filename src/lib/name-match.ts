@@ -9,7 +9,7 @@
  *  - Order-insensitive (tokens sorted before comparison)
  *
  * This handles realistic variations:
- *   "OGUNDIPE INIOLUWA DANIEL"  ==  "daniel ogundipe inioluwa"
+ *   "BELLO AISHA MOHAMMED"  ==  "aisha bello mohammed"
  *   "Abdul-Sobur Adewunmi"      ==  "abdul sobur adewunmi"
  *   "God'spraise Sukore"        ==  "godspraise sukore"
  *
