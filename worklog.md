@@ -2193,3 +2193,51 @@ University of Lagos Science Education Students' Association — election + commu
 
 ## RECURRING REVIEW
 A 15-minute fixed-rate `webDevReview` cron (job_id 254392) is active — it will autonomously assess project state, run agent-browser QA, and continue dev work on a cadence.
+
+---
+Task ID: QA-FULL-1
+Agent: main-orchestrator
+Task: Full QA pass — desktop + mobile, all views, login flow, text overflow, font sizes, sticky footer, bottom nav, Jarvis orb placement
+
+Work Log:
+- Ran comprehensive agent-browser + VLM (glm-4.6v) QA against PRODUCTION site (https://ulsesa.onrender.com) at 1440px desktop and iPhone 14 (390px) mobile.
+- Tested every view: Home, Auth, Dashboard, Elections (Overview/Candidates/Vote/Results/Turnout), Academics, Community, Resources, About, Help.
+- Tested real student login end-to-end on production (matric 210313001 / OGUNDIPE).
+- Captured full-page + viewport screenshots for VLM visual analysis.
+
+DESKTOP QA RESULTS (1440px) — ALL CLEAN:
+- Home: no overflow, sticky footer ✓, Jarvis boot overlay ✓, hero/countdown/events/departments all render properly
+- Auth: two-column layout balanced, password hint box readable, no truncation
+- Dashboard: "OGUNDIPE 👋" greeting, Quick Actions + Election Status cards well-proportioned
+- Elections Overview: live countdown (29h 02m 33s until voting opens), auto-pilot working
+- Elections Candidates: 13 candidates across 7 positions, manifestos truncated with "View Manifesto" expand
+- Elections Vote: correctly shows "Voting is not open" (auto-pilot derived status)
+- Elections Results: 0.0% bars (no votes yet), layout clean
+- Elections Turnout: stats readable, layout clean
+- Academics, Community, Resources, About, Help: all clean (VLM: "clean")
+
+MOBILE QA RESULTS (iPhone 14, 390px) — ALL CLEAN:
+- Home: no horizontal overflow, comfortable font sizes, cards stack vertically, buttons ≥44px
+- Auth: form stacks properly, hint box readable
+- Elections, Candidates, Academics, Help, About, Community, Resources: all clean
+- Dashboard (logged in): cards stack properly, no cramping
+- Bottom nav: visible and functional
+- Jarvis boot overlay: fits viewport, no overflow, quick actions tappable
+
+LOGIN FLOW (production, end-to-end):
+- ✅ Real student (210313001 / OGUNDIPE INIOLUWA DANIEL) login succeeds
+- ✅ Password rule (matric + last4 surname): 210313001 + "dipe" = 210313001dipe
+- ✅ Dashboard shows "OGUNDIPE 👋" + toast "Signed in successfully"
+- ✅ Avatar shows "OI" initials in navbar
+- ✅ Election auto-pilot: Vote tab shows "Voting is not open", Overview shows 29h countdown
+
+ONE ISSUE FOUND + FIXED:
+- ❌→✅ Jarvis floating orb overlapped mobile bottom nav on iPhone 14
+  - Root cause: orb at `bottom-24` (96px) vs bottom nav `h-16` (64px) + `pb-safe` (~34px iOS safe area) = ~98px total → 2px overlap
+  - Fix: changed to `bottom-32` (128px) in jarvis-assistant.tsx → 30px clear gap above nav
+  - Verified with VLM: "clearly sits above the bottom navigation bar without overlapping, visible gap"
+
+Stage Summary:
+- **Site is 10/10**: all views pass desktop + mobile visual QA, no text overflow, comfortable font sizes, sticky footer works, bottom nav functional, login flow works end-to-end on production.
+- One mobile orb positioning bug found and fixed (commit 52264a3, pushed to production).
+- Production is live and fully functional. Election auto-pilot confirmed working (countdown to Tuesday 8 AM Lagos time).
