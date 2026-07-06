@@ -404,7 +404,7 @@ function FloatingOrb() {
   return (
     <div
       ref={popoverRef}
-      className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-3 sm:bottom-6 sm:right-6"
+      className="fixed bottom-32 right-4 z-50 flex flex-col items-end gap-3 sm:bottom-6 sm:right-6"
     >
       <AnimatePresence>
         {open && (
