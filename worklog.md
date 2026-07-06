@@ -2003,3 +2003,85 @@ Task: Refresh working memory — concise snapshot of the live project state for 
 
 Stage Summary:
 - Memory refreshed. This snapshot supersedes earlier narrative entries for orientation purposes — read this section first, then drill into the detailed task entries above for specifics.
+
+---
+Task ID: jarvis-auto-pilot
+Agent: main-orchestrator
+Task: Make the election self-driving ("Jarvis vibes") — auto-open at Tue 8am WAT, auto-close at Tue 6pm WAT, with admin override fallback.
+
+Work Log:
+- User request: election starts tomorrow Tuesday by 8am Lagos time, closes 6pm that Tuesday. Everything automatic like Jarvis, with admin fallback just in case.
+
+**Schema (prisma/schema.prisma):**
+- Added `manualOverride String?` to Election model. NULL = auto-pilot (status derived from clock). Non-NULL = admin override value wins.
+- Local: `bunx prisma generate` + `bun run db:push`.
+- Production Turso: `scripts/turso-migrate-election-override.ts` (idempotent ALTER TABLE ADD COLUMN + backfill NULL). Verified column present (cid 8, type TEXT, nullable).
+
+**Auto-pilot engine (src/lib/election-status.ts):**
+- `getEffectiveStatus(election, now)`: pure derivation. If manualOverride is set → return it. Else: now < startDate → "upcoming", start ≤ now < end → "active", now ≥ end → "ended".
+- `syncElectionStatus(election)`: called on every GET /api/elections. Computes effective status, and if the stored `status` column is stale (and no override), updates it. This is the self-healing heart — every page load reconciles the election with the clock.
+- `isVotingOpen(election)`, `getStatusLabel(status)`, `getSchedulingMode(election)`, `formatCountdown(target, now)` helpers.
+
+**API routes wired to derived status:**
+- `/api/elections` GET: calls syncElectionStatus(), returns effectiveStatus + manualOverride + storedStatus + schedulingMode.
+- `/api/elections/vote` POST: uses getEffectiveStatus() instead of stored status. Voting allowed only when truly "active". Returns specific error messages for upcoming/ended/cancelled.
+- `/api/elections/results` GET: uses getEffectiveStatus() for election selection + display.
+- `/api/admin/election` GET: computes effectiveStatus + schedulingMode for the admin panel.
+- `/api/admin/election` POST: now supports 4 actions: start (→override=active), end (→override=ended), cancel (→override=cancelled), clear_override (→override=null). All audit-logged.
+
+**Admin UI (admin-view.tsx ElectionSection):**
+- Status badge now shows the EFFECTIVE status (derived or override).
+- New AUTO-PILOT / MANUAL badge (violet=auto, amber=manual) with Bot/Zap icons.
+- Live countdown ticker (updates every second via `now` state) — shows "OPENS IN Xd Yh Xm Xs" when upcoming, "CLOSES IN Xd Yh Xm Xs" when active. Only mounts in auto mode + not ended.
+- Auto-pilot explainer card: "Auto-pilot is engaged. The election will open automatically at [datetime] (WAT). No manual action is needed."
+- 4 override buttons (each with AlertDialog confirmation): Force Open, Force Close, Cancel Election, Return to Auto-Pilot. Buttons appear/disappear based on current state.
+- electionStatusBadge() helper: added "cancelled" case (red badge).
+
+**Schedule set (scripts/set-election-schedule.ts):**
+- Start: 2026-07-07T07:00:00.000Z (= Tue Jul 7, 08:00 WAT, UTC+1)
+- End:   2026-07-07T17:00:00.000Z (= Tue Jul 7, 18:00 WAT)
+- Duration: 10 hours. WAT is UTC+1 year-round (no DST).
+- Clears manualOverride → pure auto-pilot.
+- Ran against LOCAL SQLite: was active (from QA), now upcoming. Auto-opens in ~29h 49m.
+- Ran against PRODUCTION Turso: was upcoming with wrong end (19:00), now corrected to 17:00 UTC (18:00 WAT). Auto-opens in ~29h 49m.
+
+**Agent-browser E2E verification (local dev server):**
+- Student elections overview: shows "Voting Starts Soon" + live countdown "29 HOURS 48 MINUTES 08 SECONDS" ticking. (Previously showed "Voting Open" when the stored status was stale.)
+- Admin Election Control panel:
+  - "Upcoming" badge + "AUTO-PILOT" badge (violet, Bot icon)
+  - "Auto-pilot — election will open automatically at the scheduled start time."
+  - "OPENS IN 1d 05h 46m 46s" — countdown ticking every second (verified: 37s → 33s over 4s wall clock)
+  - Start date: "Jul 7, 2026, 08:00 AM GMT+1" ✓
+  - End date: "Jul 7, 2026, 06:00 PM GMT+1" ✓
+  - Auto-pilot explainer card with full schedule text
+  - Three override buttons: Force Open, Force Close, Cancel
+- Tested Force Open override:
+  - Clicked Force Open → confirmation dialog "Force-open the election?"
+  - Confirmed → status flipped to "Active" (green, pulsing) + "MANUAL" badge (amber, Zap icon)
+  - "Manual override active — auto-pilot suspended. Override: active"
+  - "CLOSES IN 1d 15h 41m 44s" — countdown to scheduled end
+  - "Live · auto-refresh 20s" kicked in
+  - Buttons changed: Force Close, Cancel, Return to Auto-Pilot (Force Open hidden)
+  - Toast: "Election force-opened (manual override)"
+- Tested Return to Auto-Pilot:
+  - Clicked → confirmation dialog "Return to auto-pilot?"
+  - Confirmed → status reverted to "Upcoming" + "AUTO-PILOT" badge (violet)
+  - "OPENS IN 1d 05h 41m 20s" — countdown to auto-open resumed
+  - Force Open button reappeared
+  - Toast: "Returned to auto-pilot"
+- No runtime errors in dev.log. Lint clean.
+
+**Dev server note:**
+- Had to restart the dev server after `prisma generate` because the Next.js Turbopack process had cached the old Prisma Client (didn't know about `manualOverride`). After restart, all API calls worked.
+- Dev server restarted via `(nohup npx next dev -p 3000 >> dev.log 2>&1 &)` in a subshell to survive the Bash tool's process cleanup.
+
+Commit + push:
+- 7d423fa feat(election): Jarvis auto-pilot — clock-derived status + admin override
+- Pushed to origin/main. Render auto-deploy triggered.
+
+Stage Summary:
+- **THE ELECTION IS NOW SELF-DRIVING.** It will automatically open at Tue Jul 7 08:00 WAT and close at Tue Jul 7 18:00 WAT — no admin button-pressing needed. The clock is the source of truth.
+- **ADMIN OVERRIDE WORKS.** For emergencies: Force Open (opens immediately), Force Close (closes immediately), Cancel (voids election), Return to Auto-Pilot (clears override, resumes clock-derived status). All audit-logged.
+- **SELF-HEALING.** Every page load syncs the stored status to match the clock, so the admin panel and audit trail always reflect the live state. No cron needed.
+- **COUNTDOWN VISIBLE.** Both students and admins see a live ticking countdown to the next transition (auto-open when upcoming, auto-close when active).
+- Production schedule confirmed: start=2026-07-07T07:00:00Z, end=2026-07-07T17:00:00Z, manualOverride=null (auto-pilot).
