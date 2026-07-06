@@ -1790,3 +1790,88 @@ Stage Summary:
 - Installed `xlsx` package as a dev dependency for parsing Excel rosters.
 - No code changes to the app — pure data operation. No deploy or git push needed.
 - Artifacts: `scripts/upload-chemistry-ed-y3.ts`, `scripts/_xlsx-to-text.ts`, `upload/chemistry-ed-y3.{txt,json}` (all gitignored by convention).
+
+---
+Task ID: device-claim-cap
+Agent: main-orchestrator
+Task: Build "max 2 claims per device" fraud-prevention feature with admin override path. Per user: do NOT disclose the cap number to students, do NOT mention class reps in any user-facing message — point them at the electoral committee only.
+
+Work Log:
+- Reviewed existing architecture: the "claim" happens lazily inside POST /api/auth/login when entry.claimedByStudentId is null (first login). Student.deviceFingerprint column already existed (added by /api/admin/migrate) but was never populated. The old getDeviceFingerprint() was a random UUID in localStorage — too weak (clearing localStorage bypasses it).
+
+**Schema (prisma/schema.prisma):**
+- Added `DeviceClaimAttempt` model: id, fingerprintHash, fingerprintShort, matricNumber, outcome (success|blocked), ip, userAgent, createdAt. Audit log of every claim attempt.
+- Added `DeviceOverride` model: id, fingerprintHash, fingerprintShort, extraClaims (int), reason, createdBy (admin id), createdAt, expiresAt?. Admin-granted extra allowance beyond the default cap.
+- Updated Student.deviceFingerprint comment to clarify it stores the SERVER-HASHED fingerprint (not the raw client value).
+- Ran `bunx prisma generate` + `bun run db:push` for the local DB.
+
+**Client fingerprint (src/lib/device-fingerprint.ts):**
+- Rewrote entirely. Old: random UUID in localStorage. New: stable SHA-256 hash of (canvas rendering + userAgent + language + platform + hardwareConcurrency + deviceMemory + maxTouchPoints + screen.width×height + colorDepth + availWidth×availHeight + timezone + canvas dataURL).
+- Survives clearing localStorage, incognito mode, browser restarts. Does NOT survive using a different browser on the same device (canvas rendering differs) — that's the right tradeoff.
+- Two exports: `getDeviceFingerprint()` (async, SHA-256 via Web Crypto) and `getDeviceFingerprintSync()` (sync djb2 fallback for ancient browsers).
+
+**Server-side limit logic (src/lib/device-limit.ts):**
+- `hashDeviceFingerprint(raw)`: SHA-256(salt + ':' + raw) using env DEVICE_FP_SALT (defaults to a static string). Raw client fingerprint NEVER persisted — only the hash.
+- `checkDeviceClaimLimit(raw)`: counts Student rows with the same hash + sums active DeviceOverride.extraClaims. Returns {allowed, existingClaims, cap, overrides, fingerprintHash}. Default cap = 2.
+- `logClaimAttempt({fingerprintHash, matricNumber, outcome, ip, userAgent})`: inserts a DeviceClaimAttempt row.
+- `shortFingerprint(hash)`: first 12 chars for admin UI display.
+
+**Login route (src/app/api/auth/login/route.ts):**
+- Reads `deviceFingerprint` from the POST body. Captures IP + user-agent.
+- After password verification succeeds, BEFORE creating the Student row: if this is a first claim (claimedByStudentId is null) AND a fingerprint was sent, calls checkDeviceClaimLimit. If blocked → logs a 'blocked' DeviceClaimAttempt + returns 429 with `{error, code: 'DEVICE_LIMIT_REACHED'}`.
+- Error message (verbatim): "This device can't be used to claim more accounts right now. If you believe this is a mistake, please contact the ULSESA electoral committee." — NO cap disclosure, NO class rep mention.
+- If allowed → creates Student with deviceFingerprint set to the server-hash, then logs a 'success' DeviceClaimAttempt.
+- Returning students (already-claimed matrics) skip the device check entirely — they can log in from any device.
+- Scrubbed "contact your class rep" from the GENERIC_ERROR and 404 messages; now both say "contact the ULSESA electoral committee".
+
+**Auth view (src/components/views/auth-view.tsx):**
+- Imports `getDeviceFingerprint`. Sends `deviceFingerprint` in the login POST body (await'd before the fetch).
+- New 429 handler for DEVICE_LIMIT_REACHED: shows the lock banner (red) with the generic message + toast "Device limit reached · Contact the ULSESA electoral committee if you believe this is a mistake."
+- Scrubbed "contact your class rep" from the 404 toast → "contact the ULSESA electoral committee".
+
+**Admin APIs:**
+- GET /api/admin/device-activity: returns per-device summary (fingerprintHash, fingerprintShort, successCount, blockedCount, totalAttempts, firstSeen, lastSeen, overrides, cap, status: normal|at-cap|blocked, recent[5] matrics) + aggregate stats (totalDevices, totalClaims, totalBlocked, devicesAtCap, defaultCap). Last 7 days, top 200.
+- POST /api/admin/device-override: body {fingerprintHash, extraClaims (1-100), reason (required), expiresAt?}. Validates fingerprint exists in DeviceClaimAttempt (can't pre-grant for unseen devices). Inserts DeviceOverride row + AuditLog entry under the acting admin.
+- DELETE /api/admin/device-override?id=...: revokes an override + audit-logs.
+
+**Admin UI (src/components/views/admin-view.tsx):**
+- Added 'device-activity' to Section type + NAV_ITEMS (Fingerprint icon, between Voting Activity and Disputes).
+- New `DeviceActivitySection` component: 4 stat cards (Devices seen, Successful claims, Blocked attempts, Devices at/over cap), search box (fingerprint or matric), filter dropdown (All/Blocked only/At cap/Normal), scrollable table (max-h-640) with sticky header.
+- Each row: device icon (color-coded by status), fingerprint short, last matric, success count (green), blocked count (amber if >0), cap (+overrides badge), status badge (Normal green / At cap amber / Blocked red), last-seen timestamp, Override button.
+- Override dialog: shows current claims + cap, extra-claims input (default 3), reason textarea (required), live "New cap will be N" preview, Submit button (disabled until reason filled).
+- Auto-refreshes every 30s. Loading skeleton. Empty state.
+
+**Turso migration (scripts/turso-migrate-device-tables.ts):**
+- Idempotent CREATE TABLE IF NOT EXISTS for DeviceClaimAttempt + DeviceOverride + indexes. Run against production Turso via .env.render — all 5 steps OK.
+
+**E2E test (scripts/_test-device-limit.ts):**
+- 11/11 scenarios PASS:
+  1. Admin login → 200 OK
+  2. GET /api/admin/device-activity (empty) → stats: {totalDevices:0, totalClaims:0, totalBlocked:0, devicesAtCap:0, defaultCap:2}
+  3. Claim #1 with fingerprint "test-fp-A" → 200 OK
+  4. Claim #2 with fingerprint "test-fp-A" → 200 OK
+  5. Claim #3 with fingerprint "test-fp-A" → 429 BLOCKED, code=DEVICE_LIMIT_REACHED, message is generic (no "2 claims", no "class rep") ✓
+  6. Claim #4 with fingerprint "test-fp-B" → 200 OK (different device, fresh cap)
+  7. GET device-activity shows fpA with 2 successes + 1 blocked, status=blocked ✓
+  8. Admin grants +1 override for fpA → 200 OK
+  9. Retry claim #3 with fpA → 200 OK (override worked)
+  10. Returning login from fp-C (different device) → 200 OK (already claimed, skips device check) ✓
+  11. Lint clean, no errors.
+
+**Agent-browser verification:**
+- Logged in as admin → Device Activity tab renders correctly.
+- Empty state: "No device activity yet · Claims will appear here once students start logging in."
+- Seeded 4 test attempts across 2 devices → stat cards show 2 devices / 3 claims / 1 blocked / 1 at-cap. Table shows device 608886c55a9a with 2 claims + 1 blocked (red "Blocked" badge) + device 6d2f05bca6d7 with 1 claim (green "Normal" badge).
+- Clicked Override → dialog opens with current claims/cap, extra-claims input defaults to 3, reason field required.
+- Filled reason "School computer lab — shared browser used by multiple students during registration." → submitted → toast "Override granted · +3 claims for device 608886c55a9a." → row updates.
+- Audit Logs tab shows both the test override + the new override with full reason text.
+- Screenshots: upload/device-activity-empty.png, upload/device-activity-with-data.png, upload/device-activity-override-granted.png.
+
+Stage Summary:
+- **MAX-2-CLAIMS-PER-DEVICE CAP IS LIVE.** A single browser/device can claim at most 2 accounts. The 3rd claim gets a generic "This device can't be used to claim more accounts right now. If you believe this is a mistake, please contact the ULSESA electoral committee." message — NO disclosure of the cap number, NO mention of class reps.
+- **ADMIN OVERRIDE PATH WORKS.** For legitimate shared-device cases (school lab, family phone), admin opens Device Activity → clicks Override → grants +N extra claims with a reason (audit-logged). The next claim from that device succeeds.
+- **RETURNING STUDENTS UNAFFECTED.** Students who already claimed can log in from any device — the cap only fires on FIRST claim (when the Student row is being created).
+- **PRIVACY.** The raw client fingerprint is never stored. Server hashes it with a salt (env DEVICE_FP_SALT) before storing on Student.deviceFingerprint + DeviceClaimAttempt.fingerprintHash. A DB leak can't be reversed to device identity.
+- **CLASS REP MENTIONS SCRUBBED.** All user-facing error messages in /api/auth/login + auth-view.tsx now say "contact the ULSESA electoral committee" — no more "contact your class rep".
+- Production DB migrated: DeviceClaimAttempt + DeviceOverride tables created on Turso.
+- Committed (3532451) + pushed to origin/main. Render auto-deploy triggered.
