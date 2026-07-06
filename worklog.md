@@ -1875,3 +1875,58 @@ Stage Summary:
 - **CLASS REP MENTIONS SCRUBBED.** All user-facing error messages in /api/auth/login + auth-view.tsx now say "contact the ULSESA electoral committee" — no more "contact your class rep".
 - Production DB migrated: DeviceClaimAttempt + DeviceOverride tables created on Turso.
 - Committed (3532451) + pushed to origin/main. Render auto-deploy triggered.
+
+---
+Task ID: update-candidates-2026
+Agent: main-orchestrator
+Task: Replace the demo seeded ULSESA ballot with the REAL 2026 candidates provided by the electoral committee. 9 positions, 13 candidates, 2 vacant.
+
+Work Log:
+- User provided the official 2026 candidate list:
+  - PRESIDENT (3): Joshua Anuoluwapo (Physics Ed) · Ojapa Julianah (Chemistry) · Daniel Emmanuel (Biology)
+  - VICE PRESIDENT (3): Gasali Sekinat (Biology) · Jamiu Habeeb (Maths) · Lucky Precious (Chemistry)
+  - GENERAL SECRETARY (2): Aduragbemi Kehinde (Int. Science) · Queen Solomon (Biology)
+  - ASSISTANT GEN SECRETARY (0): vacant — no candidates standing
+  - SPORT SECRETARY (1): Adeyemi Abiola (Maths)
+  - PRO (2): Chidalu Blessing (Int. Science) · Odulaja Daniel (Physics Ed)
+  - TREASURER (1): Oladipupo Precious (Maths)
+  - SOCIAL SECRETARY (1): Williams Lillian (Biology)
+  - WELFARE SECRETARY (0): vacant — no candidates standing
+- Wrote `scripts/update-candidates.ts` (gitignored, one-off data op). Reuses the existing active Election row. Captures current state, resets Student.hasVoted=false for any student who had voted (so they can re-vote on the new ballot), then deletes Vote → Candidate → Position in FK-safe order and inserts the 9 new positions (with explicit `order` 1-9) + 13 candidates.
+- Ran the script against PRODUCTION Turso (via .env.render):
+  - Existing state on prod: 6 positions, 11 demo candidates (John David, Aisha Bello, etc.), 0 votes. Election status was "upcoming".
+  - Deleted: 0 votes, 11 candidates, 6 positions.
+  - Inserted: 9 positions, 13 candidates. All positions render in the official ballot order.
+  - Production election remains "upcoming" — admin flips to "active" via the admin panel when voting opens.
+- Also ran the script against the LOCAL SQLite DB (for agent-browser verification): local election was "active" with 1 existing vote. Reset hasVoted for that 1 student, deleted the old ballot, inserted the new one.
+
+Backend fix (src/app/api/elections/vote/route.ts):
+- `totalPositions` now counts only positions with ≥1 candidate (`candidates: { some: {} }`). Without this, the 2 vacant positions would make the `hasVoted` cap unreachable — a student could vote in all 7 contestable positions but `studentVotes` (7) would never reach `totalPositions` (9), so `hasVoted` would never flip true and the turnout board would undercount.
+
+Frontend fixes (src/components/views/elections-view.tsx):
+- Added `UserX` icon import.
+- CandidatesView `PositionCandidates`: when `position.candidates.length === 0`, renders a dashed-border empty-state card with UserX icon + "No candidates standing — No nominee was submitted for the position of X for this election cycle. This position will remain vacant on the ballot."
+- VoteView: `totalPositions` / `totalVoted` now derived from `contestablePositions` (filter to candidates.length > 0). Progress badge reads "0 / 7 voted" instead of "0 / 9 voted". "All Votes Cast!" state is now reachable.
+- VoteView position card: vacant positions render a muted "No candidates were nominated for this position. It will remain vacant for this election cycle." note instead of an empty radio group + disabled Cast Vote button.
+
+Agent-browser E2E verification (local dev server, election=active):
+- Logged in as test student 210313002 (JUNAID OMOWUNMI OMOFOLASHADE) with rule-based password 210313002naid → success.
+- Elections Overview: all 9 positions render with correct candidate counts (President 3, VP 3, Gen Sec 2, Asst Gen Sec 0, Sport Sec 1, PRO 2, Treasurer 1, Social Sec 1, Welfare Sec 0).
+- Candidates tab → President: Joshua Anuoluwapo, Ojapa Julianah, Daniel Emmanuel each with View Manifesto + Vote buttons.
+- Candidates tab → Assistant General Secretary: "No candidates standing" card renders.
+- Vote tab: progress badge "0 / 7 voted", "7 positions remaining". Positions 04 (Asst Gen Sec) and 09 (Welfare Sec) show "No candidates were nominated…" note. 7 contestable positions show Cast Vote buttons.
+- Cast a vote for Joshua Anuoluwapo as President → confirmation dialog → confirm → toast "Vote cast successfully! You voted for Joshua Anuoluwapo as President." + receipt code generated.
+- Results tab: turnout 33.3% (1 vote / 3 eligible). President: Joshua Anuoluwapo 100% (1 vote), Ojapa Julianah 0%, Daniel Emmanuel 0%. All other positions 0%. Vacant positions show "No candidates for this position".
+- No runtime errors in dev.log. Lint clean.
+
+Commits + pushes:
+- 8470c64 fix(vote): don't count vacant positions toward hasVoted cap
+- 759621a feat(elections): vacant-position UX for candidates + vote views
+- Both pushed to origin/main. Render auto-deploy triggered.
+
+Stage Summary:
+- **REAL 2026 ULSESA CANDIDATES ARE LIVE on production Turso.** 9 positions, 13 candidates, in the official ballot order. The demo John David / Aisha Bello / etc. ballot is gone.
+- **2 VACANT POSITIONS** (Assistant Gen Secretary, Welfare Secretary) are kept on the ballot for transparency — they render a clean "No candidates standing" state in the Candidates view, a muted note in the Vote view, and "No candidates for this position" in the Results view. They do NOT block the hasVoted flag or the "All Votes Cast!" state.
+- **PRODUCTION ELECTION STATUS IS "upcoming".** The admin must flip it to "active" (via the admin panel Election tab) when voting officially opens. Candidates are visible to students immediately regardless of status.
+- **NO VOTES LOST.** Production had 0 votes when the swap happened. Local had 1 test vote which was deleted + the student's hasVoted flag reset.
+- Next: when the electoral committee confirms the 4 previously-flagged missing matric serials (240313016, 240322004, 230311026, 230311049) and/or the Physics Education 100 roster, those are still pending.
