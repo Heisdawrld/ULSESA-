@@ -2453,3 +2453,51 @@ Stage Summary:
 - The check runs ONLY at first-claim time, so a student logging back in from the same
   device is never blocked by their own earlier legitimate claims.
 - Production register unchanged: still 530 students, all clean.
+
+---
+Task ID: BIO-ED-Y3-UPLOAD
+Agent: main
+Task: Upload Biology Education Year 3 roster (Google Forms CSV) — parse, classify
+      carry-overs/direct-entry, verify, clean up.
+
+Work Log:
+- Source: `Biology Edu 300l student List .csv.zip` → `Biology Edu 300l student List .csv`
+  (Google Forms export, 89 rows, columns: Timestamp, Full Name, Matric No, Cohort, Email).
+- Parsed 89 rows. Found 3 matric categories:
+  - 66 UTME-2023 (`2303100xx`) → core Y3
+  - 20 DE-2024 (`2403105xx`, one duplicate = 19 unique) → initially unclear: Y2 or Y3?
+  - 3 others: `210310056` Udo (carry-over 2021), `210310109` Popoola (carry-over 2021),
+    `2303010046` Owonifari (10-digit typo → corrected to 230310046)
+- User confirmed Popoola is a carry-over → Y3.
+- INVESTIGATION of the 19 DE-2024 students (user said "sort them out, investigate"):
+  - Checked existing Bio Ed Y2 cohort (73 students): prefixes `2403100xx` (53, UTME 2024)
+    + `2503105xx` (19, DE 2025). NO `2403105xx` present.
+  - Checked Maths Ed 300L: contains `2403135xx` (DE 2024) → pattern: DE 2024 = 300L.
+  - Checked Maths Ed 200L: contains `2503135xx` (DE 2025) → pattern: DE 2025 = 200L.
+  - CONCLUSION: DE 2024 (`240xx5xx`) belongs in 300L (Y3). The 19 Biology DE-2024
+    students self-submitted to the Y3 form CORRECTLY. Uploaded them as Bio Ed Y3.
+  - (The pattern: Year-N cohort = UTME admitted (N−1) sessions ago + DE admitted
+    (N−1) sessions ago + spill-overs. DE students start at 200L and progress with
+    their UTME-admission-year peers.)
+- Also spotted a pre-existing bad row in Bio Ed Y2: a matric starting `0107050...`
+  (9 digits but clearly not a real UNILAG matric). NOT mine to fix — flagged for
+  the user to review later. Did NOT touch it.
+- Uploaded in 2 batches:
+  - Batch 1: 69 students (66 UTME + Udo + Popoola + corrected Owonifari) → 69 inserted, 0 skipped.
+  - Batch 2: 19 DE-2024 students → 19 inserted, 0 skipped.
+- Verified 6 students (all categories) via direct DB bcrypt.compare + live login API:
+  - 230310003 (UTME) ✅  210310056 (Udo, carry-over) ✅  210310109 (Popoola, carry-over) ✅
+  - 230310046 (corrected typo) ✅  240310517 (DE) ✅  240310501 (DE) ✅
+- Cleanup: deleted 6 test Student rows + reset allowlist entries + deleted DeviceClaimAttempt
+  audit rows. Bio Ed Y3 verified: total=88, claimed=0. ALL CLEAN.
+
+Stage Summary:
+- Biology Education Year 3: 88 students uploaded + verified (66 UTME + 2 carry-overs
+  + 1 corrected typo + 19 Direct Entry).
+- Production voter register: 530 → 618 students across 13 cohorts (Bio Ed Y3 is new).
+- Carry-over / direct-entry classification pattern CONFIRMED and now in memory:
+    Year-N = UTME admitted (N−1) sessions ago + DE admitted (N−1) sessions ago
+              + spill-overs (older admits repeating).
+  DE students start at 200L and progress with their admission-year peers.
+- Pre-existing bad row flagged: Bio Ed Y2 has a matric `0107050...` — needs user review.
+- Election Tuesday July 7, 08:00 WAT. Awaiting next roster.
