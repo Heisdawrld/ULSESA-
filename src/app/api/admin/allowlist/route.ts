@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 }
 
 /**
- * DELETE /api/admin/allowlist?matric=230315001
+ * DELETE /api/admin/allowlist?matric=200134567
  * Removes a single matric from the allowlist (e.g. if a class rep made an
  * error). Refuses to delete if the matric is already claimed.
  */

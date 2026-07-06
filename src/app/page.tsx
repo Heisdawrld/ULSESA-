@@ -3,6 +3,7 @@
 import { useNav } from '@/lib/stores/nav-store'
 import { Navbar, MobileBottomNav } from '@/components/layout/navbar'
 import { Footer } from '@/components/layout/footer'
+import { JarvisAssistant } from '@/components/shared/jarvis-assistant'
 import { lazy, Suspense } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -60,6 +61,7 @@ export default function Home() {
       </main>
       <Footer />
       <MobileBottomNav />
+      <JarvisAssistant />
     </div>
   )
 }

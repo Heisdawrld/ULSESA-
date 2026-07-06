@@ -5,7 +5,7 @@
  * code, which is discoverable from a student's level/department anyway)
  * and replaces the unique-identifier portion with asterisks.
  *
- * Example: "230313001" → "2303*****"
+ * Example: "200134567" → "2001*****"
  *
  * Rationale: the first 4 digits are not secret. The remaining digits
  * uniquely identify the student within their cohort and are hidden so

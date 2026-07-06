@@ -100,14 +100,14 @@ type FaqItem = {
 const FAQS: FaqItem[] = [
   {
     id: 'faq-1',
-    q: 'How do I claim my account?',
-    a: 'Claiming your account takes about 5 minutes. (1) On the Auth page, choose "Claim Account" and enter your matric number (numeric, e.g. 230317091). (2) We confirm your identity against the ULSESA register and show you a preview of your profile. (3) Choose how to receive your one-time password — email or SMS — and enter the 6-digit code. (4) Upload a clear photo of your student ID. (5) Set a strong password. Your account then moves to "submitted" status, awaiting admin approval (usually within 24 hours).',
+    q: 'How do I sign in?',
+    a: 'Signing in takes about a minute. (1) On the Auth page, enter your 9-digit matric number (numeric only, e.g. 200134567). (2) Enter your pre-set password — it is your matric number plus the last 4 letters of your surname (lowercase). (3) We verify you against the ULSESA voter register and let you in. If you are not sure of the exact spelling of your surname as it appears on your class attendance list, tap "Can\'t log in?" on the sign-in card to chat with us on WhatsApp.',
   },
   {
     id: 'faq-2',
-    q: 'Why is my account not verified yet?',
-    a: 'After you complete the claim flow, a ULSESA administrator reviews your submission — typically within 24 hours during business days. You can check your status on the Dashboard. If your account is rejected, you will see a note explaining why and can re-submit. If it has been more than 48 hours with no update, please chat with David on WhatsApp for a quick status check.',
-    whatsapp: { label: 'Chat with David on WhatsApp', message: SUPPORT_MESSAGES.account },
+    q: 'I can\'t log in — what should I check first?',
+    a: 'Three things, in order: (1) Double-check your 9-digit matric number — type only the digits, no slashes or spaces. (2) Remember your password is your matric + the last 4 letters of your surname, all lowercase. For example, matric 200134567 with surname "Bello" gives 200134567ello. (3) Make sure your surname spelling matches exactly what is on your class attendance list (Nigerian convention: SURNAME is the first word). After 5 wrong attempts your matric is locked for 15 minutes. Still stuck? Tap "Can\'t log in?" on the sign-in card to chat with us on WhatsApp.',
+    whatsapp: { label: 'Chat with us on WhatsApp', message: SUPPORT_MESSAGES.account },
   },
   {
     id: 'faq-3',
@@ -148,7 +148,7 @@ const FAQS: FaqItem[] = [
 ]
 
 const FAQ_KEYWORDS: Record<string, string[]> = {
-  'faq-1': ['claim', 'account', 'register', 'sign up', 'matric', 'otp', '230317091'],
+  'faq-1': ['sign in', 'login', 'account', 'register', 'matric', 'password', '200134567'],
   'faq-2': ['verified', 'verification', 'pending', 'approved', 'rejected', 'status'],
   'faq-3': ['vote', 'voting', 'cast', 'ballot', 'how to vote'],
   'faq-4': ['anonymous', 'privacy', 'secret', 'identity'],

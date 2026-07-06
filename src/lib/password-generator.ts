@@ -11,10 +11,10 @@
  * "SURNAME FirstName [MiddleName]" in UPPERCASE. So the surname is the
  * FIRST whitespace-separated token of fullName.
  *
- * Examples (fictional — NOT real students):
- *   230315001 BELLO Aisha Mohammed   → 230315001ello
- *   230315002 ADEWALE John Oluwaseun → 230315002wale
- *   230315003 EZE Grace Ngozi        → 230315003eze  (short surname → whole thing)
+ * Examples (fictional — NOT real students, uses dummy 2001 prefix):
+ *   200134567 BELLO Aisha Mohammed   → 200134567ello
+ *   200134568 ADEWALE John Oluwaseun → 200134568wale
+ *   200134569 EZE Grace Ngozi        → 200134569eze  (short surname → whole thing)
  *
  * Edge cases handled:
  *  - Surname shorter than 4 letters → use the whole surname (e.g. "Eze" → "eze")
@@ -85,4 +85,4 @@ export const PASSWORD_RULE_HINT =
  * Example used in the login hint box. Uses a FICTIONAL student that is
  * NOT in any roster, so the hint can never leak a real password.
  */
-export const PASSWORD_RULE_EXAMPLE = 'e.g. matric 230315001, surname "Bello" → 230315001ello'
+export const PASSWORD_RULE_EXAMPLE = 'e.g. matric 200134567, surname "Bello" → 200134567ello'

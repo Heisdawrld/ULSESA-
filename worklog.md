@@ -2085,3 +2085,40 @@ Stage Summary:
 - **SELF-HEALING.** Every page load syncs the stored status to match the clock, so the admin panel and audit trail always reflect the live state. No cron needed.
 - **COUNTDOWN VISIBLE.** Both students and admins see a live ticking countdown to the next transition (auto-open when upcoming, auto-close when active).
 - Production schedule confirmed: start=2026-07-07T07:00:00Z, end=2026-07-07T17:00:00Z, manualOverride=null (auto-pilot).
+
+---
+Task ID: JARVIS-1
+Agent: main-orchestrator
+Task: Add Jarvis-style interactive greeting prompt for first-time visitors + replace real-looking placeholder matric numbers with fake dummy format (200134567)
+
+Work Log:
+- Audited codebase for placeholder matric numbers that resembled real student matrics (23xx/24xx prefix). Found and replaced ALL of them with the dummy `200134567` format (year-2001 prefix = obviously not a current student):
+  - `src/components/views/auth-view.tsx` — login input placeholder `e.g. 200134567`
+  - `src/lib/password-generator.ts` — comment examples + `PASSWORD_RULE_EXAMPLE` constant now uses `200134567` / `200134568` / `200134569`
+  - `src/lib/matric-mask.ts` — comment example `"200134567" → "2001*****"`
+  - `src/app/api/admin/voting-activity/route.ts` — JSDoc example
+  - `src/app/api/admin/allowlist/route.ts` — JSDoc example
+  - `src/components/views/admin-view.tsx` — new-matric input placeholder
+  - `src/components/views/help-view.tsx` — FAQ #1 rewritten to describe the actual sign-in flow (claim flow is gone) using fake matric; FAQ #2 rewritten as "I can't log in — what should I check first?"; FAQ keyword index updated
+- Built a new `JarvisAssistant` component (`src/components/shared/jarvis-assistant.tsx`) with two layers:
+  1. **First-visit boot overlay** — shows once per browser (localStorage `ulsesa-jarvis-greeted` flag, versioned). Only on home view + non-authenticated visitors. Animated arc-reactor orb (CSS: pulsing core, 3 expanding rings, conic sweep, scan line), "Initialising ULSESA Intelligence" boot line → time-aware (Lagos time UTC+1) typewriter greeting → 3 quick-action buttons (Meet the candidates / How voting works / Sign in to vote) + "Maybe later" dismiss. Body scroll locked while open.
+  2. **Persistent floating orb** — small cyan orb fixed bottom-right (bottom-24 on mobile to clear bottom nav, bottom-6 on desktop). Opens a compact panel with header (mini orb + "Online" status), rotating tips (6 election-day tips, auto-rotate every 6.5s, clickable dots), and quick-nav links (Home + the 3 quick actions). Hidden on auth & admin views. Closes on outside-click / Escape.
+- Added Jarvis CSS animations to `src/app/globals.css`: `jarvisCorePulse`, `jarvisRingExpand`, `jarvisBlink` (cursor), `jarvisSweep` (conic), `jarvisScan` (scan line) + utility classes `.jarvis-orb-core`, `.jarvis-ring`, `.jarvis-cursor`, `.jarvis-sweep`, `.jarvis-scanline`. All respect `prefers-reduced-motion`.
+- Integrated `<JarvisAssistant />` into `src/app/page.tsx` (rendered alongside Navbar/Footer/MobileBottomNav).
+- Fixed a lint error (React ref accessed during render) by switching `useRef(buildGreeting())` to a lazy `useState(() => buildGreeting())` initializer.
+
+Verification (agent-browser end-to-end):
+- Cleared localStorage → loaded home → boot overlay appeared after ~0.9s delay → orb animated → "Initialising" → typewriter greeting typed out → quick-action buttons faded in.
+- VLM (glm-4.6v) confirmed the overlay is "polished, premium, strong Jarvis/Iron Man aesthetic, no visual issues, flawless layout".
+- Clicked "Meet the candidates" → navigated to Elections view + floating orb appeared.
+- Clicked orb → panel opened with rotating tip + 6 tip dots + 4 quick links. VLM confirmed panel is "clean, well-organized, no distracting visual flaws".
+- Verified orb is correctly HIDDEN on the auth view (0 matches for "ULSESA assistant").
+- Verified localStorage flag `ulsesa-jarvis-greeted: 1` persisted after dismissal (won't re-show).
+- Mobile (iPhone 14) test: boot overlay fits viewport with no horizontal overflow, all elements properly sized. Floating orb positioned ABOVE the bottom nav without overlapping. VLM confirmed "no issues".
+- `bun run lint` passes clean. Dev log shows no errors/warnings.
+
+Stage Summary:
+- **Placeholder matrics**: All real-looking placeholder matrics (23xx/24xx) replaced with dummy `200134567` format across 7 files. Real student rosters untouched.
+- **Jarvis assistant**: Fully functional first-visit boot overlay + persistent floating orb. Premium arc-reactor visual, time-aware typewriter greeting, quick actions, rotating tips. Responsive (mobile + desktop), accessible (ARIA, reduced-motion, keyboard/escape dismiss), SSR-safe (localStorage gated behind useEffect).
+- **Files created**: `src/components/shared/jarvis-assistant.tsx`
+- **Files modified**: `src/app/globals.css`, `src/app/page.tsx`, `src/components/views/auth-view.tsx`, `src/components/views/help-view.tsx`, `src/components/views/admin-view.tsx`, `src/lib/password-generator.ts`, `src/lib/matric-mask.ts`, `src/app/api/admin/voting-activity/route.ts`, `src/app/api/admin/allowlist/route.ts`

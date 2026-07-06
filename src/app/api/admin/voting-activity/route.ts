@@ -42,7 +42,7 @@ function safeISODate(val: unknown): string | null {
  * Returns full matric numbers and full names (admin privilege).
  *
  * Each entry:
- *   - matricNumber  (full, e.g. "230313001")
+ *   - matricNumber  (full, e.g. "200134567")
  *   - fullName      (full, e.g. "EFFIONG FLORENCE JOY")
  *   - programme / level / cohort
  *   - isClaimed     (has a Student claimed this matric?)

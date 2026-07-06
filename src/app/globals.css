@@ -260,6 +260,110 @@
     background-size: 200% 100%;
     animation: shimmer 2s infinite;
   }
+
+  /* ============================================================
+     JARVIS ASSISTANT — arc reactor orb + boot animations
+     ============================================================ */
+  .jarvis-orb-core {
+    background: radial-gradient(
+      circle at 35% 35%,
+      oklch(0.95 0.18 195) 0%,
+      var(--cyan-accent) 35%,
+      color-mix(in oklch, var(--primary) 80%, var(--cyan-accent)) 75%,
+      var(--primary) 100%
+    );
+    box-shadow:
+      0 0 24px -2px color-mix(in oklch, var(--cyan-accent) 70%, transparent),
+      0 0 60px -10px color-mix(in oklch, var(--primary) 50%, transparent),
+      inset 0 0 18px -4px oklch(1 0 0 / 0.5);
+    animation: jarvisCorePulse 2.8s ease-in-out infinite;
+  }
+
+  .jarvis-ring {
+    border: 1.5px solid color-mix(in oklch, var(--cyan-accent) 55%, transparent);
+    animation: jarvisRingExpand 3s ease-out infinite;
+  }
+  .jarvis-ring-2 {
+    animation-delay: 1s;
+    border-color: color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+  .jarvis-ring-3 {
+    animation-delay: 2s;
+    border-color: color-mix(in oklch, var(--cyan-accent) 35%, transparent);
+  }
+
+  .jarvis-cursor::after {
+    content: '▌';
+    margin-left: 1px;
+    color: var(--cyan-accent);
+    animation: jarvisBlink 1s step-end infinite;
+  }
+
+  /* Rotating conic sweep inside the orb */
+  .jarvis-sweep {
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      color-mix(in oklch, var(--cyan-accent) 55%, transparent) 60deg,
+      transparent 120deg
+    );
+    animation: jarvisSweep 4s linear infinite;
+  }
+
+  /* Scan line that runs across the boot card */
+  .jarvis-scanline {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in oklch, var(--cyan-accent) 45%, transparent) 50%,
+      transparent 100%
+    );
+    animation: jarvisScan 3.5s ease-in-out infinite;
+  }
+}
+
+@keyframes jarvisCorePulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 24px -2px color-mix(in oklch, var(--cyan-accent) 70%, transparent),
+      0 0 60px -10px color-mix(in oklch, var(--primary) 50%, transparent),
+      inset 0 0 18px -4px oklch(1 0 0 / 0.5);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow:
+      0 0 34px 0px color-mix(in oklch, var(--cyan-accent) 85%, transparent),
+      0 0 90px -8px color-mix(in oklch, var(--primary) 65%, transparent),
+      inset 0 0 24px -2px oklch(1 0 0 / 0.7);
+  }
+}
+
+@keyframes jarvisRingExpand {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes jarvisBlink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+@keyframes jarvisSweep {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes jarvisScan {
+  0%, 100% { transform: translateX(-100%); opacity: 0; }
+  50% { opacity: 1; }
+  60% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
 }
 
 @keyframes fadeIn {
@@ -365,5 +469,12 @@
   ::view-transition-new(root) {
     animation: none;
     clip-path: none;
+  }
+  .jarvis-orb-core,
+  .jarvis-ring,
+  .jarvis-sweep,
+  .jarvis-scanline,
+  .jarvis-cursor::after {
+    animation: none;
   }
 }

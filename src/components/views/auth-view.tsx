@@ -387,7 +387,7 @@ function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
               id="signin-matric"
               inputMode="numeric"
               autoComplete="username"
-              placeholder="e.g. 230315001"
+              placeholder="e.g. 200134567"
               value={matric}
               onChange={(e) => {
                 setMatric(e.target.value.replace(/[^0-9]/g, '').slice(0, 9))
