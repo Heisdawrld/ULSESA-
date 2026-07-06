@@ -150,8 +150,18 @@ model Election {
   title       String
   description String?
   status      String   @default("upcoming") // upcoming, active, ended, cancelled
+  // Mirror of the derived status, updated opportunistically on every API
+  // read so the admin panel / audit trail reflect the live clock state
+  // without a separate cron. The SOURCE OF TRUTH for the effective status
+  // is getEffectiveStatus() in src/lib/election-status.ts, which derives
+  // from startDate/endDate unless manualOverride is set.
   startDate   DateTime
   endDate     DateTime
+  // Admin emergency lever. NULL = auto-pilot (status derived from clock).
+  // Non-NULL = this value wins over the clock. Values: "active" | "ended" |
+  // "cancelled" | "upcoming". Set via /api/admin/election action=start/end/
+  // cancel; cleared via action=clear_override.
+  manualOverride String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

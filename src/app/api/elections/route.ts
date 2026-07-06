@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentStudent } from '@/lib/auth/server-auth'
+import { syncElectionStatus } from '@/lib/election-status'
 
 export async function GET() {
   try {
@@ -32,6 +33,13 @@ export async function GET() {
       elections.find((e) => e.status === 'upcoming') ||
       elections[0]
 
+    // ── Auto-pilot sync ────────────────────────────────────────────────
+    // Derive the effective status from the clock (unless admin has set a
+    // manualOverride). Sync the stored `status` column to match so the
+    // admin panel + audit trail reflect the live state. This is the
+    // "Jarvis" heart — every page load reconciles the election with time.
+    const effectiveStatus = await syncElectionStatus(election)
+
     // Determine which positions the current student (if any) has voted in
     const student = await getCurrentStudent()
     let hasVoted: Record<string, boolean> = {}
@@ -57,7 +65,11 @@ export async function GET() {
         id: election.id,
         title: election.title,
         description: election.description,
-        status: election.status,
+        status: effectiveStatus,
+        // Expose scheduling metadata so the frontend can show countdowns
+        // and the AUTO/MANUAL badge without an extra round-trip.
+        storedStatus: election.status,
+        manualOverride: election.manualOverride,
         startDate: election.startDate,
         endDate: election.endDate,
       },

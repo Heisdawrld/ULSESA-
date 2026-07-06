@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentStudent } from '@/lib/auth/server-auth'
 import { generateReceiptCode } from '@/lib/receipt'
+import { getEffectiveStatus } from '@/lib/election-status'
 
 export async function POST(request: Request) {
   try {
@@ -48,9 +49,20 @@ export async function POST(request: Request) {
     }
 
     const election = candidate.position.election
-    if (election.status !== 'active') {
+    // Use the clock-derived effective status (auto-pilot) instead of the
+    // stored status column. This means voting opens/closes exactly on
+    // schedule without needing an admin to flip a switch — unless the
+    // admin has set a manualOverride, which getEffectiveStatus respects.
+    const effectiveStatus = getEffectiveStatus(election)
+    if (effectiveStatus !== 'active') {
+      const label =
+        effectiveStatus === 'upcoming'
+          ? 'Voting has not opened yet. Please check back at the scheduled start time.'
+          : effectiveStatus === 'ended'
+            ? 'Voting has closed. The election has ended.'
+            : 'This election has been cancelled.'
       return NextResponse.json(
-        { error: `Election is currently ${election.status}. Voting is closed.` },
+        { error: label, status: effectiveStatus },
         { status: 400 }
       )
     }

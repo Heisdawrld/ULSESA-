@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getEffectiveStatus } from '@/lib/election-status'
 
 export async function GET() {
   try {
@@ -19,10 +20,12 @@ export async function GET() {
     }
 
     const election =
-      elections.find((e) => e.status === 'active') ||
-      elections.find((e) => e.status === 'ended') ||
-      elections.find((e) => e.status === 'upcoming') ||
+      elections.find((e) => getEffectiveStatus(e) === 'active') ||
+      elections.find((e) => getEffectiveStatus(e) === 'ended') ||
+      elections.find((e) => getEffectiveStatus(e) === 'upcoming') ||
       elections[0]
+
+    const effectiveStatus = getEffectiveStatus(election)
 
     const positions = await db.position.findMany({
       where: { electionId: election.id },
@@ -52,7 +55,8 @@ export async function GET() {
       election: {
         id: election.id,
         title: election.title,
-        status: election.status,
+        status: effectiveStatus,
+        manualOverride: election.manualOverride,
         startDate: election.startDate,
         endDate: election.endDate,
       },

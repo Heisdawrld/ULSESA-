@@ -51,6 +51,12 @@ import {
   Smartphone,
   Ban,
   Plus,
+  Bot,
+  CalendarClock,
+  Power,
+  RotateCcw,
+  Zap,
+  Timer,
 } from 'lucide-react'
 
 import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
@@ -204,6 +210,13 @@ interface Election {
   startDate: string
   endDate: string | null
   positions?: ElectionPosition[]
+  // Auto-pilot fields (added with the Jarvis election-scheduling feature):
+  // - effectiveStatus: the live status derived from the clock (or override)
+  // - manualOverride: null = auto-pilot, non-null = admin override value
+  // - schedulingMode: 'auto' | 'manual' — computed by the API
+  effectiveStatus?: string
+  manualOverride?: string | null
+  schedulingMode?: 'auto' | 'manual'
 }
 
 // ===================== Allowlist / Disputes types =====================
@@ -368,6 +381,12 @@ function electionStatusBadge(status: string) {
       return (
         <Badge variant="secondary" className="text-muted-foreground">
           Ended
+        </Badge>
+      )
+    case 'cancelled':
+      return (
+        <Badge className="border-transparent bg-red-500/15 text-red-600 dark:text-red-400 gap-1">
+          Cancelled
         </Badge>
       )
     default:
@@ -2291,7 +2310,22 @@ function ElectionSection() {
     return () => window.clearInterval(id)
   }, [election?.status, fetchElection])
 
-  async function toggle(action: 'start' | 'end') {
+  // Live countdown ticker — updates every second so the admin sees the
+  // seconds tick down to auto-open / auto-close. Only mounted when there's
+  // a future scheduled transition (i.e. auto-pilot mode + not ended).
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!election) return
+    // Only tick when in auto-pilot AND the election is upcoming or active
+    // (once ended, no more transitions to count down to).
+    const effective = election.effectiveStatus ?? election.status
+    if (election.manualOverride) return // manual override — no countdown
+    if (effective === 'ended' || effective === 'cancelled') return
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [election])
+
+  async function toggle(action: 'start' | 'end' | 'cancel' | 'clear_override') {
     setActing(true)
     try {
       const res = await api.post<{ election: Election }>('/admin/election', {
@@ -2301,9 +2335,13 @@ function ElectionSection() {
         ...res.election,
         positions: prev?.positions ?? res.election.positions,
       }))
-      toast.success(
-        action === 'start' ? 'Election started' : 'Election ended'
-      )
+      const msg: Record<typeof action, string> = {
+        start: 'Election force-opened (manual override)',
+        end: 'Election force-closed (manual override)',
+        cancel: 'Election cancelled',
+        clear_override: 'Returned to auto-pilot',
+      }
+      toast.success(msg[action])
       void fetchElection(true)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Action failed')
@@ -2451,8 +2489,33 @@ function ElectionSection() {
     )
   }
 
-  const isActive = election?.status === 'active'
-  const hasEnded = election?.status === 'ended'
+  const effectiveStatus = election?.effectiveStatus ?? election?.status ?? 'upcoming'
+  const isActive = effectiveStatus === 'active'
+  const hasEnded = effectiveStatus === 'ended'
+  const isCancelled = effectiveStatus === 'cancelled'
+  const isManual = election?.manualOverride != null
+  const isAuto = !isManual
+
+  // Live countdown string (ticking every second via the `now` state).
+  const startMs = election?.startDate ? new Date(election.startDate).getTime() : 0
+  const endMs = election?.endDate ? new Date(election.endDate).getTime() : 0
+  const countdownTarget =
+    effectiveStatus === 'upcoming' ? startMs : effectiveStatus === 'active' ? endMs : 0
+  const countdown =
+    countdownTarget > 0
+      ? (() => {
+          const diff = countdownTarget - now
+          if (diff <= 0) return null
+          const d = Math.floor(diff / 86400000)
+          const h = Math.floor((diff % 86400000) / 3600000)
+          const m = Math.floor((diff % 3600000) / 60000)
+          const s = Math.floor((diff % 60000) / 1000)
+          if (d > 0) return `${d}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`
+          return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+        })()
+      : null
+  const countdownLabel =
+    effectiveStatus === 'upcoming' ? 'Opens in' : effectiveStatus === 'active' ? 'Closes in' : null
 
   return (
     <div className="space-y-6">
@@ -2486,16 +2549,59 @@ function ElectionSection() {
 
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="font-display text-xl">
-                {election?.title || 'No election configured'}
-              </CardTitle>
-              <CardDescription>
-                Manage the active election cycle
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="font-display text-xl">
+                  {election?.title || 'No election configured'}
+                </CardTitle>
+                {election && electionStatusBadge(effectiveStatus)}
+                {election && (
+                  <Badge
+                    className={cn(
+                      'border-transparent gap-1 text-[10px] uppercase tracking-wide',
+                      isAuto
+                        ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
+                        : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                    )}
+                    title={
+                      isAuto
+                        ? 'Status is derived automatically from the schedule'
+                        : `Manual override: ${election.manualOverride}`
+                    }
+                  >
+                    {isAuto ? (
+                      <><Bot className="size-3" /> Auto-pilot</>
+                    ) : (
+                      <><Zap className="size-3" /> Manual</>
+                    )}
+                  </Badge>
+                )}
+              </div>
+              <CardDescription className="mt-1">
+                {isCancelled
+                  ? 'This election has been cancelled. Voting is disabled.'
+                  : isManual
+                    ? `Manual override active — auto-pilot suspended. Override: ${election?.manualOverride}`
+                    : isActive
+                      ? 'Auto-pilot active — voting is open. Election will close automatically at the scheduled end time.'
+                      : hasEnded
+                        ? 'Auto-pilot — election closed automatically at the scheduled end time.'
+                        : 'Auto-pilot — election will open automatically at the scheduled start time.'}
               </CardDescription>
             </div>
-            {election && electionStatusBadge(election.status)}
+            {/* Live countdown */}
+            {countdown && countdownLabel && (
+              <div className="shrink-0 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-right">
+                <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                  <Timer className="size-3" />
+                  {countdownLabel}
+                </div>
+                <div className="mt-0.5 font-mono text-lg font-bold tabular-nums text-primary">
+                  {countdown}
+                </div>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2563,46 +2669,67 @@ function ElectionSection() {
             </>
           )}
           <Separator />
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {election?.status === 'upcoming' && (
+          {/* Auto-pilot explainer (only in auto mode + not ended) */}
+          {isAuto && !hasEnded && !isCancelled && (
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
+              <Bot className="size-4 text-violet-500 shrink-0 mt-0.5" />
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <p className="font-medium text-foreground">
+                  Auto-pilot is engaged.
+                </p>
+                <p>
+                  The election will <strong>{effectiveStatus === 'upcoming' ? 'open' : 'close'}</strong> automatically
+                  at <strong>{effectiveStatus === 'upcoming' ? (election?.startDate ? formatDateTime(election.startDate) : '—') : (election?.endDate ? formatDateTime(election.endDate) : '—')}</strong> (WAT).
+                  No manual action is needed. Use the override buttons below only for emergencies.
+                </p>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            {/* Force Open (override) — available when not already active */}
+            {election && !isActive && !isCancelled && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button disabled={acting} className="flex-1">
-                    <PlayCircle className="size-4" /> Start Election
+                  <Button disabled={acting} className="flex-1 sm:flex-none">
+                    <PlayCircle className="size-4" /> Force Open
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Start election?</AlertDialogTitle>
+                    <AlertDialogTitle>Force-open the election?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Voting will open immediately for all verified students.
+                      Voting will open immediately, overriding the scheduled start time.
+                      Auto-pilot is suspended until you return it. Use this only if the schedule is wrong
+                      or you need to open voting early.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction onClick={() => void toggle('start')}>
-                      Confirm Start
+                      Force Open
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
             )}
-            {election?.status === 'active' && (
+            {/* Force Close (override) — available when active or upcoming */}
+            {election && (isActive || effectiveStatus === 'upcoming') && !isCancelled && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
                     variant="destructive"
                     disabled={acting}
-                    className="flex-1"
+                    className="flex-1 sm:flex-none"
                   >
-                    <StopCircle className="size-4" /> End Election
+                    <StopCircle className="size-4" /> Force Close
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>End election?</AlertDialogTitle>
+                    <AlertDialogTitle>Force-close the election?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Voting will close immediately. Results will be final.
+                      Voting will close immediately. Results will be final. Auto-pilot is suspended
+                      until you return it.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -2611,7 +2738,70 @@ function ElectionSection() {
                       className="bg-destructive text-white hover:bg-destructive/90"
                       onClick={() => void toggle('end')}
                     >
-                      Confirm End
+                      Force Close
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {/* Cancel election — available unless already cancelled */}
+            {election && !isCancelled && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={acting}
+                    className="flex-1 sm:flex-none border-red-500/30 text-red-600 hover:bg-red-500/5 hover:text-red-700 dark:text-red-400"
+                  >
+                    <Ban className="size-4" /> Cancel
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Cancel the election?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This voids the election entirely — voting is disabled and results are not shown.
+                      This is a manual override; you can return to auto-pilot afterwards, but the
+                      schedule will resume from the current state.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep election</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-red-600 text-white hover:bg-red-700"
+                      onClick={() => void toggle('cancel')}
+                    >
+                      Cancel Election
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            {/* Return to Auto-Pilot — only when a manual override is active */}
+            {election && isManual && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={acting}
+                    className="flex-1 sm:flex-none border-violet-500/30 text-violet-600 hover:bg-violet-500/5 hover:text-violet-700 dark:text-violet-400"
+                  >
+                    <RotateCcw className="size-4" /> Return to Auto-Pilot
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Return to auto-pilot?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The manual override will be cleared. The election status will be derived
+                      from the schedule again: if the current time is within the start/end window,
+                      voting opens immediately; otherwise it returns to upcoming or ended.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep override</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void toggle('clear_override')}>
+                      Return to Auto
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -2622,7 +2812,7 @@ function ElectionSection() {
                 variant="outline"
                 onClick={exportCsv}
                 disabled={exporting}
-                className="flex-1 sm:flex-none"
+                className="flex-1 sm:flex-none sm:ml-auto"
               >
                 {exporting ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -2632,11 +2822,9 @@ function ElectionSection() {
                 Export CSV
               </Button>
             )}
-            {(!election || election.status === 'ended') && !election?.positions && (
+            {!election && (
               <div className="flex-1 rounded-xl bg-muted/40 p-3 text-center text-sm text-muted-foreground">
-                {election
-                  ? 'This election has ended. No further actions available.'
-                  : 'No election configured in the database.'}
+                No election configured in the database.
               </div>
             )}
           </div>

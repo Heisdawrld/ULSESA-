@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentAdmin } from '@/lib/auth/server-auth'
+import {
+  getEffectiveStatus,
+  getSchedulingMode,
+  type ElectionStatus,
+} from '@/lib/election-status'
 
 export async function GET() {
   try {
@@ -39,7 +44,19 @@ export async function GET() {
       return NextResponse.json({ election: null })
     }
 
-    return NextResponse.json({ election })
+    // Compute the live effective status + scheduling mode so the admin
+    // panel shows the truth (auto vs manual override) without polling.
+    const effectiveStatus = getEffectiveStatus(election)
+    const scheduling = getSchedulingMode(election)
+
+    return NextResponse.json({
+      election: {
+        ...election,
+        effectiveStatus,
+        schedulingMode: scheduling.mode,
+        manualOverride: scheduling.override,
+      },
+    })
   } catch (error) {
     console.error('[admin/election GET] Error:', error)
     return NextResponse.json(
@@ -62,9 +79,13 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const action = (body?.action ?? '').toString().trim().toLowerCase()
 
-    if (action !== 'start' && action !== 'end') {
+    // ── Validate action ────────────────────────────────────────────────
+    // start / end / cancel = set a manualOverride (wins over the clock)
+    // clear_override = return to auto-pilot (manualOverride = null)
+    const validActions = ['start', 'end', 'cancel', 'clear_override']
+    if (!validActions.includes(action)) {
       return NextResponse.json(
-        { error: "action must be 'start' or 'end'" },
+        { error: `action must be one of: ${validActions.join(', ')}` },
         { status: 400 }
       )
     }
@@ -80,23 +101,62 @@ export async function POST(request: Request) {
       )
     }
 
-    const newStatus = action === 'start' ? 'active' : 'ended'
+    // Map action → manualOverride value
+    const overrideMap: Record<string, ElectionStatus> = {
+      start: 'active',
+      end: 'ended',
+      cancel: 'cancelled',
+    }
+
+    let newOverride: string | null
+    let auditAction: string
+    let auditDetails: string
+
+    if (action === 'clear_override') {
+      newOverride = null
+      auditAction = 'clear_election_override'
+      auditDetails = `Cleared manual override on "${election.title}" — election returned to auto-pilot (status now derived from schedule). Action by ${admin.name}.`
+    } else {
+      newOverride = overrideMap[action]
+      auditAction =
+        action === 'start'
+          ? 'force_start_election'
+          : action === 'end'
+            ? 'force_end_election'
+            : 'cancel_election'
+      const verb =
+        action === 'start'
+          ? 'force-opened'
+          : action === 'end'
+            ? 'force-closed'
+            : 'cancelled'
+      auditDetails = `Election "${election.title}" ${verb} via manual override by ${admin.name}. Auto-pilot suspended until override cleared.`
+    }
 
     const updated = await db.election.update({
       where: { id: election.id },
-      data: { status: newStatus },
+      data: {
+        manualOverride: newOverride,
+        // Also update the mirrored status so the admin UI flips instantly
+        // (no flicker while waiting for the next GET to sync).
+        status: newOverride ?? (await getEffectiveStatus(election)),
+      },
     })
 
     await db.auditLog.create({
       data: {
         adminId: admin.id,
-        action: action === 'start' ? 'start_election' : 'end_election',
+        action: auditAction,
         target: election.title,
-        details: `Election "${election.title}" ${action === 'start' ? 'started' : 'ended'} by ${admin.name}`,
+        details: auditDetails,
       },
     })
 
-    return NextResponse.json({ election: updated })
+    return NextResponse.json({
+      election: updated,
+      effectiveStatus: getEffectiveStatus(updated),
+      schedulingMode: getSchedulingMode(updated).mode,
+    })
   } catch (error) {
     console.error('[admin/election POST] Error:', error)
     return NextResponse.json(
@@ -166,9 +226,9 @@ export async function PUT(request: Request) {
     await db.auditLog.create({
       data: {
         adminId: admin.id,
-        action: 'update_election',
+        action: 'update_election_schedule',
         target: election.title,
-        details: `Election "${election.title}" updated by ${admin.name}: ${Object.keys(data).join(', ')}`,
+        details: `Election "${election.title}" schedule updated by ${admin.name}: ${Object.keys(data).join(', ')}`,
       },
     })
 
