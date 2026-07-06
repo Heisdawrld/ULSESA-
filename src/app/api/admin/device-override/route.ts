@@ -7,7 +7,7 @@ import { hashDeviceFingerprint, shortFingerprint } from '@/lib/device-limit'
  * POST /api/admin/device-override
  *
  * Grant extra claim allowance for a specific device fingerprint. Used when
- * the auto-cap (default 2) is too low for a legitimate case — e.g. a school
+ * the auto-cap (default 1) is too low for a legitimate case — e.g. a school
  * computer lab where many students share one browser, or an admin trusts a
  * class rep's phone for a bulk claim session.
  *
@@ -16,7 +16,7 @@ import { hashDeviceFingerprint, shortFingerprint } from '@/lib/device-limit'
  *
  * - fingerprintHash must already exist in DeviceClaimAttempt (you can't
  *   pre-grant overrides for a device that hasn't been seen yet).
- * - extraClaims is added to the default cap. e.g. default=2 + extra=8 → cap=10.
+ * - extraClaims is added to the default cap. e.g. default=1 + extra=1 → cap=2.
  * - reason is required (audit trail).
  * - expiresAt is optional ISO string; if omitted the override never expires.
  *

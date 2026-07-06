@@ -14,6 +14,7 @@ import {
 } from '@/lib/rate-limiter'
 import {
   checkDeviceClaimLimit,
+  checkServerFingerprint,
   logClaimAttempt,
 } from '@/lib/device-limit'
 
@@ -28,9 +29,9 @@ import {
  * rest of the portal (which keys off the Student model) keeps working.
  *
  * Rate limiting:
- *   - 5 wrong passwords per matric → 15-minute lock (stops brute-forcing the
+ *   - 3 wrong passwords per matric → 15-minute lock (stops brute-forcing the
  *     4-letter surname suffix)
- *   - 15 wrong passwords per IP per hour → IP cooldown (stops one device
+ *   - 9 wrong passwords per IP per hour → IP cooldown (stops one device
  *     trying many matrics)
  */
 export async function POST(request: Request) {
@@ -140,15 +141,22 @@ export async function POST(request: Request) {
     // ── Device fingerprint check (FIRST CLAIM ONLY) ──────────────────────
     // If this matric has never been claimed (claimedByStudentId is null),
     // we're about to create a new Student row — that's a "claim". Enforce
-    // the max-2-claims-per-device cap to stop one phone from harvesting
-    // accounts. Returning students logging back in are NOT affected.
+    // the 1-claim-per-device cap to stop one phone from harvesting accounts.
+    // Returning students logging back in are NOT affected.
+    //
+    // TWO layers of fraud detection:
+    //  1. Client fingerprint (canvas+WebGL+audio+fonts+storage) — PRIMARY.
+    //     Survives cookie clearing, incognito, browser restarts.
+    //  2. Server-side IP cross-check — SECONDARY. Catches spoofed client
+    //     fingerprints by checking if the same IP already claimed a
+    //     different matric.
     let fingerprintHash: string | null = null
     if (!entry.claimedByStudentId && rawFingerprint && rawFingerprint !== 'server') {
+      // Layer 1: client fingerprint
       const check = await checkDeviceClaimLimit(rawFingerprint)
       fingerprintHash = check.fingerprintHash
 
       if (!check.allowed) {
-        // Log the blocked attempt so the admin sees it in the Device Activity tab.
         await logClaimAttempt({
           fingerprintHash: check.fingerprintHash,
           matricNumber: entry.matricNumber,
@@ -157,8 +165,33 @@ export async function POST(request: Request) {
           userAgent,
         })
 
-        // Generic message — does NOT disclose the cap, does NOT mention
-        // class reps. Just points the student at the electoral committee.
+        return NextResponse.json(
+          {
+            error:
+              "This device can't be used to claim more accounts right now. If you believe this is a mistake, please contact the ULSESA electoral committee.",
+            code: 'DEVICE_LIMIT_REACHED',
+          },
+          { status: 429 }
+        )
+      }
+
+      // Layer 2: server-side IP cross-check (catches cookie-clearing /
+      // incognito / anti-fingerprinting extension evasion)
+      const serverCheck = await checkServerFingerprint(
+        ip,
+        userAgent,
+        entry.matricNumber
+      )
+      if (!serverCheck.allowed) {
+        // Log with the client fingerprint hash so the admin sees both signals
+        await logClaimAttempt({
+          fingerprintHash: check.fingerprintHash,
+          matricNumber: entry.matricNumber,
+          outcome: 'blocked',
+          ip,
+          userAgent,
+        })
+
         return NextResponse.json(
           {
             error:

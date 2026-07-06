@@ -167,13 +167,13 @@ interface StudentLoginProps {
  * The hint box makes the rule explicit so real students know what to type.
  * An attacker still needs to know the target's name as it appears on the
  * attendance list to construct the password — combined with the per-matric
- * 5-attempt lockout, that's enough for an election-day portal.
+ * 3-attempt lockout, that's enough for an election-day portal.
  *
  * API contract (POST /api/auth/login):
  *   200 → { student, token, message }
  *   401 → { error, remaining }            wrong password (attempts left)
  *   404 → { error }                        matric not in voter register
- *   429 → { error, locked, retryAfter }    locked (5 fails) or IP cooldown
+ *   429 → { error, locked, retryAfter }    locked (3 fails) or IP cooldown
  */
 function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
   const [matric, setMatric] = useState('')
@@ -270,7 +270,7 @@ function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
         return
       }
 
-      // 429 — matric locked after 5 wrong attempts, or IP cooldown. Show
+      // 429 — matric locked after 3 wrong attempts, or IP cooldown. Show
       // the lock banner prominently with a lock icon.
       if (/is now locked|too many failed attempts from your device/i.test(msg)) {
         setLockedAlert(msg)
@@ -535,7 +535,7 @@ function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
         <div className="flex items-start gap-2 rounded-xl bg-muted/30 p-3">
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
           <p className="text-xs text-muted-foreground">
-            After 5 wrong attempts, this matric is locked for 15 minutes. One
+            After 3 wrong attempts, this matric is locked for 15 minutes. One
             account per student — your vote is anonymous and tied to your
             matric only.
           </p>

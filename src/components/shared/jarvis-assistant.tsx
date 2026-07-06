@@ -55,7 +55,7 @@ const TIPS: string[] = [
   'You can vote for each position exactly once — choices are anonymous.',
   'Read each candidate’s manifesto before you cast your ballot.',
   'Results update live on the Elections page once voting closes.',
-  'Locked out after 5 wrong tries? Wait 15 minutes, or chat with us on WhatsApp.',
+  'Locked out after 3 wrong tries? Wait 15 minutes, or chat with us on WhatsApp.',
 ]
 
 // ───────────────────────── Helpers ─────────────────────────

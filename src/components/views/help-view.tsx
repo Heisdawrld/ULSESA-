@@ -106,7 +106,7 @@ const FAQS: FaqItem[] = [
   {
     id: 'faq-2',
     q: 'I can\'t log in — what should I check first?',
-    a: 'Three things, in order: (1) Double-check your 9-digit matric number — type only the digits, no slashes or spaces. (2) Remember your password is your matric + the last 4 letters of your surname, all lowercase. For example, matric 200134567 with surname "Bello" gives 200134567ello. (3) Make sure your surname spelling matches exactly what is on your class attendance list (Nigerian convention: SURNAME is the first word). After 5 wrong attempts your matric is locked for 15 minutes. Still stuck? Tap "Can\'t log in?" on the sign-in card to chat with us on WhatsApp.',
+    a: 'Three things, in order: (1) Double-check your 9-digit matric number — type only the digits, no slashes or spaces. (2) Remember your password is your matric + the last 4 letters of your surname, all lowercase. For example, matric 200134567 with surname "Bello" gives 200134567ello. (3) Make sure your surname spelling matches exactly what is on your class attendance list (Nigerian convention: SURNAME is the first word). After 3 wrong attempts your matric is locked for 15 minutes. Still stuck? Tap "Can\'t log in?" on the sign-in card to chat with us on WhatsApp.',
     whatsapp: { label: 'Chat with us on WhatsApp', message: SUPPORT_MESSAGES.account },
   },
   {

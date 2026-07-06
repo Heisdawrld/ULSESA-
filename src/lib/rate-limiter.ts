@@ -35,10 +35,11 @@ const LIMITS = {
   NAME_FAILS_PER_IP_HOUR: 10,  // block IP-level name spraying
   LOCK_MINUTES: 30,            // lock matric after NAME_FAILS_PER_MATRIC fails
   // Login rate limiting (pre-set password scheme). The "secret" portion of
-  // the password is only 4 letters (~456k combos), so we lock after 5 fails
-  // to make brute-forcing impractical.
-  LOGIN_FAILS_PER_MATRIC: 5,
-  LOGIN_FAILS_PER_IP_HOUR: 15,
+  // the password is only 4 letters (~456k combos), so we lock after 3 fails
+  // to make brute-forcing impractical. Committee decision: 5 was too lenient,
+  // tightened to 3 on 2026-07-06.
+  LOGIN_FAILS_PER_MATRIC: 3,
+  LOGIN_FAILS_PER_IP_HOUR: 9,
   LOGIN_LOCK_MINUTES: 15,
 }
 

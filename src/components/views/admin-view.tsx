@@ -3598,7 +3598,7 @@ function DeviceActivitySection() {
           <p className="text-sm text-muted-foreground">
             Spot a single device claiming many accounts ·{' '}
             <span className="font-medium text-foreground">
-              default cap: {stats?.defaultCap ?? 2} claims per device
+              default cap: {stats?.defaultCap ?? 1} claim per device
             </span>
             <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
               <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -3923,7 +3923,7 @@ function DeviceActivitySection() {
                 <p className="text-[11px] text-muted-foreground">
                   New cap will be{' '}
                   <span className="font-medium text-foreground">
-                    {(stats?.defaultCap ?? 2) +
+                    {(stats?.defaultCap ?? 1) +
                       overrideTarget.overrides +
                       (parseInt(overrideExtra, 10) || 0)}
                   </span>{' '}
