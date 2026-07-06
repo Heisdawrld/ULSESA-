@@ -1692,3 +1692,50 @@ Stage Summary:
 - Physics Education · 100 still ON HOLD (MHTML pairing issue, unresolved from prior session).
 - No code changes — pure data operation. No deploy or git push needed.
 - Artifacts: `scripts/upload-maths-ed-y2.ts`, `upload/list-my-level.txt`, `upload/maths-ed-y2.txt`, `upload/maths-ed-y2.json` (all gitignored except the script — which is a one-off uploader so left untracked by convention).
+
+---
+Task ID: integrated-science-y2-upload
+Agent: main-orchestrator
+Task: Upload "Integrated Science Year 2" roster from `upload/Name1-2-1.docx` to production Turso DB.
+
+Work Log:
+- Source file: `upload/Name1-2-1.docx` (14.9KB). Extracted via mammoth → `upload/integrated-science-y2.txt` (308 chars, 6 logical records).
+- Document footer confirmed cohort: "DEPARTMENT: SCIENCE EDUCATION / COHORT: INTEGRATED SCIENCE".
+- Matric pattern confirms Year 2 (200 Level) for 2025/26 session:
+  - 2 DE students: `250322501`, `250322502` (admitted 2025/26, DE starts at 200L)
+  - 4 UTME students: `240322002`, `240322003`, `240322005`, `240322006` (admitted 2024/25, now 200L)
+  - Department code "22" in matric = Science Education (Integrated Science). Compare: Math Ed = 31/3, Physics Ed = 31/5, Int. Science = 32/2.
+- Source doc format was REVERSED from the maths doc: NAME on one line, MATRIC on the next line. Wrote `scripts/_preprocess-is-y2.ts` to merge each (name, matric) pair onto a single line in `MATRIC NAME` order so `parseRosterText` could handle it.
+- Pre-processed output → 6 single-line records. Ran `scripts/preview-roster.ts` → 6 entries, 0 duplicates, 0 skipped. Spot-checked edge cases:
+  - `Ndu Victory Abel` → surname "Ndu" (3 chars) → password `240322006ndu` ✓ (short-surname rule: use whole surname when ≤4 letters)
+  - `Arogundade Deborah` → only 2 names → surname "Arogundade" → password `240322002dade` ✓
+  - DE students with mixed case names (e.g., "Adubiaran Abisola Rhoda") → password `250322501aran` ✓
+- Gap noted: serial `240322004` is missing (jumps 003 → 005). Uploaded as-is.
+- Built `upload/integrated-science-y2.json` (6 entries).
+- Wrote `scripts/upload-integrated-science-y2.ts` (LEVEL='200', PROGRAMME='Integrated Science'). Three-way upsert: insert / update-unclaimed / skip-claimed.
+- Ran the uploader against live Turso (env from `.env.render`):
+  - Inserted: 6 (all new)
+  - Updated: 0
+  - Skipped (claimed): 0
+  - Batch ID: `upload-integrated-science-200-1783296294858`
+  - Integrated Science 200 cohort now: 6 entries
+  - Grand total allowlist entries now: 350 (was 344)
+- Ran `scripts/verify-all-passwords.ts` (bcrypt.compare for every entry against live Turso):
+  - Total entries : 350
+  - Verified OK   : 350
+  - Failed        : 0
+  - ALL 350 ACCOUNTS VERIFIED — every student can log in.
+
+Stage Summary:
+- **Integrated Science · 200 Level** roster is LIVE on Turso. 6 new students can now log in with `matric + last4(surname)`.
+- Production voter register: **350 total across 7 active cohorts**:
+  - Biology Education · 200 = 73
+  - Integrated Science · 200 = 6  ← NEW
+  - Mathematics Education · 200 = 38
+  - Mathematics Education · 300 = 82
+  - Mathematics Education · 400 = 112
+  - Physics Education · 300 = 17
+  - Physics Education · 400 = 22
+- Physics Education · 100 still ON HOLD (MHTML pairing issue, unresolved from prior session).
+- No code changes — pure data operation. No deploy or git push needed.
+- Artifacts: `scripts/upload-integrated-science-y2.ts`, `upload/integrated-science-y2.txt`, `upload/integrated-science-y2.json` (all gitignored by convention).
