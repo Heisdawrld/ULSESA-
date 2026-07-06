@@ -2122,3 +2122,74 @@ Stage Summary:
 - **Jarvis assistant**: Fully functional first-visit boot overlay + persistent floating orb. Premium arc-reactor visual, time-aware typewriter greeting, quick actions, rotating tips. Responsive (mobile + desktop), accessible (ARIA, reduced-motion, keyboard/escape dismiss), SSR-safe (localStorage gated behind useEffect).
 - **Files created**: `src/components/shared/jarvis-assistant.tsx`
 - **Files modified**: `src/app/globals.css`, `src/app/page.tsx`, `src/components/views/auth-view.tsx`, `src/components/views/help-view.tsx`, `src/components/views/admin-view.tsx`, `src/lib/password-generator.ts`, `src/lib/matric-mask.ts`, `src/app/api/admin/voting-activity/route.ts`, `src/app/api/admin/allowlist/route.ts`
+
+---
+Task ID: MEMORY-SNAPSHOT-2
+Agent: main-orchestrator
+Task: Update memory / handover document before user checks the live (Render production) site
+
+Work Log:
+- Verified git state: working tree clean, 2 commits ahead of origin/main (Jarvis + auto-pilot work).
+- Pushed `7d423fa..0b53577 main -> main` to GitHub → triggers Render auto-deploy of the ULSESA production site.
+- Confirmed the Jarvis assistant + placeholder matric fixes are all in commit `0b53577` (11 files, +776/-16).
+
+Stage Summary:
+- Code is deployed to production via Render (push happened at this snapshot).
+- User will manually verify the live site.
+
+==================== MEMORY SNAPSHOT (as of this push) ====================
+
+## PROJECT: ULSESA Digital Portal
+University of Lagos Science Education Students' Association — election + community portal.
+- **Stack**: Next.js 16 (App Router) + TypeScript 5 + Tailwind 4 + shadcn/ui + Prisma + Turso (libSQL)
+- **Repo**: github.com/Heisdawrld/ULSESA- (main branch → Render auto-deploy)
+- **Local dev**: `bun run dev` on port 3000 (already running in background)
+- **Prod env**: `/home/z/my-project/.env.render` (gitignored); `set -a; source .env.render; set +a` before prod DB scripts
+
+## CURRENT PRODUCTION STATE
+- **Election**: "ULSESA General Election 2026", status derived from clock (auto-pilot)
+  - `startDate` = Tuesday 8:00 AM Lagos time, `endDate` = Tuesday 6:00 PM Lagos time
+  - `manualOverride` field exists for admin emergency control (open/close/cancel early)
+  - `getEffectiveStatus()` in `src/lib/election-status.ts` is source of truth
+- **Candidates (13 across 7 positions, official voting order)**:
+  1. President (3): Joshua Anuoluwapo · Ojapa Julianah · Daniel Emmanuel
+  2. Vice President (3): Gasali Sekinat · Jamiu Habeeb · Lucky Precious
+  3. General Secretary (2): Aduragbemi Kehinde · Queen Solomon
+  4. Assistant Gen Secretary (0) — VACANT
+  5. Sport Secretary (1): Adeyemi Abiola
+  6. PRO (2): Chidalu Blessing · Odulaja Daniel
+  7. Treasurer (1): Oladipupo Precious
+  8. Social Secretary (1): Williams Lillian
+  9. Welfare Secretary (0) — VACANT
+- **Voter register**: 402 student accounts in prod Turso DB (Physics + Biology + Chemistry + Maths + Integrated Sci., all levels). Passwords generated via rule: `matric + last4(lowercase(surname))`.
+
+## JUST-SHIPPED FEATURES (commit 0b53577)
+1. **Jarvis-style interactive assistant** (`src/components/shared/jarvis-assistant.tsx`)
+   - First-visit boot overlay: arc-reactor orb (CSS animated), boot line, Lagos-time-aware typewriter greeting, 3 quick actions, "Maybe later" dismiss. Shows once per browser (`ulsesa-jarvis-greeted` localStorage flag, versioned "1"). Only on home view + non-authed visitors.
+   - Persistent floating orb (bottom-right): click → panel with rotating tips (6 election tips, auto-cycle 6.5s, clickable dots) + quick-nav links. Hidden on auth/admin views. Closes on outside-click/Escape.
+   - CSS in `globals.css`: `.jarvis-orb-core`, `.jarvis-ring`, `.jarvis-sweep`, `.jarvis-scanline`, `.jarvis-cursor` + keyframes. All respect `prefers-reduced-motion`.
+2. **Placeholder matric cleanup**: ALL real-looking placeholder matrics (23xx/24xx) → dummy `200134567` across 7 files. Real rosters untouched. FAQ #1 rewritten from obsolete "claim account" flow to actual sign-in flow.
+
+## VERIFICATION STATUS
+- `bun run lint` → clean
+- agent-browser E2E (local dev): boot overlay ✓, typewriter ✓, quick actions navigate ✓, floating orb ✓, panel tips ✓, orb hidden on auth ✓, mobile (iPhone 14) no overflow ✓, orb above bottom nav ✓
+- VLM (glm-4.6v) confirmed premium Jarvis aesthetic, no visual issues
+- **NOT YET verified on production** — user will check the live site this round
+
+## KEY TECHNICAL CONSTRAINTS (carry forward)
+- **Timezone**: Africa/Lagos (UTC+1). All "Tuesday 8 AM / 6 PM" = Lagos time.
+- **Production DB**: Turso libSQL. Use `.env.render` + Prisma scripts, never `bun run db:push` against prod blindly.
+- **Deploy**: push to `main` → Render auto-builds. ~2-3 min build.
+- **Single exposed port**: Caddy gateway. WebSocket mini-services use `?XTransformPort={port}` query.
+- **z-ai-web-dev-sdk**: backend ONLY, never client side.
+
+## UNRESOLVED / NEXT-STEP CANDIDATES
+- [ ] **Physics Education 100L roster**: user needs to re-send in a parseable format (not MHTML) — the roster parser couldn't ingest the .mhtml file previously provided.
+- [ ] **4 ambiguous matric serials** still need user confirmation: 240313016, 240322004, 230311026, 230311049.
+- [ ] **Production verification of Jarvis**: confirm the boot overlay + floating orb render correctly on the deployed Render site (user doing this now).
+- [ ] Optional: a redundant cron job to double-check election auto-open/close (currently relies purely on derived status — reliable, but a backup cron is cheap insurance).
+- [ ] The Jarvis greeting text hardcodes "The 2026 election is live" — after voting closes Tuesday 6 PM, the greeting should probably change tense ("election has closed, results are live"). Low priority but worth a follow-up.
+- [ ] Tip #1 in the floating orb says "Voting opens Tuesday at 8:00 AM" — after Tuesday this becomes stale. Could derive from election startDate/endDate dynamically.
+
+## RECURRING REVIEW
+A 15-minute fixed-rate `webDevReview` cron (job_id 254392) is active — it will autonomously assess project state, run agent-browser QA, and continue dev work on a cadence.
