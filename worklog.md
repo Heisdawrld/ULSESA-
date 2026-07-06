@@ -1930,3 +1930,76 @@ Stage Summary:
 - **PRODUCTION ELECTION STATUS IS "upcoming".** The admin must flip it to "active" (via the admin panel Election tab) when voting officially opens. Candidates are visible to students immediately regardless of status.
 - **NO VOTES LOST.** Production had 0 votes when the swap happened. Local had 1 test vote which was deleted + the student's hasVoted flag reset.
 - Next: when the electoral committee confirms the 4 previously-flagged missing matric serials (240313016, 240322004, 230311026, 230311049) and/or the Physics Education 100 roster, those are still pending.
+
+---
+Task ID: memory-snapshot
+Agent: main-orchestrator
+Task: Refresh working memory — concise snapshot of the live project state for fast orientation by the next agent / context window.
+
+## MEMORY SNAPSHOT — ULSESA Portal (as of this session)
+
+### Production stack
+- **Next.js 16 + Prisma + Turso (libSQL)**, deployed on Render.
+- Repo: `github.com/Heisdawrld/ULSESA-.git` → `main` branch → Render auto-deploy on push.
+- Production env vars live in `/home/z/my-project/.env.render` (gitignored). Source with `set -a; source .env.render; set +a` before running any script that touches prod Turso.
+- Local dev uses SQLite at `file:/home/z/my-project/db/custom.db`. Dev server runs on port 3000 via `bun run dev` (logs to `dev.log`).
+
+### Production DB state (Turso) — VOTER REGISTER
+- **402 allowlist entries** across 8 cohorts:
+  - Biology Education · 200 = 73
+  - Chemistry Education · 300 = 52
+  - Integrated Science · 200 = 6
+  - Mathematics Education · 200 = 38
+  - Mathematics Education · 300 = 82
+  - Mathematics Education · 400 = 112
+  - Physics Education · 300 = 17
+  - Physics Education · 400 = 22
+- Password rule: `matricNumber + last4(lowercase(surname))` (apostrophes/hyphens stripped, surname ≤4 chars uses whole surname). Hashed with bcrypt at upload time.
+- All 402 accounts verified via `scripts/verify-all-passwords.ts` (bcrypt.compare against live Turso) — 0 failures.
+- **Physics Education · 100 still ON HOLD** — source file was MHTML (broken pairing). Awaiting user to resend as `.docx`/`.xlsx`/`.pdf`/text.
+- **4 missing matric serials flagged but NOT yet uploaded** (user has not confirmed): `240313016` (Maths Y2), `240322004` (Int Sci Y2), `230311026` + `230311049` (Chem Y3).
+
+### Production DB state — ELECTION + CANDIDATES
+- Single active election row: "ULSESA General Election 2026". **Status = `upcoming`** (admin must flip to `active` via admin panel when voting opens).
+- **9 positions, 13 candidates** (real 2026 nominees, set this session):
+  1. President (3): Joshua Anuoluwapo · Ojapa Julianah · Daniel Emmanuel
+  2. Vice President (3): Gasali Sekinat · Jamiu Habeeb · Lucky Precious
+  3. General Secretary (2): Aduragbemi Kehinde · Queen Solomon
+  4. Assistant Gen Secretary (0) — VACANT
+  5. Sport Secretary (1): Adeyemi Abiola
+  6. PRO (2): Chidalu Blessing · Odulaja Daniel
+  7. Treasurer (1): Oladipupo Precious
+  8. Social Secretary (1): Williams Lillian
+  9. Welfare Secretary (0) — VACANT
+- 0 production votes (ballot is fresh). Local dev DB has 1 test vote (Joshua for President) from agent-browser verification.
+
+### Anti-fraud layers (all LIVE)
+1. **Rule-based password** — must know matric + surname spelling from attendance list.
+2. **Name verification** (server-side, not shown on screen).
+3. **Rate limiting** — 5 wrong passwords/matric → 15-min lock; 15 wrong/IP/hr → IP cooldown.
+4. **Max-2-claims-per-device cap** — SHA-256(canvas+UA+hardware) fingerprint, server-hashed with `DEVICE_FP_SALT` salt, 24h sliding window. Raw fingerprint NEVER stored.
+   - Blocked message (verbatim, NO cap disclosure, NO class-rep mention): *"This device can't be used to claim more accounts right now. If you believe this is a mistake, please contact the ULSESA electoral committee."*
+   - Admin override path: Device Activity tab → grant +N extra claims for a fingerprint (audit-logged).
+5. **Disputes + revoke** — student reports fraudulent claim → admin revokes → cascade-deletes fraudulent Student + their votes → `recomputeElectionVoteCounts()` fixes tallies.
+6. **Turnout board** — privacy-safe: matric masked to first 4 digits, surname hidden.
+
+### Codebase orientation
+- Single user-visible route: `/` (everything else is API routes under `/api/*`).
+- Views live in `src/components/views/` — `home-view`, `auth-view`, `dashboard-view`, `elections-view`, `admin-view`, etc. Routing is client-side via `nav-store.ts` (Zustand).
+- Auth: JWT in httpOnly cookie `ddp-student-token`. `getCurrentStudent()` in `src/lib/auth/server-auth.ts`.
+- DB client: `import { db } from '@/lib/db'` — lazy proxy, reads env at call time (survives `next build`).
+- Scripts in `scripts/` are gitignored one-off data ops. Reusable patterns: `upload-{cohort}.ts` (three-way upsert), `preview-roster.ts` (dry run), `verify-all-passwords.ts` (post-upload check).
+
+### Current git state
+- `main` branch, clean working tree after last push.
+- Last 2 commits: `8470c64` (vote cap fix), `759621a` (vacant-position UX). Both deployed to Render.
+- Cron job `254315` runs every 15 min (webDevReview) to keep the project monitored.
+
+### Immediate next actions (when user resumes)
+1. **User flips election to `active`** via admin panel → voting opens for 402 verified students.
+2. **Physics Education 100 roster** — user to resend in a parseable format (not MHTML).
+3. **4 missing matric serials** — user to confirm whether to add: 240313016, 240322004, 230311026, 230311049.
+4. (Optional) Add candidate photos / richer manifestos if the electoral committee provides them.
+
+Stage Summary:
+- Memory refreshed. This snapshot supersedes earlier narrative entries for orientation purposes — read this section first, then drill into the detailed task entries above for specifics.
