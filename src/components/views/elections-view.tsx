@@ -31,6 +31,7 @@ import {
   Search,
   PieChart,
   Filter,
+  UserX,
 } from 'lucide-react'
 
 import { useNav } from '@/lib/stores/nav-store'
@@ -1262,23 +1263,38 @@ function PositionCandidates({
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {position.candidates.map((candidate, i) => (
-          <motion.div
-            key={candidate.id}
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 * i }}
-          >
-            <CandidateCard
-              candidate={candidate}
-              positionTitle={position.title}
-              hasVoted={hasVoted}
-              isActive={isActive}
-              onViewManifesto={() => onViewManifesto(candidate)}
-              onVote={() => onVote(candidate)}
-            />
-          </motion.div>
-        ))}
+        {position.candidates.length === 0 ? (
+          <Card className="rounded-2xl border-dashed border-border/60 col-span-full">
+            <CardContent className="py-10 text-center space-y-2">
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-muted/60 text-muted-foreground flex items-center justify-center">
+                <UserX className="h-6 w-6" />
+              </div>
+              <p className="text-sm font-semibold">No candidates standing</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                No nominee was submitted for the position of {position.title} for
+                this election cycle. This position will remain vacant on the ballot.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          position.candidates.map((candidate, i) => (
+            <motion.div
+              key={candidate.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 * i }}
+            >
+              <CandidateCard
+                candidate={candidate}
+                positionTitle={position.title}
+                hasVoted={hasVoted}
+                isActive={isActive}
+                onViewManifesto={() => onViewManifesto(candidate)}
+                onVote={() => onVote(candidate)}
+              />
+            </motion.div>
+          ))
+        )}
       </div>
     </div>
   )
@@ -1494,8 +1510,13 @@ function VoteFlow() {
   const { election, positions, hasVoted } = data
   const sortedPositions = [...positions].sort((a, b) => a.order - b.order)
   const isActive = election.status === 'active'
-  const totalVoted = sortedPositions.filter((p) => hasVoted[p.id]).length
-  const totalPositions = sortedPositions.length
+  // Only contestable positions (≥1 candidate) count toward the "voted in all"
+  // progress + hasVoted cap. Vacant positions (no nominees) are still rendered
+  // for transparency but can't be voted in — including them in the denominator
+  // would make the "All Votes Cast!" state unreachable.
+  const contestablePositions = sortedPositions.filter((p) => p.candidates.length > 0)
+  const totalVoted = contestablePositions.filter((p) => hasVoted[p.id]).length
+  const totalPositions = contestablePositions.length
 
   if (!isActive) {
     return (
@@ -1591,7 +1612,14 @@ function VoteFlow() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                {voted ? (
+                {position.candidates.length === 0 ? (
+                  <div className="rounded-xl bg-muted/40 border border-dashed border-border/60 p-4 flex items-center gap-3 text-sm">
+                    <UserX className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground">
+                      No candidates were nominated for this position. It will remain vacant for this election cycle.
+                    </span>
+                  </div>
+                ) : voted ? (
                   <div className="rounded-xl bg-green-500/10 p-3 flex items-center gap-2 text-sm">
                     <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
                     <span className="text-green-700 dark:text-green-300">
