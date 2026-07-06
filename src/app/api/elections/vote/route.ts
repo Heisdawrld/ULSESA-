@@ -93,9 +93,17 @@ export async function POST(request: Request) {
       }),
     ])
 
-    // Determine if the student has now voted in ALL positions for this election
+    // Determine if the student has now voted in ALL contestable positions
+    // for this election. We only count positions that HAVE at least one
+    // candidate — an uncontested position (no nominees) can never be voted
+    // in, so including it in the cap would permanently prevent hasVoted from
+    // flipping to true. This keeps the turnout board accurate when the ballot
+    // includes vacant positions (e.g. "Assistant Gen Secretary — no candidates").
     const totalPositions = await db.position.count({
-      where: { electionId: election.id },
+      where: {
+        electionId: election.id,
+        candidates: { some: {} },
+      },
     })
     const studentVotes = await db.vote.count({
       where: {
