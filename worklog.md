@@ -2333,3 +2333,37 @@ Stage Summary:
   upload/chemistry-ed-y4-parsed.json (parsed entries).
 - Election is Tuesday July 7, 08:00 WAT. Remaining pending: Physics Ed 100L list (user
   hasn't sent yet) + any other cohorts the user sends.
+
+---
+Task ID: ABAYOMI-RECLASSIFY-AND-ENV-RESTORE
+Agent: main
+Task: (1) Move Abayomi (210311056) from Chemistry Education 300 to Chemistry Education 400.
+      (2) Restore the full production env vars to durable storage so they are never lost again.
+
+Work Log:
+- User re-provided the full Render env (incl. TURSO_AUTH_TOKEN) after I lost access to it
+  this session (`.env.render` was absent from the filesystem).
+- Wrote the full env to TWO locations for durability:
+  - /home/z/my-project/.env.render   (canonical, gitignored via `.env*`)
+  - /tmp/my-project/.env.render       (mirror, sits next to MEMORY.md)
+- Tested Turso direct connection with the restored token: SUCCESS (348-char JWT, edDSA).
+- Inspected Abayomi BEFORE: programme=Chemistry Education, level=300, cohort="Chemistry
+  Education", isClaimed=false (clean from earlier revoke), claimedByStudentId=null.
+- Executed UPDATE MatricAllowlist SET level='400', cohort='Chemistry Education 400'
+  WHERE matricNumber='210311056' → 1 row affected.
+- Verified AFTER: level=400, cohort="Chemistry Education 400".
+- Cohort totals now: Chem Ed 300 = 51 (was 52), Chem Ed 400 = 78 (was 77). Grand total
+  unchanged at 522 (reclassify, not add).
+- Cross-verified via live admin API /api/admin/allowlist stats: matches direct DB query.
+- Abayomi's password unchanged (surname "Abayomi" → 210311056yomi) — no re-test needed
+  (would re-create a claim). His name in DB is "Abayomi Abdul-Rahman Bukola" (capital R);
+  left as-is since the surname/password are identical to the Y4 roster entry.
+
+Stage Summary:
+- Abayomi now correctly classified as Chemistry Education Year 4. All 78 Y4 students
+  (including Abayomi) are under the same cohort label.
+- Production env vars are now durably stored in .env.render (repo) + mirrored to
+  /tmp/my-project/.env.render. Turso direct DB access is restored.
+- MEMORY.md updated: section 4b (register totals) + section 7 (env location) with a
+  STRONG note that .env.render must be read at session start and is the source of truth
+  for all production secrets.
