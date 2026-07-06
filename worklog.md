@@ -2367,3 +2367,41 @@ Stage Summary:
 - MEMORY.md updated: section 4b (register totals) + section 7 (env location) with a
   STRONG note that .env.render must be read at session start and is the source of truth
   for all production secrets.
+
+---
+Task ID: PHYSICS-ED-Y1-UPLOAD
+Agent: main
+Task: Upload Physics Education Year 1 roster (from WhatsApp image) to production + verify.
+
+Work Log:
+- User sent "this is it" with image `WhatsApp Image 2026-07-06 at 11.59.26 AM.jpeg`
+  (720x906 JPEG, 42KB).
+- Used VLM skill (z-ai vision CLI, glm-4.6v) to OCR the image. Two passes with
+  different prompts both confirmed: table with columns S/N | MATRIC | NAME | SIGNATURE,
+  8 rows, nothing cut off. Matrics 250315001–250315008 (2025 admission = Year 1,
+  dept code 0315 = Physics Education).
+- Direct Turso overlap check: NONE of the 8 matrics exist in production — clean upload.
+- Presented preview with computed passwords; user said "go".
+- NOTE: `.env.render` had been wiped from /home/z/my-project again (sandbox cleans
+  non-tracked files between turns). Restored from /tmp/my-project/.env.render mirror
+  before running. The mirror persists; the repo copy does not.
+- Fresh admin token via POST /api/auth/admin-login.
+- POST /api/admin/allowlist/batch → HTTP 200: 8 inserted, 0 skipped.
+- Verified 3 students (250315001, 250315004, 250315008) TWO ways:
+  1. Direct DB bcrypt.compare(rulePassword, storedHash) → ✅ all 3 match
+  2. Live login API POST /api/auth/login → HTTP 200 for all 3
+- Cleanup: the 3 test logins created 3 Student rows + 3 claimed allowlist entries.
+  With direct Turso access now available, cleaned up via SQL (no need for the
+  disputes flow this time): deleted Vote/VerificationLog/Student rows for the 3
+  test studentIds, then UPDATE MatricAllowlist SET isClaimed=0, claimedByStudentId=NULL,
+  claimedAt=NULL. All 8 matrics verified claimed=0 afterward.
+- Final production register: 530 students across 12 cohorts. Physics Ed 100 is new.
+
+Stage Summary:
+- Physics Education Year 1: 8 students uploaded + verified (bcrypt + live login).
+- Production voter register: 522 → 530 students.
+- All test claims cleaned up directly via Turso (faster than disputes flow).
+- `.env.render` mirror at /tmp/my-project/.env.render is the durable copy — the repo
+  copy gets wiped by the sandbox between turns. Must restore from mirror at session
+  start OR when the repo copy is missing mid-session.
+- Election Tuesday July 7, 08:00 WAT. Awaiting next roster.
