@@ -21,6 +21,7 @@ import {
   PASSWORD_RULE_HINT,
   PASSWORD_RULE_EXAMPLE,
 } from '@/lib/password-generator'
+import { getDeviceFingerprint } from '@/lib/device-fingerprint'
 import {
   ShieldCheck,
   Lock,
@@ -228,9 +229,16 @@ function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
 
     setLoading(true)
     try {
+      // Compute a stable device fingerprint (canvas+UA+screen+timezone hash)
+      // and send it along. The server uses it to enforce a per-device claim
+      // cap so one phone can't harvest many accounts. The fingerprint is
+      // hashed again server-side before storage, so the raw value is never
+      // persisted.
+      const deviceFingerprint = await getDeviceFingerprint()
       const data = await api.post<LoginResponse>('/auth/login', {
         matricNumber: cleanedMatric,
         password,
+        deviceFingerprint,
       })
       onAuthSuccess(data.student, data.token, data.message)
     } catch (err) {
@@ -244,7 +252,20 @@ function StudentLogin({ onAuthSuccess }: StudentLoginProps) {
         setPassword('')
         toast.error('Matric not found', {
           description:
-            'Check the digits, or contact your class rep if you think this is a mistake.',
+            'Check the digits, or contact the ULSESA electoral committee if you think this is a mistake.',
+        })
+        return
+      }
+
+      // 429 with DEVICE_LIMIT_REACHED — this phone has already claimed the
+      // maximum allowed accounts. Show the lock banner pointing to the
+      // electoral committee. Do NOT disclose the cap.
+      if (/this device can't be used to claim more accounts/i.test(msg)) {
+        setLockedAlert(msg)
+        setPassword('')
+        toast.error('Device limit reached', {
+          description:
+            'Contact the ULSESA electoral committee if you believe this is a mistake.',
         })
         return
       }

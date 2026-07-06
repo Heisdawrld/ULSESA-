@@ -12,6 +12,10 @@ import {
   getClientIp,
   formatRetryAfter,
 } from '@/lib/rate-limiter'
+import {
+  checkDeviceClaimLimit,
+  logClaimAttempt,
+} from '@/lib/device-limit'
 
 /**
  * POST /api/auth/login
@@ -34,7 +38,9 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const matricNumber = (body?.matricNumber ?? '').toString().trim()
     const password = (body?.password ?? '').toString()
+    const rawFingerprint = (body?.deviceFingerprint ?? '').toString()
     const ip = getClientIp(request)
+    const userAgent = request.headers.get('user-agent') || null
 
     if (!matricNumber || !password) {
       return NextResponse.json(
@@ -83,7 +89,7 @@ export async function POST(request: Request) {
     // is wrong, or no hash is set yet — so an attacker can't distinguish
     // "matric exists" from "matric doesn't exist".
     const GENERIC_ERROR =
-      'Wrong matric number or password. Your password is your matric number + the last 4 letters of your surname (all lowercase, no spaces). If you still can\'t log in, contact your class rep or the ULSESA electoral committee.'
+      'Wrong matric number or password. Your password is your matric number + the last 4 letters of your surname (all lowercase, no spaces). If you still can\'t log in, contact the ULSESA electoral committee.'
 
     if (!entry || !entry.passwordHash) {
       // Still burn a fail attempt on the IP so enumeration is rate-limited,
@@ -91,7 +97,7 @@ export async function POST(request: Request) {
       // lock real students out by spamming their matric).
       return NextResponse.json(
         {
-          error: 'This matric number is not in the ULSESA voter register. Only students whose names appear on submitted class attendance lists can vote. If you believe this is an error, contact your class rep or the ULSESA electoral committee.',
+          error: 'This matric number is not in the ULSESA voter register. Only students whose names appear on submitted class attendance lists can vote. If you believe this is an error, contact the ULSESA electoral committee.',
         },
         { status: 404 }
       )
@@ -131,6 +137,39 @@ export async function POST(request: Request) {
     // ── Success — clear fail counters ────────────────────────────────────
     clearLoginFailures(matricNumber)
 
+    // ── Device fingerprint check (FIRST CLAIM ONLY) ──────────────────────
+    // If this matric has never been claimed (claimedByStudentId is null),
+    // we're about to create a new Student row — that's a "claim". Enforce
+    // the max-2-claims-per-device cap to stop one phone from harvesting
+    // accounts. Returning students logging back in are NOT affected.
+    let fingerprintHash: string | null = null
+    if (!entry.claimedByStudentId && rawFingerprint && rawFingerprint !== 'server') {
+      const check = await checkDeviceClaimLimit(rawFingerprint)
+      fingerprintHash = check.fingerprintHash
+
+      if (!check.allowed) {
+        // Log the blocked attempt so the admin sees it in the Device Activity tab.
+        await logClaimAttempt({
+          fingerprintHash: check.fingerprintHash,
+          matricNumber: entry.matricNumber,
+          outcome: 'blocked',
+          ip,
+          userAgent,
+        })
+
+        // Generic message — does NOT disclose the cap, does NOT mention
+        // class reps. Just points the student at the electoral committee.
+        return NextResponse.json(
+          {
+            error:
+              "This device can't be used to claim more accounts right now. If you believe this is a mistake, please contact the ULSESA electoral committee.",
+            code: 'DEVICE_LIMIT_REACHED',
+          },
+          { status: 429 }
+        )
+      }
+    }
+
     // ── Upsert the Student row (lazy activation) ─────────────────────────
     // The portal's other endpoints key off the Student model, so we make
     // sure a Student row exists for this allowlist entry. On first login we
@@ -149,10 +188,23 @@ export async function POST(request: Request) {
           isVerified: true,
           verificationStatus: 'approved',
           claimIp: ip,
+          // Server-hash of the device fingerprint (null if client didn't send one).
+          deviceFingerprint: fingerprintHash,
         },
         select: { id: true },
       })
       studentId = created.id
+
+      // Audit-log the successful claim.
+      if (fingerprintHash) {
+        await logClaimAttempt({
+          fingerprintHash,
+          matricNumber: entry.matricNumber,
+          outcome: 'success',
+          ip,
+          userAgent,
+        })
+      }
 
       // Link the allowlist entry to the student and mark as claimed
       await db.matricAllowlist.update({

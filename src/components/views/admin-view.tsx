@@ -47,6 +47,10 @@ import {
   Inbox,
   Database,
   ShieldAlert,
+  Fingerprint,
+  Smartphone,
+  Ban,
+  Plus,
 } from 'lucide-react'
 
 import { useAuth, type AdminUser } from '@/lib/stores/auth-store'
@@ -126,6 +130,7 @@ type Section =
   | 'verification'
   | 'election'
   | 'voting-activity'
+  | 'device-activity'
   | 'disputes'
   | 'audit'
   | 'settings'
@@ -601,6 +606,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: typeof Users }[] = [
   { id: 'verification', label: 'Verification', icon: ShieldCheck },
   { id: 'election', label: 'Election', icon: Vote },
   { id: 'voting-activity', label: 'Voting Activity', icon: Activity },
+  { id: 'device-activity', label: 'Device Activity', icon: Fingerprint },
   { id: 'disputes', label: 'Disputes', icon: AlertTriangle },
   { id: 'audit', label: 'Audit Logs', icon: ScrollText },
   { id: 'settings', label: 'Settings', icon: Settings },
@@ -3250,6 +3256,531 @@ function VotingActivitySection() {
   )
 }
 
+// ===================== Device Activity Section =====================
+interface DeviceRow {
+  fingerprintHash: string
+  fingerprintShort: string
+  successCount: number
+  blockedCount: number
+  totalAttempts: number
+  firstSeen: string | number
+  lastSeen: string | number
+  overrides: number
+  cap: number
+  status: 'normal' | 'at-cap' | 'blocked'
+  recent: Array<{ matricNumber: string; outcome: string; createdAt: string | number }>
+}
+
+interface DeviceStats {
+  totalDevices: number
+  totalClaims: number
+  totalBlocked: number
+  devicesAtCap: number
+  defaultCap: number
+}
+
+function safeDeviceDate(input: string | number | null | undefined): string {
+  if (input == null || input === '') return '—'
+  if (typeof input === 'number') {
+    const n = input < 1e12 ? input * 1000 : input
+    return new Date(n).toLocaleString()
+  }
+  const n = Number(input)
+  if (!Number.isNaN(n) && n > 0) {
+    const ms = n < 1e12 ? n * 1000 : n
+    return new Date(ms).toLocaleString()
+  }
+  const d = new Date(String(input))
+  return Number.isNaN(d.getTime()) ? String(input) : d.toLocaleString()
+}
+
+function DeviceActivitySection() {
+  const [devices, setDevices] = useState<DeviceRow[]>([])
+  const [stats, setStats] = useState<DeviceStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<'all' | 'blocked' | 'at-cap' | 'normal'>('all')
+
+  // Override dialog state
+  const [overrideTarget, setOverrideTarget] = useState<DeviceRow | null>(null)
+  const [overrideExtra, setOverrideExtra] = useState('3')
+  const [overrideReason, setOverrideReason] = useState('')
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false)
+
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
+    try {
+      const res = await api.get<{
+        devices: DeviceRow[]
+        stats: DeviceStats
+      }>('/admin/device-activity')
+      setDevices(res.devices)
+      setStats(res.stats)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load device activity'
+      )
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchData()
+    const interval = setInterval(() => void fetchData(true), 30000)
+    return () => clearInterval(interval)
+  }, [fetchData])
+
+  const filtered = useMemo(() => {
+    let result = devices
+    if (filter === 'blocked') result = result.filter((d) => d.status === 'blocked')
+    else if (filter === 'at-cap') result = result.filter((d) => d.status === 'at-cap')
+    else if (filter === 'normal') result = result.filter((d) => d.status === 'normal')
+    const q = search.trim().toLowerCase()
+    if (q) {
+      result = result.filter(
+        (d) =>
+          d.fingerprintShort.toLowerCase().includes(q) ||
+          d.fingerprintHash.toLowerCase().includes(q) ||
+          d.recent.some((r) => r.matricNumber.toLowerCase().includes(q))
+      )
+    }
+    return result
+  }, [devices, filter, search])
+
+  async function submitOverride() {
+    if (!overrideTarget) return
+    const extra = parseInt(overrideExtra, 10)
+    if (!Number.isInteger(extra) || extra < 1 || extra > 100) {
+      toast.error('Extra claims must be a number between 1 and 100')
+      return
+    }
+    if (!overrideReason.trim()) {
+      toast.error('A reason is required (for the audit log)')
+      return
+    }
+    setOverrideSubmitting(true)
+    try {
+      await api.post('/admin/device-override', {
+        fingerprintHash: overrideTarget.fingerprintHash,
+        extraClaims: extra,
+        reason: overrideReason.trim(),
+      })
+      toast.success(`Override granted`, {
+        description: `+${extra} claims for device ${overrideTarget.fingerprintShort}.`,
+      })
+      setOverrideTarget(null)
+      setOverrideReason('')
+      setOverrideExtra('3')
+      void fetchData(true)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to grant override'
+      )
+    } finally {
+      setOverrideSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-64 rounded-xl" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-2xl" />
+          ))}
+        </div>
+        <Skeleton className="h-64 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-display text-2xl font-bold sm:text-3xl">
+            Device Activity
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Spot a single device claiming many accounts ·{' '}
+            <span className="font-medium text-foreground">
+              default cap: {stats?.defaultCap ?? 2} claims per device
+            </span>
+            <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live · auto-refresh 30s
+            </span>
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void fetchData(true)}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Stat cards */}
+      {stats && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Card className="overflow-hidden">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Devices seen
+                  </p>
+                  <p className="mt-1 font-display text-2xl font-bold">
+                    {stats.totalDevices}
+                  </p>
+                </div>
+                <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
+                  <Smartphone className="size-5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Successful claims
+                  </p>
+                  <p className="mt-1 font-display text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                    {stats.totalClaims}
+                  </p>
+                </div>
+                <div className="grid size-10 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="size-5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Blocked attempts
+                  </p>
+                  <p className="mt-1 font-display text-2xl font-bold text-amber-600 dark:text-amber-400">
+                    {stats.totalBlocked}
+                  </p>
+                </div>
+                <div className="grid size-10 place-items-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <Ban className="size-5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Devices at/over cap
+                  </p>
+                  <p className="mt-1 font-display text-2xl font-bold text-rose-600 dark:text-rose-400">
+                    {stats.devicesAtCap}
+                  </p>
+                </div>
+                <div className="grid size-10 place-items-center rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                  <ShieldAlert className="size-5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Search + filter */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Fingerprint className="size-4 text-primary" />
+                Per-device claim history
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Last 7 days · grouped by device fingerprint hash
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search fingerprint or matric…"
+                  className="h-9 w-56 pl-8 text-sm"
+                />
+              </div>
+              <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
+                <SelectTrigger className="h-9 w-36 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All devices</SelectItem>
+                  <SelectItem value="blocked">Blocked only</SelectItem>
+                  <SelectItem value="at-cap">At cap</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {filtered.length === 0 ? (
+            <div className="px-6 py-16 text-center">
+              <Fingerprint className="mx-auto size-10 text-muted-foreground/40" />
+              <p className="mt-3 text-sm font-medium">No device activity yet</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {search || filter !== 'all'
+                  ? 'Try adjusting your search or filter.'
+                  : 'Claims will appear here once students start logging in.'}
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-[640px] overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow>
+                    <TableHead className="pl-6">Device</TableHead>
+                    <TableHead className="text-center">Claims</TableHead>
+                    <TableHead className="text-center">Blocked</TableHead>
+                    <TableHead className="text-center">Cap</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead>Last seen</TableHead>
+                    <TableHead className="pr-6 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((d) => {
+                    const isBlocked = d.status === 'blocked'
+                    const isAtCap = d.status === 'at-cap'
+                    return (
+                      <TableRow
+                        key={d.fingerprintHash}
+                        className={cn(
+                          isBlocked && 'bg-rose-500/5 hover:bg-rose-500/10',
+                          isAtCap && 'bg-amber-500/5 hover:bg-amber-500/10'
+                        )}
+                      >
+                        <TableCell className="pl-6">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={cn(
+                                'grid size-9 shrink-0 place-items-center rounded-lg',
+                                isBlocked
+                                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                  : isAtCap
+                                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                    : 'bg-primary/10 text-primary'
+                              )}
+                            >
+                              <Smartphone className="size-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-mono text-xs font-semibold tracking-tight">
+                                {d.fingerprintShort}
+                              </p>
+                              <p className="truncate text-[11px] text-muted-foreground">
+                                {d.recent[0]?.matricNumber
+                                  ? `last: ${d.recent[0].matricNumber}`
+                                  : 'no recent activity'}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="font-mono text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                            {d.successCount}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span
+                            className={cn(
+                              'font-mono text-sm font-semibold',
+                              d.blockedCount > 0
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-muted-foreground'
+                            )}
+                          >
+                            {d.blockedCount}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="font-mono text-sm">
+                            {d.cap}
+                            {d.overrides > 0 && (
+                              <span className="ml-1 text-[10px] text-cyan-600 dark:text-cyan-400">
+                                +{d.overrides}
+                              </span>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {isBlocked ? (
+                            <Badge variant="destructive" className="gap-1">
+                              <Ban className="size-3" /> Blocked
+                            </Badge>
+                          ) : isAtCap ? (
+                            <Badge
+                              variant="secondary"
+                              className="gap-1 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                            >
+                              <ShieldAlert className="size-3" /> At cap
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="secondary"
+                              className="gap-1 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                            >
+                              <CheckCircle2 className="size-3" /> Normal
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {safeDeviceDate(d.lastSeen)}
+                        </TableCell>
+                        <TableCell className="pr-6 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5"
+                            onClick={() => {
+                              setOverrideTarget(d)
+                              setOverrideReason('')
+                              setOverrideExtra('3')
+                            }}
+                          >
+                            <Plus className="size-3.5" />
+                            Override
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Override dialog */}
+      <Dialog
+        open={overrideTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setOverrideTarget(null)
+            setOverrideReason('')
+            setOverrideExtra('3')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="size-4 text-cyan-600" />
+              Grant claim override
+            </DialogTitle>
+            <DialogDescription>
+              Allow this device to claim additional accounts beyond the default cap.
+              Use for legitimate shared-device cases (school lab, family phone).
+            </DialogDescription>
+          </DialogHeader>
+          {overrideTarget && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border border-border/60 bg-muted/40 p-3">
+                <p className="text-xs font-medium text-muted-foreground">Device</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold">
+                  {overrideTarget.fingerprintShort}
+                </p>
+                <div className="mt-2 flex gap-4 text-xs">
+                  <span>
+                    <span className="text-muted-foreground">Current claims:</span>{' '}
+                    <span className="font-semibold">{overrideTarget.successCount}</span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Current cap:</span>{' '}
+                    <span className="font-semibold">{overrideTarget.cap}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="ov-extra" className="text-xs">
+                  Extra claims to grant
+                </Label>
+                <Input
+                  id="ov-extra"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={overrideExtra}
+                  onChange={(e) => setOverrideExtra(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  New cap will be{' '}
+                  <span className="font-medium text-foreground">
+                    {(stats?.defaultCap ?? 2) +
+                      overrideTarget.overrides +
+                      (parseInt(overrideExtra, 10) || 0)}
+                  </span>{' '}
+                  claims.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="ov-reason" className="text-xs">
+                  Reason <span className="text-rose-500">*</span>
+                </Label>
+                <Textarea
+                  id="ov-reason"
+                  rows={3}
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="e.g. School computer lab — shared browser used by multiple students during registration."
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={overrideSubmitting}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              onClick={() => void submitOverride()}
+              disabled={overrideSubmitting || !overrideReason.trim()}
+            >
+              {overrideSubmitting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Grant override
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 // ===================== Audit Logs Section =====================
 function AuditLogsSection() {
   const [logs, setLogs] = useState<AuditLog[]>([])
@@ -5116,6 +5647,7 @@ export function AdminView() {
               {section === 'verification' && <VerificationSection />}
               {section === 'election' && <ElectionSection />}
               {section === 'voting-activity' && <VotingActivitySection />}
+              {section === 'device-activity' && <DeviceActivitySection />}
               {section === 'disputes' && <DisputesSection />}
               {section === 'audit' && <AuditLogsSection />}
               {section === 'settings' && <SettingsSection />}

@@ -28,8 +28,11 @@ model Student {
   verificationStatus  String   @default("pending") // pending, submitted, approved, rejected
   idDocumentUrl       String?
   hasVoted            Boolean  @default(false)
-  // Device fingerprint of the browser that claimed this account. Used to
-  // prevent one device from claiming multiple matrics (mass fraud defence).
+  // SERVER-HASHED device fingerprint (SHA-256 + salt) of the browser that
+  // first claimed this account. Used to enforce the "max 2 claims per device"
+  // cap. The raw client fingerprint is NEVER stored — only the hash, so a DB
+  // leak can't be reversed to identify devices. Matches fingerprintHash on
+  // DeviceClaimAttempt rows.
   deviceFingerprint   String?
   // IP address recorded at claim time for audit / dispute resolution.
   claimIp             String?
@@ -72,6 +75,42 @@ model MatricAllowlist {
   passwordRotatedAt DateTime?
 
   student      Student? @relation(fields: [claimedByStudentId], references: [id], onDelete: SetNull)
+}
+
+// Audit log of every claim ATTEMPT (successful or blocked) keyed by the
+// server-hashed device fingerprint. Used by the admin "Device Activity" tab
+// to spot a single device claiming many accounts. The raw fingerprint is
+// never stored — only the SHA-256 hash (with server-side salt) so the DB
+// can match repeat offenders without leaking device identity on a leak.
+model DeviceClaimAttempt {
+  id                String   @id @default(cuid())
+  // SHA-256(rawFingerprint + server salt). First 12 chars shown to admin
+  // as a short label so they can group attempts visually.
+  fingerprintHash   String
+  fingerprintShort  String   // first 12 chars of the hash, for fast display
+  matricNumber      String   // the matric that was being claimed
+  // 'success' = Student row created; 'blocked' = device limit hit, rejected.
+  outcome           String   // success | blocked
+  ip                String?
+  userAgent         String?
+  createdAt         DateTime @default(now())
+}
+
+// Admin-granted extra claim allowance for a specific device fingerprint.
+// When the auto-cap of 2 is too low for a legitimate case (e.g. school lab
+// shared browser, or admin trusts a class rep's phone), the admin creates
+// one of these rows to bump the cap. Active until expiresAt.
+model DeviceOverride {
+  id                String   @id @default(cuid())
+  fingerprintHash   String   // must match DeviceClaimAttempt.fingerprintHash
+  fingerprintShort  String
+  // How many EXTRA claims this device is allowed beyond the default cap.
+  // Default cap is 2; an override with extraClaims=8 lifts it to 10.
+  extraClaims       Int      @default(1)
+  reason            String
+  createdBy         String   // admin id
+  createdAt         DateTime @default(now())
+  expiresAt         DateTime?
 }
 
 // Fraud reports. When a student finds their matric already claimed by someone
