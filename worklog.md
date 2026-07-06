@@ -1739,3 +1739,54 @@ Stage Summary:
 - Physics Education · 100 still ON HOLD (MHTML pairing issue, unresolved from prior session).
 - No code changes — pure data operation. No deploy or git push needed.
 - Artifacts: `scripts/upload-integrated-science-y2.ts`, `upload/integrated-science-y2.txt`, `upload/integrated-science-y2.json` (all gitignored by convention).
+
+---
+Task ID: chemistry-ed-y3-upload
+Agent: main-orchestrator
+Task: Upload "Chemistry 300 lvl" roster from `upload/class list .xlsx` to production Turso DB.
+
+Work Log:
+- Source file: `upload/class list .xlsx` (13KB). Installed `xlsx` package (was not in deps). Read workbook via XLSX.utils.sheet_to_json with `header: 1` to get array-of-arrays.
+- Sheet structure: title row "DEPARTMENT OF SCIENCE EDUCATION (CHEMISTRY COHORT) ATTENDANCE SHEET", then header row [S/N, NAMES, MATRIC NUMBER, SIGNATURE], then 52 student rows. Each row has name + matric on the SAME row (cleaner than the .docx files).
+- Wrote `scripts/_xlsx-to-text.ts` to convert xlsx → text format the roster-parser understands. Strategy: for each row, find the cell matching `^\d{9}$` (matric), collect all other non-numeric cells (excluding "SIGNATURE") as the name, output `MATRIC NAME` per line.
+- Output: 52 lines, 10 header/blank rows skipped. Saved to `upload/chemistry-ed-y3.txt`.
+- Matric pattern confirms Year 3 (300 Level) for 2025/26 session:
+  - 50 UTME students: `230311001`–`230311052` (admitted 2023/24, now 300L). Department code "11" = Chemistry Education.
+  - 2 spill-over/repeat students: `210311037` (Abdulkabir Kabeerah Abimbola) and `210311056` (Abayomi Abdul-Rahman Bukola). These are admitted-2021 students repeating 300L — included in this roster per the attendance sheet.
+- Document title confirms: "DEPARTMENT OF SCIENCE EDUCATION (CHEMISTRY COHORT)".
+- Gaps noted: serials `230311026` and `230311049` are missing (jump 025→027, 048→050). Uploaded as-is.
+- Ran `scripts/preview-roster.ts` → 52 entries, 0 duplicates, 0 skipped. Spot-checked edge cases:
+  - `Benjamin Gods'favourite Seabasiamakan` (37 chars, has apostrophe) → surname "Benjamin" → password `230311045amin` ✓ (apostrophe stripped, full name preserved in DB)
+  - `Abayomi Abdul-Rahman Bukola` → surname "Abayomi-Abdul-Rahman" hyphen-stripped → password `210311056yomi` ✓ (hyphenated surname handled)
+  - `Awa Joy Chineye` → surname "Awa" (3 chars) → password `230311005awa` ✓ (short-surname rule)
+  - Mixed-case names (e.g., "AYINDE Ruqoyyah Olaide", "UDOH NSIKAKABASI MICHAEL") → all lowercased correctly ✓
+- Built `upload/chemistry-ed-y3.json` (52 entries).
+- Wrote `scripts/upload-chemistry-ed-y3.ts` (LEVEL='300', PROGRAMME='Chemistry Education'). Three-way upsert: insert / update-unclaimed / skip-claimed.
+- Ran the uploader against live Turso (env from `.env.render`):
+  - Inserted: 52 (all new)
+  - Updated: 0
+  - Skipped (claimed): 0
+  - Batch ID: `upload-chemistry-education-300-1783296524388`
+  - Chemistry Education 300 cohort now: 52 entries
+  - Grand total allowlist entries now: 402 (was 350)
+- Ran `scripts/verify-all-passwords.ts` (bcrypt.compare for every entry against live Turso):
+  - Total entries : 402
+  - Verified OK   : 402
+  - Failed        : 0
+  - ALL 402 ACCOUNTS VERIFIED — every student can log in.
+
+Stage Summary:
+- **Chemistry Education · 300 Level** roster is LIVE on Turso. 52 new students can now log in with `matric + last4(surname)`.
+- Production voter register: **402 total across 8 active cohorts**:
+  - Biology Education · 200 = 73
+  - Chemistry Education · 300 = 52  ← NEW
+  - Integrated Science · 200 = 6
+  - Mathematics Education · 200 = 38
+  - Mathematics Education · 300 = 82
+  - Mathematics Education · 400 = 112
+  - Physics Education · 300 = 17
+  - Physics Education · 400 = 22
+- Physics Education · 100 still ON HOLD (MHTML pairing issue, unresolved from prior session).
+- Installed `xlsx` package as a dev dependency for parsing Excel rosters.
+- No code changes to the app — pure data operation. No deploy or git push needed.
+- Artifacts: `scripts/upload-chemistry-ed-y3.ts`, `scripts/_xlsx-to-text.ts`, `upload/chemistry-ed-y3.{txt,json}` (all gitignored by convention).
