@@ -2291,3 +2291,45 @@ Unresolved / risks:
 - NONE on the password system — it works.
 - Standing: election is Tuesday July 7, 08:00 WAT. 440 students can log in. 17 more cohort lists may still arrive (Physics Ed 100L on hold, other levels pending).
 - Lesson learned: ALWAYS `git fetch origin` and check for divergence before making claims about code state. MEMORY.md at /tmp/my-project/MEMORY.md is the canonical memory file — read it FIRST.
+
+---
+Task ID: CHEM-ED-Y4-UPLOAD
+Agent: main
+Task: Upload Chemistry Education Year 4 roster to production voter register and verify end-to-end.
+
+Work Log:
+- Read MEMORY.md and upload dir; found `Chemistry education list.docx` (Jul 6 08:21).
+- Parsed with pandoc + python-docx (cross-checked). File contains TWO matric series:
+  `210311xxx` (entries 1–86, 2021 admission = Year 4) and `230311xxx` (entries 87–107,
+  already covered by existing Chemistry Ed 300 cohort).
+- User confirmed Abayomi (#56, 210311056) is Year 4 → uploaded ONLY the 210311xxx series.
+- Fixed orphan-matric parser bug (empty lines between name and matric broke the join);
+  recovered 210311029 and 210311043. Also stripped stray "no" from entry 84.
+- Final parsed: 78 Year-4 students (8 source blanks excluded: 011,025,032,037,044,047,080,081).
+- Computed passwords with the REAL `generatePlainPassword()` from
+  `src/lib/password-generator.ts` (guaranteed match to batch endpoint hashing).
+- Presented preview; user said "go".
+- Got fresh admin token via POST /api/auth/admin-login.
+- POST /api/admin/allowlist/batch → HTTP 200: 77 inserted, 1 skipped (Abayomi 210311056
+  already under Chem Ed 300 from a prior batch — idempotent skip, not overwrite).
+- Verified 4 students via live login API (proves bcrypt.compare passes):
+  210311001 (210311001yemi) ✅, 210311016 (210311016eze, short surname) ✅,
+  210311056 (210311056yomi, overlap) ✅, 210311060 (210311060bite, comma in name) ✅.
+- Cleanup: the 4 test logins created 4 Student rows + marked 4 allowlist entries claimed.
+  Used the blessed disputes revoke flow for each: POST /api/disputes (file) →
+  POST /api/admin/disputes {action:"revoke"} (revoke). All 4 revoked, all 4 verified
+  claimed=false afterward. Pre-existing Physics Ed 300 claim left untouched.
+- NOTE: `.env.render` is GONE from the filesystem this session → no direct Turso access.
+  All verification done via the live API + admin endpoints instead.
+- NOTE: Abayomi (210311056) still labelled "Chemistry Education 300" in prod (cosmetic
+  only — vote route doesn't check programme/level; his password is identical either way).
+  Reclassifying to Year 4 would need direct DB access or a code change + deploy.
+
+Stage Summary:
+- Chemistry Education Year 4: 77 students uploaded + verified. (Abayomi already existed.)
+- Production voter register: 445 → 522 students across 11 cohorts.
+- All test claims cleaned up; 0 fraudulent claims in Chem Ed 400.
+- Files produced: upload/chemistry-ed-y4.json (batch payload),
+  upload/chemistry-ed-y4-parsed.json (parsed entries).
+- Election is Tuesday July 7, 08:00 WAT. Remaining pending: Physics Ed 100L list (user
+  hasn't sent yet) + any other cohorts the user sends.
